@@ -1,6 +1,5 @@
 import type { Task, WorkerMessage } from "protocol";
 import { useEffect, useMemo, useRef, useState } from "react";
-import CpmWorker from "worker/worker.ts?worker";
 
 function makeId() {
   return crypto.randomUUID();
@@ -13,7 +12,10 @@ export default function App() {
   const [logs, setLogs] = useState<string[]>([]);
 
   useEffect(() => {
-    const worker = new CpmWorker();
+    const worker = new Worker(
+      new URL("../../../packages/worker/worker.ts", import.meta.url),
+      { type: "module" }
+    );
     workerRef.current = worker;
 
     worker.onmessage = (event: MessageEvent<WorkerMessage>) => {
