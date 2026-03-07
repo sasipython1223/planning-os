@@ -1,27 +1,24 @@
-import type { Cmd, Msg, Task } from "../protocol/src/types";
+/// <reference lib="webworker" />
 
-const tasks: Task[] = [];
-let nextId = 1;
+import type { Command, Task, WorkerMessage } from "protocol";
 
-self.onmessage = (e: MessageEvent<Cmd>) => {
-  const msg = e.data;
-  if (!msg || msg.v !== 1 || msg.kind !== "cmd") return;
+const ctx: DedicatedWorkerGlobalScope = self as DedicatedWorkerGlobalScope;
 
-  if (msg.type === "ADD_TASK") {
-    const { name, duration } = msg.payload;
+let tasks: Task[] = [];
 
-    if (!name || duration <= 0) {
-      const nack: Msg = { v: 1, kind: "evt", requestId: msg.requestId, type: "NACK", payload: { ok: false, error: "Invalid task" } };
-      (self as any).postMessage(nack);
-      return;
-    }
+const emit = (message: WorkerMessage) => {
+  ctx.postMessage(message);
+};
 
-    tasks.push({ id: nextId++, name, duration });
+ctx.onmessage = (event: MessageEvent<Command>) => {
+  const cmd = event.data;
 
-    const ack: Msg = { v: 1, kind: "evt", requestId: msg.requestId, type: "ACK", payload: { ok: true } };
-    (self as any).postMessage(ack);
+  if (cmd.type === "ADD_TASK") {
+    tasks.push(cmd.payload);
 
-    const diff: Msg = { v: 1, kind: "diff", type: "TASKS", payload: { tasks } };
-    (self as any).postMessage(diff);
+    emit({ type: "ACK", reqId: cmd.reqId });
+    emit({ type: "DIFF_TASKS", payload: [...tasks] });
   }
 };
+
+export { };

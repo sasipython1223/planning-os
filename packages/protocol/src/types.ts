@@ -1,8 +1,25 @@
-export type Task = { id: number; name: string; duration: number };
+export type Task = {
+  id: string;
+  name: string;
+  duration: number;
+};
 
-export type Cmd =
-  | { v: 1; kind: "cmd"; requestId: string; type: "ADD_TASK"; payload: { name: string; duration: number } };
+export type AddTaskCommand = {
+  type: "ADD_TASK";
+  reqId: string;
+  payload: Task;
+};
 
-export type Msg =
-  | { v: 1; kind: "evt"; requestId: string; type: "ACK" | "NACK"; payload: { ok: boolean; error?: string } }
-  | { v: 1; kind: "diff"; type: "TASKS"; payload: { tasks: Task[] } };
+export type Command = AddTaskCommand;
+
+export type AckMessage = {
+  type: "ACK";
+  reqId: string;
+};
+
+export type DiffTasksMessage = {
+  type: "DIFF_TASKS";
+  payload: Task[];
+};
+
+export type WorkerMessage = AckMessage | DiffTasksMessage;

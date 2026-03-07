@@ -1,35 +1,91 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import type { Task, WorkerMessage } from "protocol";
+import { useEffect, useMemo, useRef, useState } from "react";
+import CpmWorker from "worker/worker.ts?worker";
 
-function App() {
-  const [count, setCount] = useState(0)
-
-  return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
+function makeId() {
+  return crypto.randomUUID();
 }
 
-export default App
+export default function App() {
+  const workerRef = useRef<Worker | null>(null);
+  const [taskName, setTaskName] = useState("");
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [logs, setLogs] = useState<string[]>([]);
+
+  useEffect(() => {
+    const worker = new CpmWorker();
+    workerRef.current = worker;
+
+    worker.onmessage = (event: MessageEvent<WorkerMessage>) => {
+      const msg = event.data;
+
+      if (msg.type === "ACK") {
+        setLogs((prev) => [`ACK ${msg.reqId}`, ...prev]);
+      }
+
+      if (msg.type === "DIFF_TASKS") {
+        setTasks(msg.payload);
+        setLogs((prev) => [`DIFF_TASKS ${msg.payload.length}`, ...prev]);
+      }
+    };
+
+    return () => {
+      worker.terminate();
+      workerRef.current = null;
+    };
+  }, []);
+
+  const canAdd = useMemo(() => taskName.trim().length > 0, [taskName]);
+
+  const handleAdd = () => {
+    const name = taskName.trim();
+    if (!name || !workerRef.current) return;
+
+    const task: Task = {
+      id: makeId(),
+      name,
+      duration: 5
+    };
+
+    workerRef.current.postMessage({
+      type: "ADD_TASK",
+      reqId: makeId(),
+      payload: task
+    });
+
+    setTaskName("");
+  };
+
+  return (
+    <div style={{ padding: 24, fontFamily: "Arial, sans-serif" }}>
+      <h1>Week 1 Worker Task Demo</h1>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <input
+          value={taskName}
+          onChange={(e) => setTaskName(e.target.value)}
+          placeholder="Task name"
+        />
+        <button onClick={handleAdd} disabled={!canAdd}>
+          Add
+        </button>
+      </div>
+
+      <h2>Tasks</h2>
+      <ul>
+        {tasks.map((task) => (
+          <li key={task.id}>
+            {task.name} ({task.duration}d)
+          </li>
+        ))}
+      </ul>
+
+      <h2>Worker Logs</h2>
+      <ul>
+        {logs.map((log, i) => (
+          <li key={`${log}-${i}`}>{log}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
