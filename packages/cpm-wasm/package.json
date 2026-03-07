@@ -1,0 +1,14 @@
+{
+  "name": "cpm-wasm",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "wasm-pack build --target web --out-dir pkg",
+    "build:dev": "wasm-pack build --dev --target web --out-dir pkg",
+    "test": "wasm-pack test --node"
+  },
+  "files": [
+    "pkg"
+  ]
+}
