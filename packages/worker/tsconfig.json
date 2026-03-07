@@ -7,7 +7,11 @@
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "allowImportingTsExtensions": true
+    "allowImportingTsExtensions": true,
+    "paths": {
+      "protocol": ["../protocol/src/types.ts"],
+      "protocol/kernel": ["../protocol/src/kernel.ts"]
+    }
   },
-  "include": ["worker.ts"]
+  "include": ["src/**/*", "tests/**/*", "worker.ts"]
 }

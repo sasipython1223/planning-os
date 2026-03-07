@@ -4,9 +4,13 @@ use std::collections::HashMap;
 pub struct CpmGraph {
     pub node_to_id: Vec<String>,
     pub durations: Vec<u32>,
+    pub min_early_start: Vec<u32>,
     pub successors: Vec<Vec<usize>>,
     pub predecessors: Vec<Vec<usize>>,
     pub in_degree: Vec<usize>,
+    pub parent: Vec<Option<usize>>,
+    pub children: Vec<Vec<usize>>,
+    pub is_summary: Vec<bool>,
 }
 
 impl CpmGraph {
@@ -15,9 +19,13 @@ impl CpmGraph {
             return Ok(Self {
                 node_to_id: Vec::new(),
                 durations: Vec::new(),
+                min_early_start: Vec::new(),
                 successors: Vec::new(),
                 predecessors: Vec::new(),
                 in_degree: Vec::new(),
+                parent: Vec::new(),
+                children: Vec::new(),
+                is_summary: Vec::new(),
             });
         }
 
@@ -25,6 +33,7 @@ impl CpmGraph {
         let mut id_to_index: HashMap<String, usize> = HashMap::new();
         let mut node_to_id: Vec<String> = Vec::new();
         let mut durations: Vec<u32> = Vec::new();
+        let mut min_early_start: Vec<u32> = Vec::new();
 
         for task in tasks {
             // Reject duplicate task IDs
@@ -36,6 +45,7 @@ impl CpmGraph {
             id_to_index.insert(task.id.clone(), index);
             node_to_id.push(task.id.clone());
             durations.push(task.duration);
+            min_early_start.push(task.min_early_start);
         }
 
         let n = node_to_id.len();
@@ -68,12 +78,38 @@ impl CpmGraph {
             in_degree[*succ_idx] += 1;
         }
 
+        // Resolve parent ↔ children relationships
+        let mut parent: Vec<Option<usize>> = vec![None; n];
+        let mut children: Vec<Vec<usize>> = vec![Vec::new(); n];
+        let mut is_summary: Vec<bool> = vec![false; n];
+
+        for task in tasks {
+            if let Some(ref pid) = task.parent_id {
+                let child_idx = *id_to_index.get(&task.id).unwrap();
+                let parent_idx = *id_to_index
+                    .get(pid)
+                    .ok_or_else(|| CpmError::TaskNotFound(pid.clone()))?;
+                parent[child_idx] = Some(parent_idx);
+                children[parent_idx].push(child_idx);
+            }
+        }
+        for task in tasks {
+            if task.is_summary {
+                let idx = *id_to_index.get(&task.id).unwrap();
+                is_summary[idx] = true;
+            }
+        }
+
         Ok(Self {
             node_to_id,
             durations,
+            min_early_start,
             successors,
             predecessors,
             in_degree,
+            parent,
+            children,
+            is_summary,
         })
     }
 

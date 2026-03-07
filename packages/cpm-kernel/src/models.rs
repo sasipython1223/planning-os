@@ -4,6 +4,9 @@ use std::fmt;
 pub struct RawTask {
     pub id: String,
     pub duration: u32,
+    pub min_early_start: u32,
+    pub parent_id: Option<String>,
+    pub is_summary: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -17,6 +20,10 @@ pub struct ScheduleResult {
     pub task_id: String,
     pub early_start: u32,
     pub early_finish: u32,
+    pub late_start: u32,
+    pub late_finish: u32,
+    pub total_float: u32,
+    pub is_critical: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
