@@ -90,16 +90,19 @@ export function GanttPane({
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
       {/* Fixed timescale header */}
-      <TimescaleCanvas
-        viewportWidth={paneWidth}
-        scrollLeft={scrollLeft}
-        maxDay={maxDay}
-        projectStartDate={projectStartDate}
-      />
+      <div className="gantt-header">
+        <TimescaleCanvas
+          viewportWidth={paneWidth}
+          scrollLeft={scrollLeft}
+          maxDay={maxDay}
+          projectStartDate={projectStartDate}
+        />
+      </div>
 
       {/* Horizontal-only scroll container */}
       <div
         ref={hScrollRef}
+        className="gantt-body"
         onScroll={handleScroll}
         style={{
           flex: 1,

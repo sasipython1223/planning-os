@@ -1,4 +1,5 @@
 import type { Dependency, ScheduleResultMap, Task } from "protocol";
+import type { Selection } from "../../App";
 import { computeVirtualWindow } from "../../hooks/useVirtualWindow";
 import { projectDateShort } from "../../utils/dateProjection";
 import { drawDependencies } from "./drawDependencies";
@@ -13,7 +14,6 @@ import { computeTaskGeometry } from "./ganttGeometry";
 import { LINK_NODE_RADIUS } from "./hitTest";
 import type { LinkDragState } from "./linkDrag";
 import type { Viewport } from "./viewportTypes";
-import type { Selection } from "../../App";
 
 /**
  * Optional per-task duration overrides for drag previews.
@@ -83,14 +83,14 @@ export function drawGantt(
   ctx.lineWidth = 1;
   ctx.beginPath();
   for (let i = startIndex; i <= endIndex + 1; i++) {
-    const y = i * ROW_HEIGHT;
+    const y = i * ROW_HEIGHT + 0.5;
     ctx.moveTo(scrollLeft, y);
     ctx.lineTo(scrollLeft + viewportWidth, y);
   }
   ctx.stroke();
 
   // Draw dependency lines (behind bars) — clipped by vertical intersection
-  drawDependencies(ctx, dependencies, geometryMap, visibleTop, visibleBottom);
+  drawDependencies(ctx, dependencies, geometryMap, visibleTop, visibleBottom, scheduleResults);
 
   // Highlight selected dependency line
   if (selection?.type === "dependency") {
@@ -132,7 +132,7 @@ export function drawGantt(
       const bracketHeight = 6;
       const tickHeight = 8;
 
-      ctx.fillStyle = "#333333";
+      ctx.fillStyle = schedule.isCritical ? COLORS.critical : "#333333";
       // Thin bar
       ctx.fillRect(x, y, barWidth, bracketHeight);
       // Left tick
@@ -141,7 +141,7 @@ export function drawGantt(
       ctx.fillRect(x + barWidth - 3, y, 3, tickHeight);
 
       // Summary task name
-      ctx.fillStyle = "#333333";
+      ctx.fillStyle = schedule.isCritical ? COLORS.critical : "#333333";
       ctx.font = "bold 11px Arial";
       ctx.textAlign = "left";
       ctx.textBaseline = "bottom";
@@ -162,7 +162,10 @@ export function drawGantt(
     const earlyStart = positionOverrides?.get(task.id) ?? schedule.earlyStart;
     const x = earlyStart * DAY_WIDTH;
     const y = i * ROW_HEIGHT + BAR_VERTICAL_PADDING;
-    const barWidth = duration * DAY_WIDTH;
+    // Use overridden duration for drag preview, otherwise elapsed span for calendar-aware width
+    const barWidth = (durationOverrides?.has(task.id) || positionOverrides?.has(task.id))
+      ? duration * DAY_WIDTH
+      : (schedule.earlyFinish - schedule.earlyStart) * DAY_WIDTH;
 
     ctx.fillStyle = schedule.isCritical ? COLORS.critical : COLORS.nonCritical;
     ctx.fillRect(x, y, barWidth, BAR_HEIGHT);

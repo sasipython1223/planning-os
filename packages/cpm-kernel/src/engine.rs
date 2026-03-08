@@ -1,12 +1,96 @@
+use std::collections::HashSet;
 use crate::graph::CpmGraph;
 use crate::models::{CpmError, RawDependency, RawTask, ScheduleResult};
+
+/// Snap a day forward to the next working day.
+fn snap_forward(day: u32, blocked: &HashSet<u32>) -> u32 {
+    let mut d = day;
+    while blocked.contains(&d) {
+        d += 1;
+    }
+    d
+}
+
+/// Advance by `duration` working days from `start` (which must already be a working day).
+/// Returns the finish offset (the day *after* the last working day consumed).
+fn advance_working(start: u32, duration: u32, blocked: &HashSet<u32>) -> u32 {
+    if duration == 0 {
+        return start;
+    }
+    let mut remaining = duration;
+    let mut d = start;
+    loop {
+        if !blocked.contains(&d) {
+            remaining -= 1;
+            if remaining == 0 {
+                return d + 1; // finish = day after last working day
+            }
+        }
+        d += 1;
+    }
+}
+
+/// Snap a day backward to the previous working day.
+#[allow(dead_code)]
+fn snap_backward(day: u32, blocked: &HashSet<u32>) -> u32 {
+    let mut d = day;
+    while d > 0 && blocked.contains(&d) {
+        d -= 1;
+    }
+    d
+}
+
+/// Count working days in the half-open interval [from, to).
+fn count_working_days(from: u32, to: u32, blocked: &HashSet<u32>) -> u32 {
+    if to <= from {
+        return 0;
+    }
+    let mut count = 0;
+    for d in from..to {
+        if !blocked.contains(&d) {
+            count += 1;
+        }
+    }
+    count
+}
+
+/// Retreat by `duration` working days ending at `finish` (exclusive upper bound).
+/// Returns the late-start offset.
+fn retreat_working(finish: u32, duration: u32, blocked: &HashSet<u32>) -> u32 {
+    if duration == 0 {
+        return finish;
+    }
+    let mut remaining = duration;
+    let mut d = if finish > 0 { finish - 1 } else { 0 };
+    // snap to a working day first
+    while blocked.contains(&d) && d > 0 {
+        d -= 1;
+    }
+    loop {
+        if !blocked.contains(&d) {
+            remaining -= 1;
+            if remaining == 0 {
+                return d;
+            }
+        }
+        if d == 0 {
+            break;
+        }
+        d -= 1;
+    }
+    d
+}
 
 pub fn calculate_schedule(
     tasks: &[RawTask],
     deps: &[RawDependency],
+    non_working_days: &[u32],
 ) -> Result<Vec<ScheduleResult>, CpmError> {
     // Build graph
     let graph = CpmGraph::build(tasks, deps)?;
+
+    // Build blocked-day set
+    let blocked: HashSet<u32> = non_working_days.iter().copied().collect();
 
     if tasks.is_empty() {
         return Ok(Vec::new());
@@ -34,8 +118,11 @@ pub fn calculate_schedule(
             }
         }
 
-        early_start[node] = std::cmp::max(max_pred_ef, graph.min_early_start[node]);
-        early_finish[node] = early_start[node] + graph.durations[node];
+        let raw_es = std::cmp::max(max_pred_ef, graph.min_early_start[node]);
+        // Snap to next working day if raw ES lands on a blocked day
+        early_start[node] = snap_forward(raw_es, &blocked);
+        // Advance by duration working days
+        early_finish[node] = advance_working(early_start[node], graph.durations[node], &blocked);
     }
 
     // Bottom-up summary rollup: summary ES = min(child ES), summary EF = max(child EF)
@@ -80,14 +167,15 @@ pub fn calculate_schedule(
 
             late_finish[node] = min_succ_ls;
         }
-        
-        late_start[node] = late_finish[node].saturating_sub(graph.durations[node]);
+
+        // Calendar-aware backward: retreat by working-day duration
+        late_start[node] = retreat_working(late_finish[node], graph.durations[node], &blocked);
     }
 
     // Calculate total float and determine critical path
     let mut results: Vec<ScheduleResult> = Vec::with_capacity(n);
     for i in 0..n {
-        let total_float = late_finish[i].saturating_sub(early_finish[i]);
+        let total_float = count_working_days(early_finish[i], late_finish[i], &blocked);
         let is_critical = total_float == 0;
 
         results.push(ScheduleResult {

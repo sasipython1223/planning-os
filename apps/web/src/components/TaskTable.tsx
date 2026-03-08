@@ -1,5 +1,5 @@
 import type { ScheduleResultMap, Task } from "protocol";
-import type { CSSProperties } from "react";
+import { useLayoutEffect, useRef, type CSSProperties } from "react";
 import { useVirtualWindow } from "../hooks/useVirtualWindow";
 import { projectDateShort } from "../utils/dateProjection";
 import { EditableCell } from "./EditableCell";
@@ -43,6 +43,14 @@ export function TaskTable({
     viewportHeight,
   );
 
+  const bodyRef = useRef<HTMLDivElement>(null);
+
+  // Mirror shared scrollTop into the clipped body viewport so
+  // translateY(offsetY) lands inside the visible clip region.
+  useLayoutEffect(() => {
+    if (bodyRef.current) bodyRef.current.scrollTop = scrollTop;
+  }, [scrollTop]);
+
   const visibleTasks = endIndex >= startIndex
     ? tasks.slice(startIndex, endIndex + 1)
     : [];
@@ -50,22 +58,22 @@ export function TaskTable({
   return (
     <div style={{ width: 400, borderRight: "1px solid #ccc", display: "flex", flexDirection: "column", minHeight: 0 }}>
       {/* Fixed header */}
-      <table style={{ width: "100%", borderCollapse: "collapse", flexShrink: 0 }}>
+      <table className="task-table-header" style={{ width: "100%", borderCollapse: "collapse", flexShrink: 0 }}>
         <thead>
           <tr style={{ height: TIMESCALE_HEIGHT, background: "#f5f5f5" }}>
-            <th style={{ padding: 8, textAlign: "left", borderBottom: "1px solid #ccc" }}>
+            <th style={{ padding: 8, textAlign: "left" }}>
               Task
             </th>
-            <th style={{ padding: 8, textAlign: "center", borderBottom: "1px solid #ccc" }}>
+            <th style={{ padding: 8, textAlign: "center" }}>
               Duration
             </th>
-            <th style={{ padding: 8, textAlign: "center", borderBottom: "1px solid #ccc" }}>
+            <th style={{ padding: 8, textAlign: "center" }}>
               Start
             </th>
-            <th style={{ padding: 8, textAlign: "center", borderBottom: "1px solid #ccc" }}>
+            <th style={{ padding: 8, textAlign: "center" }}>
               Finish
             </th>
-            <th style={{ padding: 8, textAlign: "center", borderBottom: "1px solid #ccc" }}>
+            <th style={{ padding: 8, textAlign: "center" }}>
               TF
             </th>
           </tr>
@@ -74,6 +82,8 @@ export function TaskTable({
 
       {/* Clipped body viewport — vertical scroll owned by App's scroll track */}
       <div
+        ref={bodyRef}
+        className="task-table-body"
         style={{
           flex: 1,
           overflow: "hidden",

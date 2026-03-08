@@ -63,13 +63,18 @@ export const rollupSummarySchedules = (
     if (!Number.isFinite(minES) || !Number.isFinite(maxEF)) {
       delete scheduleResults[summary.id];
     } else {
+      let hasCriticalChild = false;
+      for (const childId of childIds) {
+        const entry = scheduleResults[childId];
+        if (entry?.isCritical) { hasCriticalChild = true; break; }
+      }
       scheduleResults[summary.id] = {
         earlyStart: minES,
         earlyFinish: maxEF,
         lateStart: minES,
         lateFinish: maxEF,
         totalFloat: 0,
-        isCritical: false,
+        isCritical: hasCriticalChild,
       };
     }
   }

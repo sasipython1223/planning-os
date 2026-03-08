@@ -2,6 +2,7 @@
 
 import type { Command, WorkerMessage } from "protocol";
 import type { ScheduleError } from "protocol/kernel";
+import { generateNonWorkingDays } from "./calendar.js";
 import { rollupSummarySchedules } from "./rollupSummaries.js";
 import { applyScheduleResult } from "./schedule/applyScheduleResult.js";
 import { buildScheduleRequest } from "./schedule/buildScheduleRequest.js";
@@ -26,6 +27,8 @@ const emit = (message: WorkerMessage): void => {
  * Run scheduling and emit state with results.
  * Returns true if scheduling succeeded, false if it failed.
  */
+const CALENDAR_HORIZON = 3650; // ~10 years
+
 const runSchedulingAndEmitState = (): boolean => {
   // Recompute hierarchy metadata before scheduling
   State.computeHierarchy();
@@ -33,8 +36,15 @@ const runSchedulingAndEmitState = (): boolean => {
   const tasks = State.getTasks();
   const dependencies = State.getDependencies();
 
+  // Generate calendar data
+  const nonWorkingDays = generateNonWorkingDays(
+    State.getProjectStartDate(),
+    true, // excludeWeekends — hardcoded for now
+    CALENDAR_HORIZON,
+  );
+
   // Build schedule request
-  const request = buildScheduleRequest(tasks, dependencies);
+  const request = buildScheduleRequest(tasks, dependencies, nonWorkingDays);
 
   // Run scheduling
   const result = runSchedule(request);
@@ -55,16 +65,17 @@ const runSchedulingAndEmitState = (): boolean => {
     });
 
     // Emit state without schedule results (current state may be invalid)
-    emit({
-      type: "DIFF_STATE",
-      v: 1,
-      payload: {
-        tasks: [...tasks],
-        dependencies: [...dependencies],
-        scheduleResults: {},
-        projectStartDate: State.getProjectStartDate(),
-      },
+    const emptyPayload = {
+      tasks: [...tasks],
+      dependencies: [...dependencies],
+      scheduleResults: {},
+      projectStartDate: State.getProjectStartDate(),
+    };
+    console.log("[AUDIT Worker Emit] schedule-error path", {
+      taskCount: emptyPayload.tasks.length,
+      depCount: emptyPayload.dependencies.length,
     });
+    emit({ type: "DIFF_STATE", v: 1, payload: emptyPayload });
 
     return false;
   } else {
@@ -74,16 +85,29 @@ const runSchedulingAndEmitState = (): boolean => {
     // Worker-authoritative summary rollup (overwrites kernel summary results)
     rollupSummarySchedules(tasks, scheduleResults);
 
-    emit({
-      type: "DIFF_STATE",
-      v: 1,
-      payload: {
-        tasks: [...tasks],
-        dependencies: [...dependencies],
-        scheduleResults,
-        projectStartDate: State.getProjectStartDate(),
-      },
+    console.log("[AUDIT Kernel Math]", Object.entries(scheduleResults).map(([id, s]) => ({
+      id,
+      ES: s.earlyStart,
+      EF: s.earlyFinish,
+      LS: s.lateStart,
+      LF: s.lateFinish,
+      TF: s.totalFloat,
+      isCritical: s.isCritical,
+    })));
+
+    const payload = {
+      tasks: [...tasks],
+      dependencies: [...dependencies],
+      scheduleResults,
+      projectStartDate: State.getProjectStartDate(),
+    };
+    const critCount = Object.values(scheduleResults).filter(s => s.isCritical).length;
+    console.log("[AUDIT Worker Emit] success path", {
+      taskCount: payload.tasks.length,
+      depCount: payload.dependencies.length,
+      criticalCount: critCount,
     });
+    emit({ type: "DIFF_STATE", v: 1, payload });
 
     return true;
   }
@@ -140,30 +164,8 @@ const handleCommand = (cmd: Command): void => {
 
     const success = runSchedulingAndEmitState();
     if (!success) {
-      // Rollback: restore pre-mutation state
       State.restoreSnapshot(snapshot);
-      State.computeHierarchy();
-      
-      // Emit restored valid state
-      const tasks = State.getTasks();
-      const dependencies = State.getDependencies();
-      const request = buildScheduleRequest(tasks, dependencies);
-      const result = runSchedule(request);
-      
-      if (!("type" in result)) {
-        const scheduleResults = applyScheduleResult(result);
-        rollupSummarySchedules(tasks, scheduleResults);
-        emit({
-          type: "DIFF_STATE",
-          v: 1,
-          payload: {
-            tasks: [...tasks],
-            dependencies: [...dependencies],
-            scheduleResults,
-            projectStartDate: State.getProjectStartDate(),
-          },
-        });
-      }
+      runSchedulingAndEmitState();
     }
   }
 
@@ -181,30 +183,8 @@ const handleCommand = (cmd: Command): void => {
 
     const success = runSchedulingAndEmitState();
     if (!success) {
-      // Rollback: restore pre-mutation state
       State.restoreSnapshot(snapshot);
-      State.computeHierarchy();
-      
-      // Emit restored valid state
-      const tasks = State.getTasks();
-      const dependencies = State.getDependencies();
-      const request = buildScheduleRequest(tasks, dependencies);
-      const result = runSchedule(request);
-      
-      if (!("type" in result)) {
-        const scheduleResults = applyScheduleResult(result);
-        rollupSummarySchedules(tasks, scheduleResults);
-        emit({
-          type: "DIFF_STATE",
-          v: 1,
-          payload: {
-            tasks: [...tasks],
-            dependencies: [...dependencies],
-            scheduleResults,
-            projectStartDate: State.getProjectStartDate(),
-          },
-        });
-      }
+      runSchedulingAndEmitState();
     }
   }
 

@@ -1,4 +1,4 @@
-import type { Dependency } from "protocol";
+import type { Dependency, ScheduleResultMap } from "protocol";
 import { COLORS } from "./ganttConstants";
 import type { TaskGeometry } from "./ganttGeometry";
 
@@ -35,9 +35,8 @@ export function drawDependencies(
   geometryMap: Map<string, TaskGeometry>,
   visibleTop: number,
   visibleBottom: number,
+  scheduleResults?: ScheduleResultMap,
 ): void {
-  ctx.strokeStyle = COLORS.dependency;
-  ctx.fillStyle = COLORS.dependency;
   ctx.lineWidth = 2;
 
   dependencies.forEach((dep) => {
@@ -65,6 +64,14 @@ export function drawDependencies(
 
     // Horizontal offset for the middle segment
     const midX = (x1 + x2) / 2;
+
+    // Color critical dependency lines (both endpoints critical) in critical color
+    const isCritLine = scheduleResults
+      ? scheduleResults[dep.predId]?.isCritical && scheduleResults[dep.succId]?.isCritical
+      : false;
+    const lineColor = isCritLine ? COLORS.critical : COLORS.dependency;
+    ctx.strokeStyle = lineColor;
+    ctx.fillStyle = lineColor;
 
     // Draw 3-segment orthogonal line: horizontal → vertical → horizontal
     ctx.beginPath();

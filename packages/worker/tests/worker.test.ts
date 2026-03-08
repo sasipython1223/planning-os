@@ -125,7 +125,7 @@ describe("Schedule Request Builder", () => {
     const tasks: Task[] = [{ id: "A", name: "Task A", duration: 5, depth: 0, isSummary: false }];
     const dependencies: Dependency[] = [];
 
-    const request = buildScheduleRequest(tasks, dependencies);
+    const request = buildScheduleRequest(tasks, dependencies, []);
 
     expect(request.tasks).toHaveLength(1);
     expect(request.tasks[0]).toEqual({ id: "A", duration: 5, minEarlyStart: 0, parentId: undefined, isSummary: false });
@@ -141,7 +141,7 @@ describe("Schedule Request Builder", () => {
       { id: "dep1", predId: "A", succId: "B", type: "FS" },
     ];
 
-    const request = buildScheduleRequest(tasks, dependencies);
+    const request = buildScheduleRequest(tasks, dependencies, []);
 
     expect(request.tasks).toHaveLength(2);
     expect(request.dependencies).toHaveLength(1);
@@ -158,7 +158,7 @@ describe("Schedule Request Builder", () => {
       { id: "dep2", predId: "A", succId: "B", type: "SS" },
     ];
 
-    const request = buildScheduleRequest(tasks, dependencies);
+    const request = buildScheduleRequest(tasks, dependencies, []);
 
     expect(request.dependencies).toHaveLength(1);
     expect(request.dependencies[0].predId).toBe("A");
@@ -234,7 +234,7 @@ describe("Atomic Mutation and Rollback", () => {
     State.addDependency({ id: "dep2", predId: "B", succId: "A", type: "FS" });
 
     // Build request and run scheduling
-    const request = buildScheduleRequest(State.getTasks(), State.getDependencies());
+    const request = buildScheduleRequest(State.getTasks(), State.getDependencies(), []);
     
     // This would return CycleDetected error in real WASM
     // For this test, we simulate rollback behavior
@@ -271,7 +271,7 @@ describe("Atomic Mutation and Rollback", () => {
     // Add another valid dependency: B → C (extends chain)
     State.addDependency({ id: "dep2", predId: "B", succId: "C", type: "FS" });
 
-    const request = buildScheduleRequest(State.getTasks(), State.getDependencies());
+    const request = buildScheduleRequest(State.getTasks(), State.getDependencies(), []);
 
     // This should succeed (no cycle)
     const deps = State.getDependencies();
@@ -326,7 +326,7 @@ describe("Atomic Mutation and Rollback", () => {
     // Malformed state: dependency to non-existent task
     State.addDependency({ id: "dep1", predId: "A", succId: "NonExistent", type: "FS" });
 
-    const request = buildScheduleRequest(State.getTasks(), State.getDependencies());
+    const request = buildScheduleRequest(State.getTasks(), State.getDependencies(), []);
 
     // This would fail scheduling (TaskNotFound error from kernel)
     const hasInvalidDep = State.getDependencies().some(
@@ -505,7 +505,7 @@ describe("minEarlyStart constraint", () => {
       { id: "b", name: "B", duration: 3, minEarlyStart: 10, depth: 0, isSummary: false },
     ];
     const deps: Dependency[] = [];
-    const req = buildScheduleRequest(tasks, deps);
+    const req = buildScheduleRequest(tasks, deps, []);
     expect(req.tasks[0].minEarlyStart).toBe(0);
     expect(req.tasks[1].minEarlyStart).toBe(10);
   });
@@ -586,7 +586,7 @@ describe("Hierarchy", () => {
       { id: "S", name: "Summary", duration: 0, depth: 0, isSummary: true },
       { id: "A", name: "Child", duration: 5, parentId: "S", depth: 1, isSummary: false },
     ];
-    const req = buildScheduleRequest(tasks, []);
+    const req = buildScheduleRequest(tasks, [], []);
     expect(req.tasks[0].isSummary).toBe(true);
     expect(req.tasks[1].parentId).toBe("S");
     expect(req.tasks[1].isSummary).toBe(false);
@@ -743,5 +743,191 @@ describe("Summary Rollup", () => {
 
     // Summary entry should be removed (no valid children)
     expect(sched["S"]).toBeUndefined();
+  });
+});
+
+// ─── Calendar module tests ────────────────────────────────────
+
+import { advanceByWorkingDays, countWorkingDays, generateNonWorkingDays } from "../src/calendar.js";
+
+describe("Calendar — generateNonWorkingDays", () => {
+  it("returns empty array when excludeWeekends is false", () => {
+    const result = generateNonWorkingDays("2025-01-06", false, 14);
+    expect(result).toEqual([]);
+  });
+
+  it("generates weekend offsets for a Monday start", () => {
+    // 2025-01-06 is a Monday
+    // First weekend: day 5 (Sat), day 6 (Sun)
+    // Second weekend: day 12 (Sat), day 13 (Sun)
+    const result = generateNonWorkingDays("2025-01-06", true, 14);
+    expect(result).toEqual([5, 6, 12, 13]);
+  });
+
+  it("generates weekend offsets for a Wednesday start", () => {
+    // 2025-01-08 is a Wednesday
+    // Day 0=Wed, 1=Thu, 2=Fri, 3=Sat, 4=Sun, 5=Mon, ...
+    const result = generateNonWorkingDays("2025-01-08", true, 7);
+    expect(result).toEqual([3, 4]);
+  });
+
+  it("day 0 is blocked if project starts on Saturday", () => {
+    // 2025-01-04 is a Saturday
+    const result = generateNonWorkingDays("2025-01-04", true, 7);
+    expect(result).toContain(0); // Sat
+    expect(result).toContain(1); // Sun
+    expect(result).not.toContain(2); // Mon — working day
+  });
+});
+
+describe("Calendar — countWorkingDays", () => {
+  it("counts all days when no blocked days", () => {
+    const set = new Set<number>();
+    expect(countWorkingDays(0, 5, set)).toBe(5);
+  });
+
+  it("excludes blocked days from count", () => {
+    const set = new Set([2, 3]);
+    expect(countWorkingDays(0, 5, set)).toBe(3); // days 0,1,4
+  });
+
+  it("returns 0 for empty range", () => {
+    const set = new Set<number>();
+    expect(countWorkingDays(3, 3, set)).toBe(0);
+  });
+});
+
+describe("Calendar — advanceByWorkingDays", () => {
+  it("advances without blocked days", () => {
+    const set = new Set<number>();
+    // advance(0, 3, {}): works days 0,1,2 → returns last working day = 2
+    expect(advanceByWorkingDays(0, 3, set)).toBe(2);
+  });
+
+  it("skips blocked days when advancing", () => {
+    const set = new Set([2, 3]);
+    // start=0, work days 0,1,(skip 2,3),4 → finish after day 4 = 5? No.
+    // advance(0,3,{2,3}): d=0→rem=2, d=1→rem=1, d=2 blocked, d=3 blocked, d=4→rem=0 → return 4
+    // Wait let me re-trace: advance iterates starting at d=0:
+    // d=0 not blocked, remaining=3→2, if remaining>0 → d=1
+    // d=1 not blocked, remaining=2→1, if remaining>0 → d=2
+    // d=2 blocked → skip inner while → d=3 blocked → d=4
+    // d=4 not blocked, remaining=1→0 → return d+1? No.
+    // Wait, the function: remaining-- if not blocked. if remaining==0 return d+1. else d++, skip blocked.
+    // d=0: not blocked, remaining=2. remaining>0 → d=1, while: 1 not blocked.
+    // d=1: not blocked, remaining=1. remaining>0 → d=2, while: 2 blocked→d=3, 3 blocked→d=4, 4 not blocked.
+    // d=4: not blocked, remaining=0 → return 4? No, return d+1=5? Let me re-read the function.
+    // The function: remaining--, if remaining==0 return d+1. Ah wait, no.
+    // Actually in the Rust kernel the finish is d+1 (exclusive), but in calendar.ts
+    // advanceByWorkingDays: remaining--, if remaining>0 { current++; skip blocked }
+    // when remaining==0, returns current. So current=4, returns 4.
+    // Hmm, but the kernel advance_working returns d+1. Let me re-check calendar.ts...
+    // Actually advanceByWorkingDays in calendar.ts: remaining--, if remaining>0 current++ skip blocked.
+    // So: start=0, snap → 0. remaining=3.
+    // iter: 0 not blocked, remaining=2. remaining>0 → current=1, skip: 1 ok.
+    // iter: 1 not blocked, remaining=1. remaining>0 → current=2, skip: 2 blocked→3 blocked→4.
+    // iter: 4 not blocked, remaining=0. remaining==0 → return 4.
+    expect(advanceByWorkingDays(0, 3, set)).toBe(4);
+  });
+
+  it("snaps start forward if it lands on blocked day", () => {
+    const set = new Set([0, 1]);
+    // start=0 blocked → snap to 2
+    // advance(2, 2, {0,1}): work day 2→rem=1, rem>0→d=3, 3 not blocked→rem=0 → return 3
+    expect(advanceByWorkingDays(0, 2, set)).toBe(3);
+  });
+
+  it("zero duration returns start (snapped)", () => {
+    const set = new Set([0]);
+    // start=0 blocked → snap to 1. duration=0 → return 1.
+    expect(advanceByWorkingDays(0, 0, set)).toBe(1);
+  });
+});
+
+describe("Calendar — buildScheduleRequest passes nonWorkingDays", () => {
+  it("includes nonWorkingDays in request", () => {
+    const tasks: Task[] = [
+      { id: "A", name: "A", duration: 3, depth: 0, isSummary: false },
+    ];
+    const blocked = [5, 6, 12, 13];
+    const req = buildScheduleRequest(tasks, [], blocked);
+    expect(req.nonWorkingDays).toEqual([5, 6, 12, 13]);
+  });
+});
+
+// ─── Subtree-contiguous insertion tests ─────────────────────────────
+
+describe("Subtree-Contiguous Insertion", () => {
+  beforeEach(() => {
+    State.clearState();
+  });
+
+  it("inserts child after parent's last descendant in the subtree", () => {
+    // Set up: P (parent) → C1 (child) → GC (grandchild), then D (root)
+    State.addTask({ id: "P", name: "Parent", duration: 1, depth: 0, isSummary: false });
+    State.addTask({ id: "C1", name: "Child 1", duration: 1, parentId: "P", depth: 0, isSummary: false });
+    State.computeHierarchy();
+    State.addTask({ id: "GC", name: "Grandchild", duration: 1, parentId: "C1", depth: 0, isSummary: false });
+    State.computeHierarchy();
+    State.addTask({ id: "D", name: "Root D", duration: 1, depth: 0, isSummary: false });
+
+    // Now add a second child under P — should land after GC, before D
+    State.computeHierarchy();
+    State.addTask({ id: "C2", name: "Child 2", duration: 1, parentId: "P", depth: 0, isSummary: false });
+
+    const ids = State.getTasks().map(t => t.id);
+    expect(ids).toEqual(["P", "C1", "GC", "C2", "D"]);
+  });
+
+  it("appends child at end when parent is last in array", () => {
+    State.addTask({ id: "A", name: "A", duration: 1, depth: 0, isSummary: false });
+    State.addTask({ id: "P", name: "Parent", duration: 1, depth: 0, isSummary: false });
+    State.computeHierarchy();
+    State.addTask({ id: "C1", name: "Child 1", duration: 1, parentId: "P", depth: 0, isSummary: false });
+
+    const ids = State.getTasks().map(t => t.id);
+    expect(ids).toEqual(["A", "P", "C1"]);
+  });
+
+  it("descendants remain contiguous after insertion", () => {
+    State.addTask({ id: "P", name: "Parent", duration: 1, depth: 0, isSummary: false });
+    State.addTask({ id: "C1", name: "C1", duration: 1, parentId: "P", depth: 0, isSummary: false });
+    State.computeHierarchy();
+    State.addTask({ id: "C2", name: "C2", duration: 1, parentId: "P", depth: 0, isSummary: false });
+    State.computeHierarchy();
+    State.addTask({ id: "R", name: "Root", duration: 1, depth: 0, isSummary: false });
+
+    // Add C3 under P — should be contiguous with C1 and C2
+    State.computeHierarchy();
+    State.addTask({ id: "C3", name: "C3", duration: 1, parentId: "P", depth: 0, isSummary: false });
+
+    const tasks = State.getTasks();
+    const ids = tasks.map(t => t.id);
+
+    // All children of P should be contiguous after P
+    const pIdx = ids.indexOf("P");
+    const c1Idx = ids.indexOf("C1");
+    const c2Idx = ids.indexOf("C2");
+    const c3Idx = ids.indexOf("C3");
+    const rIdx = ids.indexOf("R");
+
+    expect(c1Idx).toBe(pIdx + 1);
+    expect(c2Idx).toBe(pIdx + 2);
+    expect(c3Idx).toBe(pIdx + 3);
+    expect(rIdx).toBe(pIdx + 4);
+  });
+
+  it("root task without parentId appends at end", () => {
+    State.addTask({ id: "A", name: "A", duration: 1, depth: 0, isSummary: false });
+    State.addTask({ id: "B", name: "B", duration: 1, depth: 0, isSummary: false });
+    State.addTask({ id: "C", name: "C", duration: 1, depth: 0, isSummary: false });
+
+    const ids = State.getTasks().map(t => t.id);
+    expect(ids).toEqual(["A", "B", "C"]);
+  });
+
+  it("findInsertionIndexForParent returns end for unknown parent", () => {
+    State.addTask({ id: "A", name: "A", duration: 1, depth: 0, isSummary: false });
+    expect(State.findInsertionIndexForParent("nonexistent")).toBe(1);
   });
 });

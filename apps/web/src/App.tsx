@@ -32,6 +32,24 @@ export default function App() {
     [tasks, collapsedIds],
   );
 
+  // Temporary diagnostic: measure header/body box metrics
+  useEffect(() => {
+    const leftHeader = document.querySelector(".task-table-header")?.getBoundingClientRect();
+    const rightHeader = document.querySelector(".gantt-header")?.getBoundingClientRect();
+    const leftBody = document.querySelector(".task-table-body")?.getBoundingClientRect();
+    const rightBody = document.querySelector(".gantt-body")?.getBoundingClientRect();
+    const firstRow = document.querySelector(".task-table-body tr")?.getBoundingClientRect();
+
+    console.log("[AUDIT header/body alignment]", {
+      leftHeaderHeight: leftHeader?.height,
+      rightHeaderHeight: rightHeader?.height,
+      leftBodyTop: leftBody?.top,
+      rightBodyTop: rightBody?.top,
+      firstRowHeight: firstRow?.height,
+      bodyTopDelta: leftBody && rightBody ? leftBody.top - rightBody.top : null,
+    });
+  }, []);
+
   const phantomHeight = visibleTasks.length * ROW_HEIGHT;
 
   // Clamp scroll after collapse/expand to avoid blank space

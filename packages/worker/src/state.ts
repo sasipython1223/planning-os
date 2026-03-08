@@ -33,8 +33,32 @@ export const findDependencyById = (id: string): Dependency | undefined => {
   return dependencies.find(d => d.id === id);
 };
 
+/**
+ * Find the insertion index for a new child of the given parent.
+ * Scans forward from the parent's position while depth > parent depth,
+ * so the new task lands after the parent's last descendant.
+ * Returns tasks.length (append) if parentId is not found.
+ */
+export const findInsertionIndexForParent = (parentId: string): number => {
+  const parentIndex = tasks.findIndex(t => t.id === parentId);
+  if (parentIndex < 0) return tasks.length;
+
+  const parentDepth = tasks[parentIndex].depth;
+  let i = parentIndex + 1;
+  while (i < tasks.length && tasks[i].depth > parentDepth) {
+    i++;
+  }
+  return i;
+};
+
 export const addTask = (task: Task): void => {
-  tasks.push({ ...task, depth: task.depth ?? 0, isSummary: task.isSummary ?? false });
+  const newTask = { ...task, depth: task.depth ?? 0, isSummary: task.isSummary ?? false };
+  if (newTask.parentId) {
+    const insertIndex = findInsertionIndexForParent(newTask.parentId);
+    tasks.splice(insertIndex, 0, newTask);
+  } else {
+    tasks.push(newTask);
+  }
 };
 
 export const updateTask = (id: string, updates: { name?: string; duration?: number; minEarlyStart?: number; parentId?: string | null }): boolean => {
