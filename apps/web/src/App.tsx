@@ -1,5 +1,6 @@
-import type { Dependency, ScheduleResultMap, Task, WorkerMessage } from "protocol";
+import type { BaselineMap, Dependency, DependencyType, ScheduleResultMap, Task, WorkerMessage } from "protocol";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { DependencyList } from "./components/DependencyList";
 import { ROW_HEIGHT, TIMESCALE_HEIGHT } from "./components/gantt/ganttConstants";
 import { GanttPane } from "./components/gantt/GanttPane";
 import { TaskTable } from "./components/TaskTable";
@@ -26,6 +27,8 @@ export default function App() {
   const scrollTrackRef = useRef<HTMLDivElement>(null);
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [selectedParentId, setSelectedParentId] = useState<string>("");
+  const [nonWorkingDays, setNonWorkingDays] = useState<ReadonlySet<number>>(new Set());
+  const [baselines, setBaselines] = useState<BaselineMap>({});
 
   const visibleTasks = useMemo(
     () => getVisibleTasks(tasks, collapsedIds),
@@ -122,7 +125,9 @@ export default function App() {
         setTasks(msg.payload.tasks);
         setDependencies(msg.payload.dependencies);
         setScheduleResults(msg.payload.scheduleResults);
+        setBaselines(msg.payload.baselines);
         setProjectStartDate(msg.payload.projectStartDate);
+        setNonWorkingDays(new Set(msg.payload.nonWorkingDays));
         // Purge selection if the selected entity no longer exists
         setSelection((prev) => {
           if (!prev) return null;
@@ -192,7 +197,7 @@ export default function App() {
     });
   }, []);
 
-  const handleAddDependency = useCallback((predId: string, succId: string) => {
+  const handleAddDependency = useCallback((predId: string, succId: string, depType: DependencyType = "FS", lag = 0) => {
     if (!workerRef.current) return;
 
     workerRef.current.postMessage({
@@ -203,8 +208,31 @@ export default function App() {
         id: makeId(),
         predId,
         succId,
-        type: "FS",
+        type: depType,
+        lag,
       },
+    });
+  }, []);
+
+  const handleUpdateDependencyType = useCallback((depId: string, depType: DependencyType) => {
+    if (!workerRef.current) return;
+    workerRef.current.postMessage({
+      type: "UPDATE_DEPENDENCY",
+      v: 1,
+      reqId: makeId(),
+      dependencyId: depId,
+      updates: { type: depType },
+    });
+  }, []);
+
+  const handleUpdateDependencyLag = useCallback((depId: string, lag: number) => {
+    if (!workerRef.current) return;
+    workerRef.current.postMessage({
+      type: "UPDATE_DEPENDENCY",
+      v: 1,
+      reqId: makeId(),
+      dependencyId: depId,
+      updates: { lag },
     });
   }, []);
 
@@ -255,7 +283,8 @@ export default function App() {
       id: makeId(),
       predId: pred.id,
       succId: succ.id,
-      type: "FS"
+      type: "FS",
+      lag: 0,
     };
 
     workerRef.current.postMessage({
@@ -299,6 +328,20 @@ export default function App() {
           <button onClick={handleLinkLastTwo} disabled={tasks.length < 2} style={{ padding: "8px 16px" }}>
             Link Last Two (FS)
           </button>
+          <button
+            onClick={() => workerRef.current?.postMessage({ type: "SNAPSHOT_BASELINE", v: 1, reqId: makeId() })}
+            disabled={!workerReady || Object.keys(scheduleResults).length === 0}
+            style={{ padding: "8px 16px" }}
+          >
+            Set Baseline
+          </button>
+          <button
+            onClick={() => workerRef.current?.postMessage({ type: "CLEAR_BASELINE", v: 1, reqId: makeId() })}
+            disabled={!workerReady || Object.keys(baselines).length === 0}
+            style={{ padding: "8px 16px" }}
+          >
+            Clear Baseline
+          </button>
         </div>
 
         <div style={{ fontSize: "0.9em", color: "#666" }}>
@@ -335,6 +378,8 @@ export default function App() {
           projectStartDate={projectStartDate}
           selection={selection}
           onSelect={handleSelect}
+          nonWorkingDays={nonWorkingDays}
+          baselines={baselines}
         />
 
         {/* Shared vertical scroll track — single owner of vertical scrollTop */}
@@ -357,15 +402,15 @@ export default function App() {
       <div style={{ borderTop: "1px solid #ccc", padding: 16, background: "#fafafa", maxHeight: 200, overflow: "auto" }}>
         <div style={{ display: "flex", gap: 32 }}>
           <div style={{ flex: 1 }}>
-            <h3 style={{ margin: "0 0 8px 0", fontSize: "1em" }}>Dependencies</h3>
-            <ul style={{ margin: 0, paddingLeft: 20, fontSize: "0.9em" }}>
-              {dependencies.length === 0 && <li style={{ color: "#999" }}>None</li>}
-              {dependencies.map((dep) => (
-                <li key={dep.id}>
-                  {getTaskName(dep.predId)} → {getTaskName(dep.succId)} ({dep.type})
-                </li>
-              ))}
-            </ul>
+            <DependencyList
+              dependencies={dependencies}
+              tasks={tasks}
+              getTaskName={getTaskName}
+              onUpdateType={handleUpdateDependencyType}
+              onUpdateLag={handleUpdateDependencyLag}
+              onDelete={handleDeleteDependency}
+              onAdd={handleAddDependency}
+            />
           </div>
 
           <div style={{ flex: 1 }}>

@@ -3,6 +3,8 @@
 import type { Command, WorkerMessage } from "protocol";
 import type { ScheduleError } from "protocol/kernel";
 import { generateNonWorkingDays } from "./calendar.js";
+import type { PersistedState } from "./persistence.js";
+import { loadPersistedState, savePersistedState } from "./persistence.js";
 import { rollupSummarySchedules } from "./rollupSummaries.js";
 import { applyScheduleResult } from "./schedule/applyScheduleResult.js";
 import { buildScheduleRequest } from "./schedule/buildScheduleRequest.js";
@@ -39,7 +41,7 @@ const runSchedulingAndEmitState = (): boolean => {
   // Generate calendar data
   const nonWorkingDays = generateNonWorkingDays(
     State.getProjectStartDate(),
-    true, // excludeWeekends — hardcoded for now
+    State.getExcludeWeekends(),
     CALENDAR_HORIZON,
   );
 
@@ -69,7 +71,9 @@ const runSchedulingAndEmitState = (): boolean => {
       tasks: [...tasks],
       dependencies: [...dependencies],
       scheduleResults: {},
+      baselines: State.getBaselineMap(),
       projectStartDate: State.getProjectStartDate(),
+      nonWorkingDays,
     };
     console.log("[AUDIT Worker Emit] schedule-error path", {
       taskCount: emptyPayload.tasks.length,
@@ -85,6 +89,9 @@ const runSchedulingAndEmitState = (): boolean => {
     // Worker-authoritative summary rollup (overwrites kernel summary results)
     rollupSummarySchedules(tasks, scheduleResults);
 
+    // Store latest schedule results for baseline snapshot
+    State.setLatestScheduleResults(scheduleResults);
+
     console.log("[AUDIT Kernel Math]", Object.entries(scheduleResults).map(([id, s]) => ({
       id,
       ES: s.earlyStart,
@@ -99,7 +106,9 @@ const runSchedulingAndEmitState = (): boolean => {
       tasks: [...tasks],
       dependencies: [...dependencies],
       scheduleResults,
+      baselines: State.getBaselineMap(),
       projectStartDate: State.getProjectStartDate(),
+      nonWorkingDays,
     };
     const critCount = Object.values(scheduleResults).filter(s => s.isCritical).length;
     console.log("[AUDIT Worker Emit] success path", {
@@ -135,6 +144,7 @@ const handleCommand = (cmd: Command): void => {
     
     // Adding isolated task cannot break scheduling - no rollback needed
     runSchedulingAndEmitState();
+    debouncedSave();
   }
 
   if (cmd.type === "UPDATE_TASK") {
@@ -166,6 +176,8 @@ const handleCommand = (cmd: Command): void => {
     if (!success) {
       State.restoreSnapshot(snapshot);
       runSchedulingAndEmitState();
+    } else {
+      debouncedSave();
     }
   }
 
@@ -185,6 +197,8 @@ const handleCommand = (cmd: Command): void => {
     if (!success) {
       State.restoreSnapshot(snapshot);
       runSchedulingAndEmitState();
+    } else {
+      debouncedSave();
     }
   }
 
@@ -197,6 +211,7 @@ const handleCommand = (cmd: Command): void => {
     State.deleteTaskRecursive(cmd.taskId);
     emit({ type: "ACK", v: 1, reqId: cmd.reqId });
     runSchedulingAndEmitState();
+    debouncedSave();
   }
 
   if (cmd.type === "DELETE_DEPENDENCY") {
@@ -208,17 +223,97 @@ const handleCommand = (cmd: Command): void => {
     State.deleteDependency(cmd.dependencyId);
     emit({ type: "ACK", v: 1, reqId: cmd.reqId });
     runSchedulingAndEmitState();
+    debouncedSave();
+  }
+
+  if (cmd.type === "UPDATE_DEPENDENCY") {
+    if (!State.findDependencyById(cmd.dependencyId)) {
+      emit({ type: "NACK", v: 1, reqId: cmd.reqId, error: `Dependency ${cmd.dependencyId} not found` });
+      return;
+    }
+
+    const error = Validation.validateDependencyUpdate(cmd.updates);
+    if (error) {
+      emit({ type: "NACK", v: 1, reqId: cmd.reqId, error });
+      return;
+    }
+
+    const snapshot = State.createSnapshot();
+    State.updateDependency(cmd.dependencyId, cmd.updates);
+    emit({ type: "ACK", v: 1, reqId: cmd.reqId });
+
+    const success = runSchedulingAndEmitState();
+    if (!success) {
+      State.restoreSnapshot(snapshot);
+      runSchedulingAndEmitState();
+    } else {
+      debouncedSave();
+    }
+  }
+
+  if (cmd.type === "SNAPSHOT_BASELINE") {
+    const sr = State.getLatestScheduleResults();
+    const newBaseline: import("protocol").BaselineMap = {};
+    for (const taskId of Object.keys(sr)) {
+      newBaseline[taskId] = { start: sr[taskId].earlyStart, finish: sr[taskId].earlyFinish };
+    }
+    State.setBaselineMap(newBaseline);
+    emit({ type: "ACK", v: 1, reqId: cmd.reqId });
+    runSchedulingAndEmitState();
+    debouncedSave();
+  }
+
+  if (cmd.type === "CLEAR_BASELINE") {
+    State.setBaselineMap({});
+    emit({ type: "ACK", v: 1, reqId: cmd.reqId });
+    runSchedulingAndEmitState();
+    debouncedSave();
   }
 };
 
+// ---- Debounced persistence ----
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+const saveState = (): void => {
+  const persisted: PersistedState = {
+    version: 1,
+    lastModified: Date.now(),
+    state: {
+      projectStartDate: State.getProjectStartDate(),
+      excludeWeekends: State.getExcludeWeekends(),
+      tasks: State.getTasks().map(t => ({ ...t })),
+      dependencies: State.getDependencies().map(d => ({ ...d })),
+      baselines: { ...State.getBaselineMap() },
+    },
+  };
+  savePersistedState(persisted);
+};
+
+const debouncedSave = (): void => {
+  if (saveTimer !== null) clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveState, 2000);
+};
+
 /**
- * Initialize worker: load WASM and emit WORKER_READY.
+ * Initialize worker: load WASM, hydrate persisted state, and emit WORKER_READY.
  */
 const initializeWorker = async (): Promise<void> => {
   try {
     await loadCpmWasm();
+
+    // Attempt hydration from IndexedDB
+    const persisted = await loadPersistedState();
+    if (persisted?.state) {
+      State.hydrateState(persisted.state);
+      console.log("[Persistence] Hydrated", persisted.state.tasks.length, "tasks",
+        persisted.state.dependencies.length, "deps");
+    }
+
     isReady = true;
     emit({ type: "WORKER_READY", v: 1 });
+
+    // Recompute schedule from hydrated state and emit initial DIFF_STATE
+    runSchedulingAndEmitState();
   } catch (error) {
     console.error("Failed to initialize worker:", error);
     // Worker remains not ready

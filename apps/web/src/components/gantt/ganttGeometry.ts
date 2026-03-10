@@ -36,7 +36,7 @@ export function computeTaskGeometry(
 
     const x = schedule.earlyStart * DAY_WIDTH;
     const y = index * ROW_HEIGHT + BAR_VERTICAL_PADDING;
-    const width = task.duration * DAY_WIDTH;
+    const width = (schedule.earlyFinish - schedule.earlyStart) * DAY_WIDTH;
     const height = BAR_HEIGHT;
     const centerY = y + height / 2;
 

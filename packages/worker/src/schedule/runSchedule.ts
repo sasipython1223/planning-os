@@ -12,6 +12,13 @@ export const runSchedule = (
 ): ScheduleResponse | ScheduleError => {
   const wasm = getCpmWasm();
 
+  if (typeof wasm.calculate_schedule !== "function") {
+    return {
+      type: "CycleDetected",
+      message: "WASM module loaded but calculate_schedule is not available. Was init() called?",
+    };
+  }
+
   try {
     // Call WASM calculate_schedule
     const result = wasm.calculate_schedule(request);

@@ -5,6 +5,7 @@
 
 import type { Dependency, ScheduleResultMap, Task } from "protocol";
 import type { ScheduleError, ScheduleResponse } from "protocol/kernel";
+import { isScheduleError } from "protocol/kernel";
 import { beforeEach, describe, expect, it } from "vitest";
 import { rollupSummarySchedules } from "../src/rollupSummaries.js";
 import { applyScheduleResult } from "../src/schedule/applyScheduleResult.js";
@@ -37,7 +38,7 @@ describe("Worker State", () => {
   });
 
   it("should add and retrieve dependencies", () => {
-    const dep: Dependency = { id: "dep1", predId: "A", succId: "B", type: "FS" };
+    const dep: Dependency = { id: "dep1", predId: "A", succId: "B", type: "FS", lag: 0 };
     State.addDependency(dep);
 
     expect(State.getDependencies()).toHaveLength(1);
@@ -47,7 +48,7 @@ describe("Worker State", () => {
   it("should create snapshot with deep copies", () => {
     const taskA: Task = { id: "A", name: "Task A", duration: 5, depth: 0, isSummary: false };
     const taskB: Task = { id: "B", name: "Task B", duration: 3, depth: 0, isSummary: false };
-    const dep: Dependency = { id: "dep1", predId: "A", succId: "B", type: "FS" };
+    const dep: Dependency = { id: "dep1", predId: "A", succId: "B", type: "FS", lag: 0 };
 
     State.addTask(taskA);
     State.addTask(taskB);
@@ -105,7 +106,7 @@ describe("Validation", () => {
 
   it("should reject self-dependencies", () => {
     State.addTask({ id: "A", name: "Task A", duration: 5, depth: 0, isSummary: false });
-    const dep: Dependency = { id: "dep1", predId: "A", succId: "A", type: "FS" };
+    const dep: Dependency = { id: "dep1", predId: "A", succId: "A", type: "FS", lag: 0 };
     const error = validateDependency(dep);
 
     expect(error).toBe("Dependency cannot point to itself");
@@ -113,7 +114,7 @@ describe("Validation", () => {
 
   it("should reject dependencies with missing tasks", () => {
     State.addTask({ id: "A", name: "Task A", duration: 5, depth: 0, isSummary: false });
-    const dep: Dependency = { id: "dep1", predId: "A", succId: "B", type: "FS" };
+    const dep: Dependency = { id: "dep1", predId: "A", succId: "B", type: "FS", lag: 0 };
     const error = validateDependency(dep);
 
     expect(error).toContain("Successor task B does not exist");
@@ -138,30 +139,31 @@ describe("Schedule Request Builder", () => {
       { id: "B", name: "Task B", duration: 5, depth: 0, isSummary: false },
     ];
     const dependencies: Dependency[] = [
-      { id: "dep1", predId: "A", succId: "B", type: "FS" },
+      { id: "dep1", predId: "A", succId: "B", type: "FS", lag: 0 },
     ];
 
     const request = buildScheduleRequest(tasks, dependencies, []);
 
     expect(request.tasks).toHaveLength(2);
     expect(request.dependencies).toHaveLength(1);
-    expect(request.dependencies[0]).toEqual({ predId: "A", succId: "B" });
+    expect(request.dependencies[0]).toEqual({ predId: "A", succId: "B", depType: "FS", lag: 0 });
   });
 
-  it("should filter non-FS dependencies", () => {
+  it("should pass all dependency types through", () => {
     const tasks: Task[] = [
       { id: "A", name: "Task A", duration: 3, depth: 0, isSummary: false },
       { id: "B", name: "Task B", duration: 5, depth: 0, isSummary: false },
     ];
     const dependencies: Dependency[] = [
-      { id: "dep1", predId: "A", succId: "B", type: "FS" },
-      { id: "dep2", predId: "A", succId: "B", type: "SS" },
+      { id: "dep1", predId: "A", succId: "B", type: "FS", lag: 0 },
+      { id: "dep2", predId: "A", succId: "B", type: "SS", lag: 2 },
     ];
 
     const request = buildScheduleRequest(tasks, dependencies, []);
 
-    expect(request.dependencies).toHaveLength(1);
-    expect(request.dependencies[0].predId).toBe("A");
+    expect(request.dependencies).toHaveLength(2);
+    expect(request.dependencies[0]).toEqual({ predId: "A", succId: "B", depType: "FS", lag: 0 });
+    expect(request.dependencies[1]).toEqual({ predId: "A", succId: "B", depType: "SS", lag: 2 });
   });
 });
 
@@ -225,13 +227,13 @@ describe("Atomic Mutation and Rollback", () => {
     // Setup: valid chain A → B
     State.addTask({ id: "A", name: "Task A", duration: 5, depth: 0, isSummary: false });
     State.addTask({ id: "B", name: "Task B", duration: 3, depth: 0, isSummary: false });
-    State.addDependency({ id: "dep1", predId: "A", succId: "B", type: "FS" });
+    State.addDependency({ id: "dep1", predId: "A", succId: "B", type: "FS", lag: 0 });
 
     const validSnapshot = State.createSnapshot();
 
     // Simulate attempted mutation that would create cycle: B → A
     const cycleSnapshot = State.createSnapshot();
-    State.addDependency({ id: "dep2", predId: "B", succId: "A", type: "FS" });
+    State.addDependency({ id: "dep2", predId: "B", succId: "A", type: "FS", lag: 0 });
 
     // Build request and run scheduling
     const request = buildScheduleRequest(State.getTasks(), State.getDependencies(), []);
@@ -264,12 +266,12 @@ describe("Atomic Mutation and Rollback", () => {
     State.addTask({ id: "C", name: "Task C", duration: 2, depth: 0, isSummary: false });
 
     // Add valid chain: A → B
-    State.addDependency({ id: "dep1", predId: "A", succId: "B", type: "FS" });
+    State.addDependency({ id: "dep1", predId: "A", succId: "B", type: "FS", lag: 0 });
 
     const snapshot = State.createSnapshot();
 
     // Add another valid dependency: B → C (extends chain)
-    State.addDependency({ id: "dep2", predId: "B", succId: "C", type: "FS" });
+    State.addDependency({ id: "dep2", predId: "B", succId: "C", type: "FS", lag: 0 });
 
     const request = buildScheduleRequest(State.getTasks(), State.getDependencies(), []);
 
@@ -324,7 +326,7 @@ describe("Atomic Mutation and Rollback", () => {
     const snapshot = State.createSnapshot();
 
     // Malformed state: dependency to non-existent task
-    State.addDependency({ id: "dep1", predId: "A", succId: "NonExistent", type: "FS" });
+    State.addDependency({ id: "dep1", predId: "A", succId: "NonExistent", type: "FS", lag: 0 });
 
     const request = buildScheduleRequest(State.getTasks(), State.getDependencies(), []);
 
@@ -351,7 +353,7 @@ describe("Delete Operations", () => {
   it("should delete a single dependency by id", () => {
     State.addTask({ id: "A", name: "Task A", duration: 5, depth: 0, isSummary: false });
     State.addTask({ id: "B", name: "Task B", duration: 3, depth: 0, isSummary: false });
-    State.addDependency({ id: "dep1", predId: "A", succId: "B", type: "FS" });
+    State.addDependency({ id: "dep1", predId: "A", succId: "B", type: "FS", lag: 0 });
 
     expect(State.getDependencies()).toHaveLength(1);
 
@@ -369,9 +371,9 @@ describe("Delete Operations", () => {
     State.addTask({ id: "A", name: "Task A", duration: 5, depth: 0, isSummary: false });
     State.addTask({ id: "B", name: "Task B", duration: 3, depth: 0, isSummary: false });
     State.addTask({ id: "C", name: "Task C", duration: 2, depth: 0, isSummary: false });
-    State.addDependency({ id: "dep1", predId: "A", succId: "B", type: "FS" });
-    State.addDependency({ id: "dep2", predId: "B", succId: "C", type: "FS" });
-    State.addDependency({ id: "dep3", predId: "A", succId: "C", type: "FS" });
+    State.addDependency({ id: "dep1", predId: "A", succId: "B", type: "FS", lag: 0 });
+    State.addDependency({ id: "dep2", predId: "B", succId: "C", type: "FS", lag: 0 });
+    State.addDependency({ id: "dep3", predId: "A", succId: "C", type: "FS", lag: 0 });
 
     // Delete B — should cascade dep1 (A→B) and dep2 (B→C), keep dep3 (A→C)
     const result = State.deleteTask("B");
@@ -390,8 +392,8 @@ describe("Delete Operations", () => {
     State.addTask({ id: "A", name: "Task A", duration: 5, depth: 0, isSummary: false });
     State.addTask({ id: "B", name: "Task B", duration: 3, depth: 0, isSummary: false });
     State.addTask({ id: "C", name: "Task C", duration: 2, depth: 0, isSummary: false });
-    State.addDependency({ id: "dep1", predId: "A", succId: "B", type: "FS" });
-    State.addDependency({ id: "dep2", predId: "B", succId: "C", type: "FS" });
+    State.addDependency({ id: "dep1", predId: "A", succId: "B", type: "FS", lag: 0 });
+    State.addDependency({ id: "dep2", predId: "B", succId: "C", type: "FS", lag: 0 });
 
     State.deleteTask("B");
 
@@ -404,7 +406,7 @@ describe("Delete Operations", () => {
   });
 
   it("should find dependency by id", () => {
-    State.addDependency({ id: "dep1", predId: "A", succId: "B", type: "FS" });
+    State.addDependency({ id: "dep1", predId: "A", succId: "B", type: "FS", lag: 0 });
     expect(State.findDependencyById("dep1")).toBeDefined();
     expect(State.findDependencyById("dep1")?.predId).toBe("A");
     expect(State.findDependencyById("nope")).toBeUndefined();
@@ -552,7 +554,7 @@ describe("Hierarchy", () => {
     State.addTask({ id: "S", name: "Summary", duration: 0, depth: 0, isSummary: false });
     State.addTask({ id: "A", name: "Child", duration: 5, parentId: "S", depth: 0, isSummary: false });
     State.addTask({ id: "X", name: "Standalone", duration: 3, depth: 0, isSummary: false });
-    State.addDependency({ id: "d1", predId: "A", succId: "X", type: "FS" });
+    State.addDependency({ id: "d1", predId: "A", succId: "X", type: "FS", lag: 0 });
     State.deleteTaskRecursive("S");
     expect(State.getTasks()).toHaveLength(1);
     expect(State.findTask("X")).toBeDefined();
@@ -929,5 +931,167 @@ describe("Subtree-Contiguous Insertion", () => {
   it("findInsertionIndexForParent returns end for unknown parent", () => {
     State.addTask({ id: "A", name: "A", duration: 1, depth: 0, isSummary: false });
     expect(State.findInsertionIndexForParent("nonexistent")).toBe(1);
+  });
+});
+
+// ─── Phase P: Advanced Dependencies & Lag tests ──────────────────
+
+import { validateDependencyUpdate } from "../src/validation.js";
+
+describe("Dependency Type & Lag Validation", () => {
+  beforeEach(() => {
+    State.clearState();
+  });
+
+  it("should accept SS dependency with positive lag", () => {
+    State.addTask({ id: "A", name: "A", duration: 5, depth: 0, isSummary: false });
+    State.addTask({ id: "B", name: "B", duration: 3, depth: 0, isSummary: false });
+    const dep: Dependency = { id: "dep1", predId: "A", succId: "B", type: "SS", lag: 2 };
+    const error = validateDependency(dep);
+    expect(error).toBeNull();
+  });
+
+  it("should accept FF dependency with negative lag", () => {
+    State.addTask({ id: "A", name: "A", duration: 5, depth: 0, isSummary: false });
+    State.addTask({ id: "B", name: "B", duration: 3, depth: 0, isSummary: false });
+    const dep: Dependency = { id: "dep1", predId: "A", succId: "B", type: "FF", lag: -1 };
+    const error = validateDependency(dep);
+    expect(error).toBeNull();
+  });
+
+  it("should accept SF dependency with zero lag", () => {
+    State.addTask({ id: "A", name: "A", duration: 5, depth: 0, isSummary: false });
+    State.addTask({ id: "B", name: "B", duration: 3, depth: 0, isSummary: false });
+    const dep: Dependency = { id: "dep1", predId: "A", succId: "B", type: "SF", lag: 0 };
+    const error = validateDependency(dep);
+    expect(error).toBeNull();
+  });
+
+  it("should reject invalid dependency type", () => {
+    State.addTask({ id: "A", name: "A", duration: 5, depth: 0, isSummary: false });
+    State.addTask({ id: "B", name: "B", duration: 3, depth: 0, isSummary: false });
+    const dep: Dependency = { id: "dep1", predId: "A", succId: "B", type: "XX" as any, lag: 0 };
+    const error = validateDependency(dep);
+    expect(error).toBe("Invalid dependency type: XX");
+  });
+
+  it("should reject non-integer lag", () => {
+    State.addTask({ id: "A", name: "A", duration: 5, depth: 0, isSummary: false });
+    State.addTask({ id: "B", name: "B", duration: 3, depth: 0, isSummary: false });
+    const dep: Dependency = { id: "dep1", predId: "A", succId: "B", type: "FS", lag: 1.5 };
+    const error = validateDependency(dep);
+    expect(error).toBe("Lag must be an integer");
+  });
+});
+
+describe("Dependency Update Validation", () => {
+  it("should accept valid type update", () => {
+    expect(validateDependencyUpdate({ type: "SS" })).toBeNull();
+  });
+
+  it("should accept valid lag update", () => {
+    expect(validateDependencyUpdate({ lag: -3 })).toBeNull();
+  });
+
+  it("should reject invalid type in update", () => {
+    expect(validateDependencyUpdate({ type: "ZZ" as any })).toBe("Invalid dependency type: ZZ");
+  });
+
+  it("should reject non-integer lag in update", () => {
+    expect(validateDependencyUpdate({ lag: 2.7 })).toBe("Lag must be an integer");
+  });
+});
+
+describe("Update Dependency State", () => {
+  beforeEach(() => {
+    State.clearState();
+  });
+
+  it("should update dependency type", () => {
+    State.addTask({ id: "A", name: "A", duration: 5, depth: 0, isSummary: false });
+    State.addTask({ id: "B", name: "B", duration: 3, depth: 0, isSummary: false });
+    State.addDependency({ id: "dep1", predId: "A", succId: "B", type: "FS", lag: 0 });
+
+    const result = State.updateDependency("dep1", { type: "SS" });
+    expect(result).toBe(true);
+    expect(State.findDependencyById("dep1")?.type).toBe("SS");
+  });
+
+  it("should update dependency lag", () => {
+    State.addTask({ id: "A", name: "A", duration: 5, depth: 0, isSummary: false });
+    State.addTask({ id: "B", name: "B", duration: 3, depth: 0, isSummary: false });
+    State.addDependency({ id: "dep1", predId: "A", succId: "B", type: "FS", lag: 0 });
+
+    const result = State.updateDependency("dep1", { lag: 3 });
+    expect(result).toBe(true);
+    expect(State.findDependencyById("dep1")?.lag).toBe(3);
+  });
+
+  it("should update both type and lag", () => {
+    State.addTask({ id: "A", name: "A", duration: 5, depth: 0, isSummary: false });
+    State.addTask({ id: "B", name: "B", duration: 3, depth: 0, isSummary: false });
+    State.addDependency({ id: "dep1", predId: "A", succId: "B", type: "FS", lag: 0 });
+
+    State.updateDependency("dep1", { type: "FF", lag: -2 });
+    const dep = State.findDependencyById("dep1");
+    expect(dep?.type).toBe("FF");
+    expect(dep?.lag).toBe(-2);
+  });
+
+  it("should return false for non-existent dependency", () => {
+    expect(State.updateDependency("nope", { lag: 1 })).toBe(false);
+  });
+
+  it("should preserve other fields when updating type only", () => {
+    State.addTask({ id: "A", name: "A", duration: 5, depth: 0, isSummary: false });
+    State.addTask({ id: "B", name: "B", duration: 3, depth: 0, isSummary: false });
+    State.addDependency({ id: "dep1", predId: "A", succId: "B", type: "FS", lag: 5 });
+
+    State.updateDependency("dep1", { type: "SS" });
+    const dep = State.findDependencyById("dep1");
+    expect(dep?.type).toBe("SS");
+    expect(dep?.lag).toBe(5); // lag preserved
+    expect(dep?.predId).toBe("A"); // other fields preserved
+  });
+});
+
+describe("BuildScheduleRequest with all dep types", () => {
+  it("should map all four dependency types with lag", () => {
+    const tasks: Task[] = [
+      { id: "A", name: "A", duration: 3, depth: 0, isSummary: false },
+      { id: "B", name: "B", duration: 5, depth: 0, isSummary: false },
+    ];
+    const deps: Dependency[] = [
+      { id: "d1", predId: "A", succId: "B", type: "FS", lag: 0 },
+      { id: "d2", predId: "A", succId: "B", type: "SS", lag: 2 },
+      { id: "d3", predId: "A", succId: "B", type: "FF", lag: -1 },
+      { id: "d4", predId: "A", succId: "B", type: "SF", lag: 3 },
+    ];
+    const req = buildScheduleRequest(tasks, deps, []);
+    expect(req.dependencies).toHaveLength(4);
+    expect(req.dependencies[0].depType).toBe("FS");
+    expect(req.dependencies[1].depType).toBe("SS");
+    expect(req.dependencies[1].lag).toBe(2);
+    expect(req.dependencies[2].depType).toBe("FF");
+    expect(req.dependencies[2].lag).toBe(-1);
+    expect(req.dependencies[3].depType).toBe("SF");
+    expect(req.dependencies[3].lag).toBe(3);
+  });
+});
+
+describe("isScheduleError type guard", () => {
+  it("should identify CycleDetected as error", () => {
+    const err: ScheduleError = { type: "CycleDetected", message: "cycle" };
+    expect(isScheduleError(err)).toBe(true);
+  });
+
+  it("should identify DuplicateTaskId as error", () => {
+    const err: ScheduleError = { type: "DuplicateTaskId", taskId: "A", message: "dup" };
+    expect(isScheduleError(err)).toBe(true);
+  });
+
+  it("should identify ScheduleResponse as non-error", () => {
+    const res: ScheduleResponse = { scheduleVersion: 1, results: [] };
+    expect(isScheduleError(res)).toBe(false);
   });
 });

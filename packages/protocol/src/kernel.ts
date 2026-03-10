@@ -1,12 +1,14 @@
 /**
- * CPM Kernel Scheduling Contract
+ * CPM Kernel Scheduling Contract (Phase P)
  *
  * Type-only definitions for the Worker ↔ CPM Kernel interface.
  * No runtime code, no WASM integration, no UI logic.
  *
  * Design:
  * - Input uses string task IDs (matches runtime Task.id)
- * - Output returns early start/finish times
+ * - Output returns early/late start/finish, total float, criticality
+ * - Supports all four PDM dependency types (FS, SS, FF, SF) with lag
+ * - Calendar-aware: nonWorkingDays skip list
  * - Readonly arrays for immutability
  * - Discriminated union for errors
  * - scheduleVersion for future compatibility
@@ -18,14 +20,24 @@
 export type ScheduleTask = {
   readonly id: string;
   readonly duration: number;
+  readonly minEarlyStart: number;
+  readonly parentId?: string;
+  readonly isSummary: boolean;
 };
 
 /**
- * Finish-to-Start dependency between two tasks.
+ * Dependency type for PDM relationships.
+ */
+export type KernelDependencyType = "FS" | "SS" | "FF" | "SF";
+
+/**
+ * Dependency between two tasks with type and lag.
  */
 export type ScheduleDependency = {
   readonly predId: string;
   readonly succId: string;
+  readonly depType: KernelDependencyType;
+  readonly lag: number;
 };
 
 /**
@@ -34,6 +46,8 @@ export type ScheduleDependency = {
 export type ScheduleRequest = {
   readonly tasks: readonly ScheduleTask[];
   readonly dependencies: readonly ScheduleDependency[];
+  /** Integer day-offsets that are non-working (e.g. weekends). Kernel skips these. */
+  readonly nonWorkingDays: readonly number[];
 };
 
 /**
@@ -43,6 +57,10 @@ export type ScheduleTaskResult = {
   readonly taskId: string;
   readonly earlyStart: number;
   readonly earlyFinish: number;
+  readonly lateStart: number;
+  readonly lateFinish: number;
+  readonly totalFloat: number;
+  readonly isCritical: boolean;
 };
 
 /**
@@ -96,3 +114,15 @@ export type ScheduleError =
   | SelfDependencyError
   | TaskNotFoundError
   | CycleDetectedError;
+
+/**
+ * Union of successful response or error.
+ */
+export type ScheduleResult = ScheduleResponse | ScheduleError;
+
+/**
+ * Type guard to check if a schedule result is an error.
+ */
+export function isScheduleError(result: ScheduleResult): result is ScheduleError {
+  return "type" in result && typeof result.type === "string";
+}

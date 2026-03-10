@@ -1,12 +1,21 @@
-use crate::models::{CpmError, RawDependency, RawTask};
+use crate::models::{CpmError, DepType, RawDependency, RawTask};
 use std::collections::HashMap;
+
+/// Stored per-edge metadata needed by the engine.
+#[derive(Debug, Clone)]
+pub struct EdgeInfo {
+    pub dep_type: DepType,
+    pub lag: i32,
+}
 
 pub struct CpmGraph {
     pub node_to_id: Vec<String>,
     pub durations: Vec<u32>,
     pub min_early_start: Vec<u32>,
-    pub successors: Vec<Vec<usize>>,
-    pub predecessors: Vec<Vec<usize>>,
+    /// Successors of each node, with per-edge info.
+    pub successors: Vec<Vec<(usize, EdgeInfo)>>,
+    /// Predecessors of each node, with per-edge info.
+    pub predecessors: Vec<Vec<(usize, EdgeInfo)>>,
     pub in_degree: Vec<usize>,
     pub parent: Vec<Option<usize>>,
     pub children: Vec<Vec<usize>>,
@@ -51,8 +60,8 @@ impl CpmGraph {
         let n = node_to_id.len();
 
         // Initialize adjacency structures
-        let mut successors: Vec<Vec<usize>> = vec![Vec::new(); n];
-        let mut predecessors: Vec<Vec<usize>> = vec![Vec::new(); n];
+        let mut successors: Vec<Vec<(usize, EdgeInfo)>> = vec![Vec::new(); n];
+        let mut predecessors: Vec<Vec<(usize, EdgeInfo)>> = vec![Vec::new(); n];
         let mut in_degree: Vec<usize> = vec![0; n];
 
         // Validate and add each dependency
@@ -72,9 +81,14 @@ impl CpmGraph {
                 .get(&dep.succ_id)
                 .ok_or_else(|| CpmError::TaskNotFound(dep.succ_id.clone()))?;
 
-            // Build graph edges
-            successors[*pred_idx].push(*succ_idx);
-            predecessors[*succ_idx].push(*pred_idx);
+            let edge = EdgeInfo {
+                dep_type: dep.dep_type,
+                lag: dep.lag,
+            };
+
+            // Build graph edges — topological direction is always pred → succ
+            successors[*pred_idx].push((*succ_idx, edge.clone()));
+            predecessors[*succ_idx].push((*pred_idx, edge));
             in_degree[*succ_idx] += 1;
         }
 
@@ -138,7 +152,7 @@ impl CpmGraph {
             queue_idx += 1;
             sorted.push(node);
 
-            for &succ in &self.successors[node] {
+            for &(succ, _) in &self.successors[node] {
                 in_degree[succ] -= 1;
                 if in_degree[succ] == 0 {
                     queue.push(succ);

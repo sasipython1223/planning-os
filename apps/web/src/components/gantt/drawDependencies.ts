@@ -1,4 +1,4 @@
-import type { Dependency, ScheduleResultMap } from "protocol";
+import type { Dependency, DependencyType, ScheduleResultMap } from "protocol";
 import { COLORS } from "./ganttConstants";
 import type { TaskGeometry } from "./ganttGeometry";
 
@@ -24,8 +24,34 @@ function drawArrowhead(
 }
 
 /**
+ * Returns [sourceX, targetX, arrowDirection] based on dependency type.
+ * Anchor rules:
+ *   FS: right → left
+ *   SS: left  → left
+ *   FF: right → right
+ *   SF: left  → right
+ */
+function getAnchors(
+  depType: DependencyType,
+  predGeom: TaskGeometry,
+  succGeom: TaskGeometry,
+): { x1: number; x2: number; arrowDir: "left" | "right" } {
+  switch (depType) {
+    case "SS":
+      return { x1: predGeom.leftEdge, x2: succGeom.leftEdge, arrowDir: "right" };
+    case "FF":
+      return { x1: predGeom.rightEdge, x2: succGeom.rightEdge, arrowDir: "left" };
+    case "SF":
+      return { x1: predGeom.leftEdge, x2: succGeom.rightEdge, arrowDir: "left" };
+    case "FS":
+    default:
+      return { x1: predGeom.rightEdge, x2: succGeom.leftEdge, arrowDir: "right" };
+  }
+}
+
+/**
  * Draws dependency lines on the canvas.
- * Uses simple 3-segment orthogonal routing for FS dependencies.
+ * Uses simple 3-segment orthogonal routing.
  * Skips lines whose entire vertical span is outside [visibleTop, visibleBottom].
  * Pure function - takes data in, renders to canvas.
  */
@@ -40,32 +66,19 @@ export function drawDependencies(
   ctx.lineWidth = 2;
 
   dependencies.forEach((dep) => {
-    // Only render FS dependencies (finish-to-start)
-    if (dep.type !== "FS") return;
-
     const predGeom = geometryMap.get(dep.predId);
     const succGeom = geometryMap.get(dep.succId);
 
-    // Skip if either task is not scheduled/rendered
     if (!predGeom || !succGeom) return;
 
-    // Vertical intersection clip — skip only if the line is fully outside
     const minY = Math.min(predGeom.centerY, succGeom.centerY);
     const maxY = Math.max(predGeom.centerY, succGeom.centerY);
     if (maxY < visibleTop || minY > visibleBottom) return;
 
-    // Start point: right edge of predecessor, vertically centered
-    const x1 = predGeom.rightEdge;
+    const { x1, x2, arrowDir } = getAnchors(dep.type, predGeom, succGeom);
     const y1 = predGeom.centerY;
-
-    // End point: left edge of successor, vertically centered
-    const x2 = succGeom.leftEdge;
     const y2 = succGeom.centerY;
 
-    // Horizontal offset for the middle segment
-    const midX = (x1 + x2) / 2;
-
-    // Color critical dependency lines (both endpoints critical) in critical color
     const isCritLine = scheduleResults
       ? scheduleResults[dep.predId]?.isCritical && scheduleResults[dep.succId]?.isCritical
       : false;
@@ -73,15 +86,27 @@ export function drawDependencies(
     ctx.strokeStyle = lineColor;
     ctx.fillStyle = lineColor;
 
-    // Draw 3-segment orthogonal line: horizontal → vertical → horizontal
+    const OUTWARD_PAD = 12;
     ctx.beginPath();
     ctx.moveTo(x1, y1);
-    ctx.lineTo(midX, y1); // Horizontal from predecessor
-    ctx.lineTo(midX, y2); // Vertical connector
-    ctx.lineTo(x2, y2);   // Horizontal to successor
+    if (dep.type === "SS") {
+      const outX = Math.min(x1, x2) - OUTWARD_PAD;
+      ctx.lineTo(outX, y1);
+      ctx.lineTo(outX, y2);
+      ctx.lineTo(x2, y2);
+    } else if (dep.type === "FF") {
+      const outX = Math.max(x1, x2) + OUTWARD_PAD;
+      ctx.lineTo(outX, y1);
+      ctx.lineTo(outX, y2);
+      ctx.lineTo(x2, y2);
+    } else {
+      const midX = (x1 + x2) / 2;
+      ctx.lineTo(midX, y1);
+      ctx.lineTo(midX, y2);
+      ctx.lineTo(x2, y2);
+    }
     ctx.stroke();
 
-    // Draw arrowhead at successor
-    drawArrowhead(ctx, x2, y2, "left");
+    drawArrowhead(ctx, x2, y2, arrowDir === "right" ? "right" : "left");
   });
 }

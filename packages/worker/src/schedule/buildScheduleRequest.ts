@@ -9,7 +9,8 @@ import type { ScheduleDependency, ScheduleRequest, ScheduleTask } from "protocol
 
 export const buildScheduleRequest = (
   tasks: readonly Task[],
-  dependencies: readonly Dependency[]
+  dependencies: readonly Dependency[],
+  nonWorkingDays: readonly number[],
 ): ScheduleRequest => {
   const scheduleTasks: ScheduleTask[] = tasks.map(task => ({
     id: task.id,
@@ -19,16 +20,17 @@ export const buildScheduleRequest = (
     isSummary: task.isSummary,
   }));
 
-  // Map dependencies to kernel format (only FS dependencies for now)
-  const scheduleDependencies: ScheduleDependency[] = dependencies
-    .filter(dep => dep.type === "FS")
-    .map(dep => ({
-      predId: dep.predId,
-      succId: dep.succId,
-    }));
+  // Map all dependencies to kernel format with type and lag
+  const scheduleDependencies: ScheduleDependency[] = dependencies.map(dep => ({
+    predId: dep.predId,
+    succId: dep.succId,
+    depType: dep.type,
+    lag: dep.lag,
+  }));
 
   return {
     tasks: scheduleTasks,
     dependencies: scheduleDependencies,
+    nonWorkingDays,
   };
 };

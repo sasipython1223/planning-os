@@ -3,9 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "main": "./pkg/cpm_wasm.js",
+  "types": "./pkg/cpm_wasm.d.ts",
+  "exports": {
+    ".": {
+      "types": "./pkg/cpm_wasm.d.ts",
+      "import": "./pkg/cpm_wasm.js"
+    }
+  },
   "scripts": {
-    "build": "wasm-pack build --target web --out-dir pkg",
-    "build:dev": "wasm-pack build --dev --target web --out-dir pkg",
+    "build": "wasm-pack build --target bundler --out-dir pkg",
+    "build:dev": "wasm-pack build --dev --target bundler --out-dir pkg",
     "test": "wasm-pack test --node"
   },
   "files": [

@@ -1,19 +1,18 @@
-import type { Dependency, ScheduleResultMap, Task } from "protocol";
+import type { BaselineMap, Dependency, ScheduleResultMap, Task } from "protocol";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef } from "react";
-import type { DurationOverrides } from "./drawGantt";
-import type { PositionOverrides } from "./drawGantt";
-import { drawGantt } from "./drawGantt";
-import { emptyDrag, previewDuration, previewEarlyStart } from "./dragPreview";
+import type { Selection } from "../../App";
 import type { DragState } from "./dragPreview";
-import { cursorForZone, hitTestBar, hitTestDependency } from "./hitTest";
+import { emptyDrag, previewDuration, previewEarlyStart } from "./dragPreview";
+import type { DurationOverrides, PositionOverrides } from "./drawGantt";
+import { drawGantt } from "./drawGantt";
 import { BAR_HEIGHT, BAR_VERTICAL_PADDING, DAY_WIDTH, ROW_HEIGHT } from "./ganttConstants";
 import { computeTaskGeometry } from "./ganttGeometry";
-import { emptyLinkDrag } from "./linkDrag";
+import { cursorForZone, hitTestBar, hitTestDependency } from "./hitTest";
 import type { LinkDragState } from "./linkDrag";
+import { emptyLinkDrag } from "./linkDrag";
 import { emptyPan } from "./panDrag";
 import type { Viewport } from "./viewportTypes";
-import type { Selection } from "../../App";
 
 interface GanttCanvasProps {
   tasks: Task[];
@@ -28,6 +27,8 @@ interface GanttCanvasProps {
   projectStartDate: string;
   selection: Selection;
   onSelect: (sel: Selection) => void;
+  nonWorkingDays: ReadonlySet<number>;
+  baselines: BaselineMap;
 }
 
 /**
@@ -48,6 +49,8 @@ export function GanttCanvas({
   projectStartDate,
   selection,
   onSelect,
+  nonWorkingDays,
+  baselines,
 }: GanttCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number>(0);
@@ -75,9 +78,9 @@ export function GanttCanvas({
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
       const activeLinkDrag = linkDragRef.current.active ? linkDragRef.current : undefined;
-      drawGantt(ctx, tasks, scheduleResults, dependencies, viewport, overrides, posOverrides, activeLinkDrag, projectStartDate, selection);
+      drawGantt(ctx, tasks, scheduleResults, dependencies, viewport, overrides, posOverrides, activeLinkDrag, projectStartDate, selection, nonWorkingDays, baselines);
     },
-    [tasks, scheduleResults, dependencies, viewport, projectStartDate],
+    [tasks, scheduleResults, dependencies, viewport, projectStartDate, nonWorkingDays, baselines],
   );
 
   // Normal data-driven redraw
@@ -125,7 +128,7 @@ export function GanttCanvas({
         const task = tasks[hit.rowIndex];
         const schedule = scheduleResults[task.id];
         if (!schedule) return;
-        const barRight = schedule.earlyStart * DAY_WIDTH + task.duration * DAY_WIDTH;
+        const barRight = schedule.earlyStart * DAY_WIDTH + (schedule.earlyFinish - schedule.earlyStart) * DAY_WIDTH;
         const barCenterY = hit.rowIndex * ROW_HEIGHT + BAR_VERTICAL_PADDING + BAR_HEIGHT / 2;
         linkDragRef.current = {
           active: true,

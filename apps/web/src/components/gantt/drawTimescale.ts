@@ -1,5 +1,5 @@
+import { formatDateShort, projectDate } from "../../utils/dateProjection";
 import { COLORS, DAY_WIDTH, TIMESCALE_HEIGHT } from "./ganttConstants";
-import { projectDate, formatDateShort } from "../../utils/dateProjection";
 
 /**
  * Draws the timescale (date ruler) on a viewport-sized canvas.
@@ -12,6 +12,7 @@ export function drawTimescale(
   maxDay: number,
   scrollLeft: number,
   projectStartDate: string,
+  nonWorkingDays: ReadonlySet<number>,
 ): void {
   const height = TIMESCALE_HEIGHT;
 
@@ -26,6 +27,14 @@ export function drawTimescale(
   // Compute visible day range for efficient rendering
   const firstVisibleDay = Math.max(0, Math.floor(scrollLeft / DAY_WIDTH) - 1);
   const lastVisibleDay = Math.min(maxDay, Math.ceil((scrollLeft + viewportWidth) / DAY_WIDTH) + 1);
+
+  // Shade non-working day columns
+  ctx.fillStyle = "rgba(0, 0, 0, 0.06)";
+  for (let day = firstVisibleDay; day <= lastVisibleDay; day++) {
+    if (nonWorkingDays.has(day)) {
+      ctx.fillRect(day * DAY_WIDTH, 0, DAY_WIDTH, height);
+    }
+  }
 
   // Draw ticks and labels
   ctx.fillStyle = COLORS.text;

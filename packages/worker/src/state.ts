@@ -1,4 +1,4 @@
-import type { Dependency, Task } from "protocol";
+import type { BaselineMap, Dependency, DependencyType, ScheduleResultMap, Task } from "protocol";
 
 /**
  * State module - owns canonical in-memory tasks and dependencies.
@@ -8,6 +8,9 @@ import type { Dependency, Task } from "protocol";
 let tasks: Task[] = [];
 let dependencies: Dependency[] = [];
 let projectStartDate: string = new Date().toISOString().slice(0, 10);
+let excludeWeekends = true;
+let baselineMap: BaselineMap = {};
+let latestScheduleResults: ScheduleResultMap = {};
 
 /**
  * Snapshot of state for atomic rollback.
@@ -20,6 +23,11 @@ export type StateSnapshot = {
 export const getTasks = (): Task[] => tasks;
 export const getDependencies = (): Dependency[] => dependencies;
 export const getProjectStartDate = (): string => projectStartDate;
+export const getExcludeWeekends = (): boolean => excludeWeekends;
+export const getBaselineMap = (): BaselineMap => baselineMap;
+export const setBaselineMap = (map: BaselineMap): void => { baselineMap = map; };
+export const getLatestScheduleResults = (): ScheduleResultMap => latestScheduleResults;
+export const setLatestScheduleResults = (results: ScheduleResultMap): void => { latestScheduleResults = results; };
 
 export const findTask = (id: string): Task | undefined => {
   return tasks.find(t => t.id === id);
@@ -85,12 +93,22 @@ export const addDependency = (dependency: Dependency): void => {
   dependencies.push(dependency);
 };
 
-/** Delete a task and cascade-remove all incident dependencies. */
+/** Update type/lag on an existing dependency. */
+export const updateDependency = (id: string, updates: { type?: DependencyType; lag?: number }): boolean => {
+  const dep = dependencies.find(d => d.id === id);
+  if (!dep) return false;
+  if (updates.type !== undefined) dep.type = updates.type;
+  if (updates.lag !== undefined) dep.lag = updates.lag;
+  return true;
+};
+
+/** Delete a task and cascade-remove all incident dependencies + baseline. */
 export const deleteTask = (id: string): boolean => {
   const index = tasks.findIndex(t => t.id === id);
   if (index < 0) return false;
   tasks.splice(index, 1);
   dependencies = dependencies.filter(d => d.predId !== id && d.succId !== id);
+  delete baselineMap[id];
   return true;
 };
 
@@ -118,13 +136,14 @@ export const getDescendantIds = (parentId: string): string[] => {
   return result;
 };
 
-/** Delete a task and its entire subtree, plus all incident dependencies. */
+/** Delete a task and its entire subtree, plus all incident dependencies + baselines. */
 export const deleteTaskRecursive = (id: string): boolean => {
   const index = tasks.findIndex(t => t.id === id);
   if (index < 0) return false;
   const idsToRemove = new Set([id, ...getDescendantIds(id)]);
   tasks = tasks.filter(t => !idsToRemove.has(t.id));
   dependencies = dependencies.filter(d => !idsToRemove.has(d.predId) && !idsToRemove.has(d.succId));
+  for (const rid of idsToRemove) delete baselineMap[rid];
   return true;
 };
 
@@ -176,5 +195,23 @@ export const restoreSnapshot = (snapshot: StateSnapshot): void => {
 export const clearState = (): void => {
   tasks = [];
   dependencies = [];
+  baselineMap = {};
+  latestScheduleResults = {};
+};
+
+/** Bulk-load persisted canonical state into memory. */
+export const hydrateState = (persisted: {
+  projectStartDate: string;
+  excludeWeekends: boolean;
+  tasks: Task[];
+  dependencies: Dependency[];
+  baselines: BaselineMap;
+}): void => {
+  projectStartDate = persisted.projectStartDate;
+  excludeWeekends = persisted.excludeWeekends;
+  tasks = persisted.tasks.map(t => ({ ...t }));
+  dependencies = persisted.dependencies.map(d => ({ ...d }));
+  baselineMap = { ...persisted.baselines };
+  latestScheduleResults = {};
 };
 

@@ -8,6 +8,12 @@ use wasm_bindgen::prelude::*;
 struct ScheduleTask {
     id: String,
     duration: u32,
+    #[serde(default)]
+    min_early_start: u32,
+    #[serde(default)]
+    parent_id: Option<String>,
+    #[serde(default)]
+    is_summary: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -15,12 +21,22 @@ struct ScheduleTask {
 struct ScheduleDependency {
     pred_id: String,
     succ_id: String,
+    #[serde(default = "default_dep_type")]
+    dep_type: String,
+    #[serde(default)]
+    lag: i32,
+}
+
+fn default_dep_type() -> String {
+    "FS".to_string()
 }
 
 #[derive(Debug, Deserialize)]
 struct ScheduleRequest {
     tasks: Vec<ScheduleTask>,
     dependencies: Vec<ScheduleDependency>,
+    #[serde(default, rename = "nonWorkingDays")]
+    non_working_days: Vec<u32>,
 }
 
 #[derive(Debug, Serialize)]
@@ -29,6 +45,10 @@ struct ScheduleTaskResult {
     task_id: String,
     early_start: u32,
     early_finish: u32,
+    late_start: u32,
+    late_finish: u32,
+    total_float: i32,
+    is_critical: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -53,6 +73,19 @@ fn to_raw_task(task: &ScheduleTask) -> cpm_kernel::RawTask {
     cpm_kernel::RawTask {
         id: task.id.clone(),
         duration: task.duration,
+        min_early_start: task.min_early_start,
+        parent_id: task.parent_id.clone(),
+        is_summary: task.is_summary,
+    }
+}
+
+/// Parse dependency type string to kernel DepType
+fn parse_dep_type(s: &str) -> cpm_kernel::DepType {
+    match s {
+        "SS" => cpm_kernel::DepType::SS,
+        "FF" => cpm_kernel::DepType::FF,
+        "SF" => cpm_kernel::DepType::SF,
+        _ => cpm_kernel::DepType::FS,
     }
 }
 
@@ -61,6 +94,8 @@ fn to_raw_dependency(dep: &ScheduleDependency) -> cpm_kernel::RawDependency {
     cpm_kernel::RawDependency {
         pred_id: dep.pred_id.clone(),
         succ_id: dep.succ_id.clone(),
+        dep_type: parse_dep_type(&dep.dep_type),
+        lag: dep.lag,
     }
 }
 
@@ -70,6 +105,10 @@ fn from_kernel_result(result: &cpm_kernel::ScheduleResult) -> ScheduleTaskResult
         task_id: result.task_id.clone(),
         early_start: result.early_start,
         early_finish: result.early_finish,
+        late_start: result.late_start,
+        late_finish: result.late_finish,
+        total_float: result.total_float,
+        is_critical: result.is_critical,
     }
 }
 
@@ -95,24 +134,17 @@ fn from_kernel_error(err: cpm_kernel::CpmError) -> ScheduleError {
 }
 
 /// WASM entry point for schedule calculation
-///
-/// Accepts a JS ScheduleRequest object, calls the CPM kernel,
-/// and returns either a ScheduleResponse or ScheduleError.
 #[wasm_bindgen]
 pub fn calculate_schedule(request: JsValue) -> Result<JsValue, JsValue> {
-    // Deserialize request from JS
     let request: ScheduleRequest = serde_wasm_bindgen::from_value(request)
         .map_err(|e| JsValue::from_str(&format!("Failed to deserialize request: {}", e)))?;
 
-    // Convert boundary types to kernel types
     let tasks: Vec<cpm_kernel::RawTask> = request.tasks.iter().map(to_raw_task).collect();
     let deps: Vec<cpm_kernel::RawDependency> =
         request.dependencies.iter().map(to_raw_dependency).collect();
 
-    // Call kernel
-    match cpm_kernel::calculate_schedule(&tasks, &deps) {
+    match cpm_kernel::calculate_schedule(&tasks, &deps, &request.non_working_days) {
         Ok(results) => {
-            // Success: convert kernel results to boundary response
             let response = ScheduleResponse {
                 schedule_version: 1,
                 results: results.iter().map(from_kernel_result).collect(),
@@ -121,7 +153,6 @@ pub fn calculate_schedule(request: JsValue) -> Result<JsValue, JsValue> {
                 .map_err(|e| JsValue::from_str(&format!("Failed to serialize response: {}", e)))
         }
         Err(err) => {
-            // Error: convert kernel error to boundary error
             let error = from_kernel_error(err);
             serde_wasm_bindgen::to_value(&error)
                 .map_err(|e| JsValue::from_str(&format!("Failed to serialize error: {}", e)))

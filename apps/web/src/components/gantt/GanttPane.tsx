@@ -1,4 +1,4 @@
-import type { Dependency, ScheduleResultMap, Task } from "protocol";
+import type { BaselineMap, Dependency, ScheduleResultMap, Task } from "protocol";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Selection } from "../../App";
@@ -20,6 +20,8 @@ interface GanttPaneProps {
   projectStartDate: string;
   selection: Selection;
   onSelect: (sel: Selection) => void;
+  nonWorkingDays: ReadonlySet<number>;
+  baselines: BaselineMap;
 }
 
 /**
@@ -40,6 +42,8 @@ export function GanttPane({
   projectStartDate,
   selection,
   onSelect,
+  nonWorkingDays,
+  baselines,
 }: GanttPaneProps) {
   const hScrollRef = useRef<HTMLDivElement>(null);
   const [scrollLeft, setScrollLeft] = useState(0);
@@ -96,6 +100,7 @@ export function GanttPane({
           scrollLeft={scrollLeft}
           maxDay={maxDay}
           projectStartDate={projectStartDate}
+          nonWorkingDays={nonWorkingDays}
         />
       </div>
 
@@ -147,6 +152,8 @@ export function GanttPane({
             projectStartDate={projectStartDate}
             selection={selection}
             onSelect={onSelect}
+            nonWorkingDays={nonWorkingDays}
+            baselines={baselines}
           />
         </div>
       </div>

@@ -1,5 +1,7 @@
-import type { Dependency, Task } from "protocol";
+import type { Dependency, DependencyType, Task } from "protocol";
 import { findDependency, findTask } from "./state.js";
+
+const VALID_DEP_TYPES: ReadonlySet<DependencyType> = new Set(["FS", "SS", "FF", "SF"]);
 
 /**
  * Validation logic for tasks and dependencies.
@@ -59,6 +61,22 @@ export const validateDependency = (dep: Dependency): string | null => {
   }
   if (findDependency(dep.predId, dep.succId)) {
     return "Duplicate dependency";
+  }
+  if (!VALID_DEP_TYPES.has(dep.type)) {
+    return `Invalid dependency type: ${dep.type}`;
+  }
+  if (!Number.isInteger(dep.lag)) {
+    return "Lag must be an integer";
+  }
+  return null;
+};
+
+export const validateDependencyUpdate = (updates: { type?: DependencyType; lag?: number }): string | null => {
+  if (updates.type !== undefined && !VALID_DEP_TYPES.has(updates.type)) {
+    return `Invalid dependency type: ${updates.type}`;
+  }
+  if (updates.lag !== undefined && !Number.isInteger(updates.lag)) {
+    return "Lag must be an integer";
   }
   return null;
 };

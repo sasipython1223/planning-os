@@ -14,7 +14,7 @@ test("Worker DIFF_STATE payload must be a structural object, NOT a JSON string",
       emittedMessages.push({
         type: "DIFF_STATE",
         v: 1,
-        payload: { tasks: [...internalTasks], dependencies: [...internalDeps], scheduleResults: {}, projectStartDate: "2026-01-01" }
+        payload: { tasks: [...internalTasks], dependencies: [...internalDeps], scheduleResults: {}, projectStartDate: "2026-01-01", nonWorkingDays: [] }
       });
     }
   };

@@ -6,12 +6,12 @@
 
 // Worker protocol types
 export type {
-    AckMessage, AddDependencyCommand, AddTaskCommand, Command, Dependency, DependencyType, DiffStateMessage, NackMessage, Task, UpdateTaskCommand, WorkerMessage
+    AckMessage, AddDependencyCommand, AddTaskCommand, BaselineMap, Command, Dependency, DependencyType, DiffStateMessage, NackMessage, ScheduleErrorMessage, ScheduleResultMap, Task, UpdateDependencyCommand, UpdateTaskCommand, WorkerMessage, WorkerReadyMessage
 } from "./types.js";
 
 // CPM Kernel scheduling contract
 export type {
-    CycleDetectedError, DuplicateTaskIdError, ScheduleDependency, ScheduleError, ScheduleRequest, ScheduleResponse, ScheduleTask, ScheduleTaskResult, SelfDependencyError,
+    CycleDetectedError, DuplicateTaskIdError, KernelDependencyType, ScheduleDependency, ScheduleError, ScheduleRequest, ScheduleResponse, ScheduleTask, ScheduleTaskResult, SelfDependencyError,
     TaskNotFoundError
 } from "./kernel.js";
 

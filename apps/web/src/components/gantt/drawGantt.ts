@@ -1,14 +1,14 @@
-import type { Dependency, ScheduleResultMap, Task } from "protocol";
+import type { BaselineMap, Dependency, ScheduleResultMap, Task } from "protocol";
 import type { Selection } from "../../App";
 import { computeVirtualWindow } from "../../hooks/useVirtualWindow";
 import { projectDateShort } from "../../utils/dateProjection";
 import { drawDependencies } from "./drawDependencies";
 import {
-    BAR_HEIGHT,
-    BAR_VERTICAL_PADDING,
-    COLORS,
-    DAY_WIDTH,
-    ROW_HEIGHT,
+  BAR_HEIGHT,
+  BAR_VERTICAL_PADDING,
+  COLORS,
+  DAY_WIDTH,
+  ROW_HEIGHT,
 } from "./ganttConstants";
 import { computeTaskGeometry } from "./ganttGeometry";
 import { LINK_NODE_RADIUS } from "./hitTest";
@@ -50,6 +50,8 @@ export function drawGantt(
   linkDrag?: LinkDragState,
   projectStartDate?: string,
   selection?: Selection,
+  nonWorkingDays?: ReadonlySet<number>,
+  baselines?: BaselineMap,
 ): void {
   const { scrollLeft, scrollTop, viewportWidth, viewportHeight } = viewport;
 
@@ -78,6 +80,18 @@ export function drawGantt(
   ctx.save();
   ctx.translate(-scrollLeft, -scrollTop);
 
+  // Shade non-working day columns (behind grid and bars)
+  if (nonWorkingDays && nonWorkingDays.size > 0) {
+    const firstDay = Math.max(0, Math.floor(scrollLeft / DAY_WIDTH) - 1);
+    const lastDay = Math.ceil((scrollLeft + viewportWidth) / DAY_WIDTH) + 1;
+    ctx.fillStyle = "rgba(0, 0, 0, 0.06)";
+    for (let day = firstDay; day <= lastDay; day++) {
+      if (nonWorkingDays.has(day)) {
+        ctx.fillRect(day * DAY_WIDTH, scrollTop, DAY_WIDTH, viewportHeight);
+      }
+    }
+  }
+
   // Draw grid lines — only for visible rows
   ctx.strokeStyle = COLORS.grid;
   ctx.lineWidth = 1;
@@ -95,22 +109,37 @@ export function drawGantt(
   // Highlight selected dependency line
   if (selection?.type === "dependency") {
     const selDep = dependencies.find(d => d.id === selection.id);
-    if (selDep && selDep.type === "FS") {
+    if (selDep) {
       const predGeom = geometryMap.get(selDep.predId);
       const succGeom = geometryMap.get(selDep.succId);
       if (predGeom && succGeom) {
-        const x1 = predGeom.rightEdge;
+        const isSS = selDep.type === "SS";
+        const isFS = selDep.type === "FS" || !selDep.type;
+        const x1 = (isSS || selDep.type === "SF") ? predGeom.leftEdge : predGeom.rightEdge;
+        const x2 = (isFS || isSS) ? succGeom.leftEdge : succGeom.rightEdge;
         const y1 = predGeom.centerY;
-        const x2 = succGeom.leftEdge;
         const y2 = succGeom.centerY;
-        const midX = (x1 + x2) / 2;
         ctx.strokeStyle = "#1565c0";
         ctx.lineWidth = 3;
+        const OUTWARD_PAD = 12;
         ctx.beginPath();
         ctx.moveTo(x1, y1);
-        ctx.lineTo(midX, y1);
-        ctx.lineTo(midX, y2);
-        ctx.lineTo(x2, y2);
+        if (selDep.type === "SS") {
+          const outX = Math.min(x1, x2) - OUTWARD_PAD;
+          ctx.lineTo(outX, y1);
+          ctx.lineTo(outX, y2);
+          ctx.lineTo(x2, y2);
+        } else if (selDep.type === "FF") {
+          const outX = Math.max(x1, x2) + OUTWARD_PAD;
+          ctx.lineTo(outX, y1);
+          ctx.lineTo(outX, y2);
+          ctx.lineTo(x2, y2);
+        } else {
+          const midX = (x1 + x2) / 2;
+          ctx.lineTo(midX, y1);
+          ctx.lineTo(midX, y2);
+          ctx.lineTo(x2, y2);
+        }
         ctx.stroke();
       }
     }
@@ -121,6 +150,16 @@ export function drawGantt(
     const task = tasks[i];
     const schedule = scheduleResults[task.id];
     if (!schedule) continue;
+
+    // Draw baseline bar (behind live bar)
+    const baseline = baselines?.[task.id];
+    if (baseline) {
+      const baselineX = baseline.start * DAY_WIDTH;
+      const baselineWidth = (baseline.finish - baseline.start) * DAY_WIDTH;
+      const baselineY = i * ROW_HEIGHT + 26;
+      ctx.fillStyle = "#9ca3af";
+      ctx.fillRect(baselineX, baselineY, baselineWidth, 6);
+    }
 
     if (task.isSummary) {
       // Summary bracket: thin bar with downward ticks at edges

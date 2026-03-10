@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 use crate::graph::CpmGraph;
-use crate::models::{CpmError, RawDependency, RawTask, ScheduleResult};
+use crate::models::{CpmError, DepType, RawDependency, RawTask, ScheduleResult};
+
+// ── Calendar-aware helpers ───────────────────────────────────────
 
 /// Snap a day forward to the next working day.
 fn snap_forward(day: u32, blocked: &HashSet<u32>) -> u32 {
@@ -23,7 +25,7 @@ fn advance_working(start: u32, duration: u32, blocked: &HashSet<u32>) -> u32 {
         if !blocked.contains(&d) {
             remaining -= 1;
             if remaining == 0 {
-                return d + 1; // finish = day after last working day
+                return d + 1;
             }
         }
         d += 1;
@@ -31,27 +33,12 @@ fn advance_working(start: u32, duration: u32, blocked: &HashSet<u32>) -> u32 {
 }
 
 /// Snap a day backward to the previous working day.
-#[allow(dead_code)]
 fn snap_backward(day: u32, blocked: &HashSet<u32>) -> u32 {
     let mut d = day;
     while d > 0 && blocked.contains(&d) {
         d -= 1;
     }
     d
-}
-
-/// Count working days in the half-open interval [from, to).
-fn count_working_days(from: u32, to: u32, blocked: &HashSet<u32>) -> u32 {
-    if to <= from {
-        return 0;
-    }
-    let mut count = 0;
-    for d in from..to {
-        if !blocked.contains(&d) {
-            count += 1;
-        }
-    }
-    count
 }
 
 /// Retreat by `duration` working days ending at `finish` (exclusive upper bound).
@@ -62,7 +49,6 @@ fn retreat_working(finish: u32, duration: u32, blocked: &HashSet<u32>) -> u32 {
     }
     let mut remaining = duration;
     let mut d = if finish > 0 { finish - 1 } else { 0 };
-    // snap to a working day first
     while blocked.contains(&d) && d > 0 {
         d -= 1;
     }
@@ -81,52 +67,190 @@ fn retreat_working(finish: u32, duration: u32, blocked: &HashSet<u32>) -> u32 {
     d
 }
 
+/// Step forward by `lag` working days from `anchor`.
+/// Positive lag: advance. Zero: identity. Negative: retreat (clamped to 0).
+fn step_forward_lag(anchor: u32, lag: i32, blocked: &HashSet<u32>) -> u32 {
+    if lag == 0 {
+        return anchor;
+    }
+    if lag > 0 {
+        let mut remaining = lag as u32;
+        let mut d = anchor;
+        while remaining > 0 {
+            if !blocked.contains(&d) {
+                remaining -= 1;
+                if remaining == 0 {
+                    return d + 1;
+                }
+            }
+            d += 1;
+        }
+        d
+    } else {
+        let abs_lag = (-lag) as u32;
+        let mut remaining = abs_lag;
+        if anchor == 0 {
+            return 0;
+        }
+        let mut d = anchor - 1;
+        loop {
+            if !blocked.contains(&d) {
+                remaining -= 1;
+                if remaining == 0 {
+                    return d;
+                }
+            }
+            if d == 0 {
+                return 0;
+            }
+            d -= 1;
+        }
+    }
+}
+
+/// Step backward by `lag` working days from `anchor`.
+/// Positive lag: retreat. Zero: identity. Negative: advance.
+fn step_backward_lag(anchor: u32, lag: i32, blocked: &HashSet<u32>) -> u32 {
+    if lag == 0 {
+        return anchor;
+    }
+    if lag > 0 {
+        let abs_lag = lag as u32;
+        let mut remaining = abs_lag;
+        if anchor == 0 {
+            return 0;
+        }
+        let mut d = anchor - 1;
+        loop {
+            if !blocked.contains(&d) {
+                remaining -= 1;
+                if remaining == 0 {
+                    return d;
+                }
+            }
+            if d == 0 {
+                return 0;
+            }
+            d -= 1;
+        }
+    } else {
+        let abs_lag = (-lag) as u32;
+        let mut remaining = abs_lag;
+        let mut d = anchor;
+        while remaining > 0 {
+            if !blocked.contains(&d) {
+                remaining -= 1;
+                if remaining == 0 {
+                    return d + 1;
+                }
+            }
+            d += 1;
+        }
+        d
+    }
+}
+
+// ── Normalized constraint helpers ────────────────────────────────
+
+/// Predecessor anchor for a dependency in the forward pass.
+fn pred_anchor_forward(dep_type: DepType, pred_es: u32, pred_ef: u32) -> u32 {
+    match dep_type {
+        DepType::FS | DepType::FF => pred_ef,
+        DepType::SS | DepType::SF => pred_es,
+    }
+}
+
+/// Does this dependency type constrain the successor's start (true) or finish (false)?
+fn constrains_succ_start(dep_type: DepType) -> bool {
+    match dep_type {
+        DepType::FS | DepType::SS => true,
+        DepType::FF | DepType::SF => false,
+    }
+}
+
+/// Working-day float: signed count of working days from `from` to `to`.
+fn count_working_days_signed(from: u32, to: u32, blocked: &HashSet<u32>) -> i32 {
+    if to >= from {
+        let mut count: i32 = 0;
+        for d in from..to {
+            if !blocked.contains(&d) {
+                count += 1;
+            }
+        }
+        count
+    } else {
+        let mut count: i32 = 0;
+        for d in to..from {
+            if !blocked.contains(&d) {
+                count += 1;
+            }
+        }
+        -count
+    }
+}
+
+// ── Main scheduling function ─────────────────────────────────────
+
 pub fn calculate_schedule(
     tasks: &[RawTask],
     deps: &[RawDependency],
     non_working_days: &[u32],
 ) -> Result<Vec<ScheduleResult>, CpmError> {
-    // Build graph
     let graph = CpmGraph::build(tasks, deps)?;
-
-    // Build blocked-day set
     let blocked: HashSet<u32> = non_working_days.iter().copied().collect();
 
     if tasks.is_empty() {
         return Ok(Vec::new());
     }
 
-    // Topological sort
     let topo_order = graph.topological_sort()?;
-
     let n = graph.node_to_id.len();
 
-    // Forward pass: compute early start and early finish
+    // ── Forward pass ─────────────────────────────────────────────
     let mut early_start: Vec<u32> = vec![0; n];
     let mut early_finish: Vec<u32> = vec![0; n];
 
     for &node in &topo_order {
-        // Skip summary tasks in normal forward pass — they get dates from children
         if graph.is_summary[node] {
             continue;
         }
-        // ES = max(EF of all predecessors)
-        let mut max_pred_ef = 0;
-        for &pred in &graph.predecessors[node] {
-            if early_finish[pred] > max_pred_ef {
-                max_pred_ef = early_finish[pred];
+
+        let mut max_constrained_es: u32 = 0;
+        let mut max_constrained_ef: u32 = 0;
+        let mut has_ef_constraint = false;
+
+        for &(pred, ref edge) in &graph.predecessors[node] {
+            let anchor = pred_anchor_forward(edge.dep_type, early_start[pred], early_finish[pred]);
+            let constrained = step_forward_lag(anchor, edge.lag, &blocked);
+
+            if constrains_succ_start(edge.dep_type) {
+                if constrained > max_constrained_es {
+                    max_constrained_es = constrained;
+                }
+            } else {
+                has_ef_constraint = true;
+                if constrained > max_constrained_ef {
+                    max_constrained_ef = constrained;
+                }
             }
         }
 
-        let raw_es = std::cmp::max(max_pred_ef, graph.min_early_start[node]);
-        // Snap to next working day if raw ES lands on a blocked day
-        early_start[node] = snap_forward(raw_es, &blocked);
-        // Advance by duration working days
-        early_finish[node] = advance_working(early_start[node], graph.durations[node], &blocked);
+        let raw_es = std::cmp::max(max_constrained_es, graph.min_early_start[node]);
+
+        if has_ef_constraint {
+            // Derive ES from the EF constraint
+            let ef_derived_es = retreat_working(max_constrained_ef, graph.durations[node], &blocked);
+            let es = snap_forward(std::cmp::max(raw_es, ef_derived_es), &blocked);
+            early_start[node] = es;
+            let ef = advance_working(es, graph.durations[node], &blocked);
+            early_finish[node] = std::cmp::max(ef, max_constrained_ef);
+        } else {
+            early_start[node] = snap_forward(raw_es, &blocked);
+            early_finish[node] = advance_working(early_start[node], graph.durations[node], &blocked);
+        }
     }
 
-    // Bottom-up summary rollup: summary ES = min(child ES), summary EF = max(child EF)
-    // Process in reverse topo order so nested summaries roll up correctly
+    // ── Bottom-up summary rollup ─────────────────────────────────
     for &node in topo_order.iter().rev() {
         if !graph.is_summary[node] || graph.children[node].is_empty() {
             continue;
@@ -145,38 +269,92 @@ pub fn calculate_schedule(
         early_finish[node] = max_ef;
     }
 
-    // Compute project duration (max early finish)
+    // ── Compute project duration ─────────────────────────────────
     let project_duration = early_finish.iter().copied().max().unwrap_or(0);
 
-    // Backward pass: compute late start and late finish
+    // ── Backward pass ────────────────────────────────────────────
     let mut late_start: Vec<u32> = vec![0; n];
     let mut late_finish: Vec<u32> = vec![project_duration; n];
 
-    // Traverse in reverse topological order
     for &node in topo_order.iter().rev() {
-        // For nodes with successors, LF = min(LS of all successors)
-        // For leaf nodes (no successors), LF is already initialized to project_duration
-        if !graph.successors[node].is_empty() {
-            let mut min_succ_ls = u32::MAX;
+        if graph.is_summary[node] {
+            // Summary backward dates are set by Worker rollup
+            late_start[node] = early_start[node];
+            late_finish[node] = early_finish[node];
+            continue;
+        }
 
-            for &succ in &graph.successors[node] {
-                if late_start[succ] < min_succ_ls {
-                    min_succ_ls = late_start[succ];
+        if !graph.successors[node].is_empty() {
+            let mut min_constrained_lf = u32::MAX;
+            let mut min_constrained_ls = u32::MAX;
+            let mut has_ls_constraint = false;
+
+            for &(succ, ref edge) in &graph.successors[node] {
+                if constrains_succ_start(edge.dep_type) {
+                    // FS or SS: constrains successor start → backward from succ late_start
+                    let succ_late_boundary = late_start[succ];
+                    let anchor = step_backward_lag(succ_late_boundary, edge.lag, &blocked);
+
+                    match edge.dep_type {
+                        DepType::FS => {
+                            if anchor < min_constrained_lf {
+                                min_constrained_lf = anchor;
+                            }
+                        }
+                        DepType::SS => {
+                            has_ls_constraint = true;
+                            if anchor < min_constrained_ls {
+                                min_constrained_ls = anchor;
+                            }
+                        }
+                        _ => {}
+                    }
+                } else {
+                    // FF or SF: constrains successor finish → backward from succ late_finish
+                    let succ_late_boundary = late_finish[succ];
+                    let anchor = step_backward_lag(succ_late_boundary, edge.lag, &blocked);
+
+                    match edge.dep_type {
+                        DepType::FF => {
+                            if anchor < min_constrained_lf {
+                                min_constrained_lf = anchor;
+                            }
+                        }
+                        DepType::SF => {
+                            has_ls_constraint = true;
+                            if anchor < min_constrained_ls {
+                                min_constrained_ls = anchor;
+                            }
+                        }
+                        _ => {}
+                    }
                 }
             }
 
-            late_finish[node] = min_succ_ls;
-        }
+            // Apply LF constraint from FS/FF edges
+            if min_constrained_lf < u32::MAX {
+                late_finish[node] = min_constrained_lf;
+            }
 
-        // Calendar-aware backward: retreat by working-day duration
-        late_start[node] = retreat_working(late_finish[node], graph.durations[node], &blocked);
+            // Derive LS from LF
+            late_start[node] = retreat_working(late_finish[node], graph.durations[node], &blocked);
+
+            // If there's also an LS constraint from SS/SF edges, apply minimum
+            if has_ls_constraint && min_constrained_ls < late_start[node] {
+                late_start[node] = snap_backward(min_constrained_ls, &blocked);
+                // Recompute LF to preserve task duration (avoid elastic late dates)
+                late_finish[node] = advance_working(late_start[node], graph.durations[node], &blocked);
+            }
+        } else {
+            late_start[node] = retreat_working(late_finish[node], graph.durations[node], &blocked);
+        }
     }
 
-    // Calculate total float and determine critical path
+    // ── Calculate total float and critical path ──────────────────
     let mut results: Vec<ScheduleResult> = Vec::with_capacity(n);
     for i in 0..n {
-        let total_float = count_working_days(early_finish[i], late_finish[i], &blocked);
-        let is_critical = total_float == 0;
+        let total_float = count_working_days_signed(early_start[i], late_start[i], &blocked);
+        let is_critical = total_float <= 0;
 
         results.push(ScheduleResult {
             task_id: graph.node_to_id[i].clone(),

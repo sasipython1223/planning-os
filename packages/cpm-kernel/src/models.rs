@@ -1,5 +1,13 @@
 use std::fmt;
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DepType {
+    FS,
+    SS,
+    FF,
+    SF,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct RawTask {
     pub id: String,
@@ -13,6 +21,8 @@ pub struct RawTask {
 pub struct RawDependency {
     pub pred_id: String,
     pub succ_id: String,
+    pub dep_type: DepType,
+    pub lag: i32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -22,7 +32,7 @@ pub struct ScheduleResult {
     pub early_finish: u32,
     pub late_start: u32,
     pub late_finish: u32,
-    pub total_float: u32,
+    pub total_float: i32,
     pub is_critical: bool,
 }
 

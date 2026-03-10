@@ -1,5 +1,9 @@
 # Planning OS Development Rules
 
+## Current Milestone Rule
+We are currently implementing Graph Foundation with full-state sync.
+Do NOT implement delta sync, reducer patch merging, database, Rust, WASM, Gantt, or cloud features in this milestone.
+
 ## Core Architecture
 1. React UI is a dumb renderer.
 2. Web Worker owns client-side application state.

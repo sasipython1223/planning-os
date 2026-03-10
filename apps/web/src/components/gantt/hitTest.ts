@@ -51,7 +51,7 @@ export function hitTestBar(
 
   // Horizontal bar range check
   const barLeft = schedule.earlyStart * DAY_WIDTH;
-  const barRight = barLeft + task.duration * DAY_WIDTH;
+  const barRight = barLeft + (schedule.earlyFinish - schedule.earlyStart) * DAY_WIDTH;
   if (worldX < barLeft || worldX > barRight) {
     return { zone: "background", taskId: null, rowIndex };
   }
@@ -122,18 +122,17 @@ export function hitTestDependency(
   geometryMap: Map<string, TaskGeometry>,
 ): string | null {
   for (const dep of dependencies) {
-    if (dep.type !== "FS") continue;
     const predGeom = geometryMap.get(dep.predId);
     const succGeom = geometryMap.get(dep.succId);
     if (!predGeom || !succGeom) continue;
 
-    const x1 = predGeom.rightEdge;
+    // Anchor selection by type
+    const x1 = (dep.type === "SS" || dep.type === "SF") ? predGeom.leftEdge : predGeom.rightEdge;
+    const x2 = (dep.type === "FS" || dep.type === "SS") ? succGeom.leftEdge : succGeom.rightEdge;
     const y1 = predGeom.centerY;
-    const x2 = succGeom.leftEdge;
     const y2 = succGeom.centerY;
     const midX = (x1 + x2) / 2;
 
-    // 3 segments: (x1,y1)→(midX,y1), (midX,y1)→(midX,y2), (midX,y2)→(x2,y2)
     if (
       distToSegment(worldX, worldY, x1, y1, midX, y1) <= DEP_HIT_TOLERANCE ||
       distToSegment(worldX, worldY, midX, y1, midX, y2) <= DEP_HIT_TOLERANCE ||
