@@ -4,11 +4,11 @@ import { computeVirtualWindow } from "../../hooks/useVirtualWindow";
 import { projectDateShort } from "../../utils/dateProjection";
 import { drawDependencies } from "./drawDependencies";
 import {
-  BAR_HEIGHT,
-  BAR_VERTICAL_PADDING,
-  COLORS,
-  DAY_WIDTH,
-  ROW_HEIGHT,
+    BAR_HEIGHT,
+    BAR_VERTICAL_PADDING,
+    COLORS,
+    DAY_WIDTH,
+    ROW_HEIGHT,
 } from "./ganttConstants";
 import { computeTaskGeometry } from "./ganttGeometry";
 import { LINK_NODE_RADIUS } from "./hitTest";
@@ -76,9 +76,9 @@ export function drawGantt(
   const visibleTop = scrollTop;
   const visibleBottom = scrollTop + viewportHeight;
 
-  // Translate to world coordinates
+  // Translate to world coordinates (floor to prevent sub-pixel blur)
   ctx.save();
-  ctx.translate(-scrollLeft, -scrollTop);
+  ctx.translate(-scrollLeft, -Math.floor(scrollTop));
 
   // Shade non-working day columns (behind grid and bars)
   if (nonWorkingDays && nonWorkingDays.size > 0) {
@@ -156,7 +156,7 @@ export function drawGantt(
     if (baseline) {
       const baselineX = baseline.start * DAY_WIDTH;
       const baselineWidth = (baseline.finish - baseline.start) * DAY_WIDTH;
-      const baselineY = i * ROW_HEIGHT + 26;
+      const baselineY = i * ROW_HEIGHT + BAR_VERTICAL_PADDING + BAR_HEIGHT + 2;
       ctx.fillStyle = "#9ca3af";
       ctx.fillRect(baselineX, baselineY, baselineWidth, 6);
     }

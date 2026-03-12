@@ -1,4 +1,4 @@
-import type { BaselineMap, Dependency, DependencyType, ScheduleResultMap, Task } from "protocol";
+import type { Assignment, BaselineMap, Dependency, DependencyType, Resource, ScheduleResultMap, Task } from "protocol";
 
 /**
  * State module - owns canonical in-memory tasks and dependencies.
@@ -7,6 +7,8 @@ import type { BaselineMap, Dependency, DependencyType, ScheduleResultMap, Task }
 
 let tasks: Task[] = [];
 let dependencies: Dependency[] = [];
+let resources: Resource[] = [];
+let assignments: Assignment[] = [];
 let projectStartDate: string = new Date().toISOString().slice(0, 10);
 let excludeWeekends = true;
 let baselineMap: BaselineMap = {};
@@ -18,6 +20,8 @@ let latestScheduleResults: ScheduleResultMap = {};
 export type StateSnapshot = {
   tasks: Task[];
   dependencies: Dependency[];
+  resources: Resource[];
+  assignments: Assignment[];
 };
 
 export const getTasks = (): Task[] => tasks;
@@ -26,6 +30,8 @@ export const getProjectStartDate = (): string => projectStartDate;
 export const getExcludeWeekends = (): boolean => excludeWeekends;
 export const getBaselineMap = (): BaselineMap => baselineMap;
 export const setBaselineMap = (map: BaselineMap): void => { baselineMap = map; };
+export const getResources = (): Resource[] => resources;
+export const getAssignments = (): Assignment[] => assignments;
 export const getLatestScheduleResults = (): ScheduleResultMap => latestScheduleResults;
 export const setLatestScheduleResults = (results: ScheduleResultMap): void => { latestScheduleResults = results; };
 
@@ -102,12 +108,13 @@ export const updateDependency = (id: string, updates: { type?: DependencyType; l
   return true;
 };
 
-/** Delete a task and cascade-remove all incident dependencies + baseline. */
+/** Delete a task and cascade-remove all incident dependencies + baseline + assignments. */
 export const deleteTask = (id: string): boolean => {
   const index = tasks.findIndex(t => t.id === id);
   if (index < 0) return false;
   tasks.splice(index, 1);
   dependencies = dependencies.filter(d => d.predId !== id && d.succId !== id);
+  assignments = assignments.filter(a => a.taskId !== id);
   delete baselineMap[id];
   return true;
 };
@@ -136,13 +143,14 @@ export const getDescendantIds = (parentId: string): string[] => {
   return result;
 };
 
-/** Delete a task and its entire subtree, plus all incident dependencies + baselines. */
+/** Delete a task and its entire subtree, plus all incident dependencies + baselines + assignments. */
 export const deleteTaskRecursive = (id: string): boolean => {
   const index = tasks.findIndex(t => t.id === id);
   if (index < 0) return false;
   const idsToRemove = new Set([id, ...getDescendantIds(id)]);
   tasks = tasks.filter(t => !idsToRemove.has(t.id));
   dependencies = dependencies.filter(d => !idsToRemove.has(d.predId) && !idsToRemove.has(d.succId));
+  assignments = assignments.filter(a => !idsToRemove.has(a.taskId));
   for (const rid of idsToRemove) delete baselineMap[rid];
   return true;
 };
@@ -180,6 +188,8 @@ export const createSnapshot = (): StateSnapshot => {
   return {
     tasks: tasks.map(t => ({ ...t })),
     dependencies: dependencies.map(d => ({ ...d })),
+    resources: resources.map(r => ({ ...r })),
+    assignments: assignments.map(a => ({ ...a })),
   };
 };
 
@@ -190,11 +200,15 @@ export const createSnapshot = (): StateSnapshot => {
 export const restoreSnapshot = (snapshot: StateSnapshot): void => {
   tasks = snapshot.tasks;
   dependencies = snapshot.dependencies;
+  resources = snapshot.resources;
+  assignments = snapshot.assignments;
 };
 
 export const clearState = (): void => {
   tasks = [];
   dependencies = [];
+  resources = [];
+  assignments = [];
   baselineMap = {};
   latestScheduleResults = {};
 };
@@ -206,12 +220,64 @@ export const hydrateState = (persisted: {
   tasks: Task[];
   dependencies: Dependency[];
   baselines: BaselineMap;
+  resources?: Resource[];
+  assignments?: Assignment[];
 }): void => {
   projectStartDate = persisted.projectStartDate;
   excludeWeekends = persisted.excludeWeekends;
   tasks = persisted.tasks.map(t => ({ ...t }));
   dependencies = persisted.dependencies.map(d => ({ ...d }));
   baselineMap = { ...persisted.baselines };
+  resources = (persisted.resources ?? []).map(r => ({ ...r }));
+  assignments = (persisted.assignments ?? []).map(a => ({ ...a }));
   latestScheduleResults = {};
+};
+
+// ---- Resource CRUD ----
+
+export const findResource = (id: string): Resource | undefined =>
+  resources.find(r => r.id === id);
+
+export const addResource = (resource: Resource): void => {
+  resources.push({ ...resource });
+};
+
+export const updateResource = (id: string, updates: { name?: string; maxUnitsPerDay?: number }): boolean => {
+  const res = findResource(id);
+  if (!res) return false;
+  if (updates.name !== undefined) res.name = updates.name;
+  if (updates.maxUnitsPerDay !== undefined) res.maxUnitsPerDay = updates.maxUnitsPerDay;
+  return true;
+};
+
+export const deleteResource = (id: string): boolean => {
+  const index = resources.findIndex(r => r.id === id);
+  if (index < 0) return false;
+  resources.splice(index, 1);
+  assignments = assignments.filter(a => a.resourceId !== id);
+  return true;
+};
+
+// ---- Assignment CRUD ----
+
+export const findAssignment = (id: string): Assignment | undefined =>
+  assignments.find(a => a.id === id);
+
+export const addAssignment = (assignment: Assignment): void => {
+  assignments.push({ ...assignment });
+};
+
+export const updateAssignment = (id: string, updates: { unitsPerDay?: number }): boolean => {
+  const a = findAssignment(id);
+  if (!a) return false;
+  if (updates.unitsPerDay !== undefined) a.unitsPerDay = updates.unitsPerDay;
+  return true;
+};
+
+export const deleteAssignment = (id: string): boolean => {
+  const index = assignments.findIndex(a => a.id === id);
+  if (index < 0) return false;
+  assignments.splice(index, 1);
+  return true;
 };
 

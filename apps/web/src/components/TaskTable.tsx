@@ -1,13 +1,27 @@
-import type { ScheduleResultMap, Task } from "protocol";
+import type { ScheduleResultMap, Task, VarianceMap } from "protocol";
 import { useLayoutEffect, useRef, type CSSProperties } from "react";
 import { useVirtualWindow } from "../hooks/useVirtualWindow";
 import { projectDateShort } from "../utils/dateProjection";
 import { EditableCell } from "./EditableCell";
 import { ROW_HEIGHT, TIMESCALE_HEIGHT } from "./gantt/ganttConstants";
 
+export const COLUMN_SCHEMA = [
+  { key: "task",     label: "Task",   title: undefined,           width: 220, align: "left" as const },
+  { key: "duration", label: "Dur",    title: "Duration",          width: 70,  align: "center" as const },
+  { key: "start",    label: "Start",  title: undefined,           width: 95,  align: "center" as const },
+  { key: "finish",   label: "Finish", title: undefined,           width: 95,  align: "center" as const },
+  { key: "tf",       label: "TF",     title: "Total Float",       width: 55,  align: "center" as const },
+  { key: "sv",       label: "SV",     title: "Start Variance",    width: 55,  align: "center" as const },
+  { key: "fv",       label: "FV",     title: "Finish Variance",   width: 55,  align: "center" as const },
+  { key: "dv",       label: "DV",     title: "Duration Variance", width: 55,  align: "center" as const },
+] as const;
+
+export const TABLE_WIDTH = COLUMN_SCHEMA.reduce((sum, c) => sum + c.width, 0);
+
 interface TaskTableProps {
   tasks: Task[];
   scheduleResults: ScheduleResultMap;
+  variances: VarianceMap;
   onUpdateTask: (taskId: string, updates: { name?: string; duration?: number }) => void;
   scrollTop: number;
   viewportHeight: number;
@@ -24,9 +38,16 @@ interface TaskTableProps {
  * Vertical scrolling is owned by a shared scroll track in App;
  * this component positions its visible slice via translateY.
  */
+function varianceStyle(value: number): CSSProperties {
+  if (value > 0) return { color: "#d32f2f" };
+  if (value < 0) return { color: "#2e7d32" };
+  return {};
+}
+
 export function TaskTable({
   tasks,
   scheduleResults,
+  variances,
   onUpdateTask,
   scrollTop,
   viewportHeight,
@@ -55,27 +76,37 @@ export function TaskTable({
     ? tasks.slice(startIndex, endIndex + 1)
     : [];
 
+  const colGroup = (
+    <colgroup>
+      {COLUMN_SCHEMA.map((c) => <col key={c.key} style={{ width: c.width, minWidth: c.width }} />)}
+    </colgroup>
+  );
+
+  const thBase: CSSProperties = {
+    height: TIMESCALE_HEIGHT,
+    padding: "0 4px",
+    boxSizing: "border-box",
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    verticalAlign: "middle",
+    lineHeight: `${TIMESCALE_HEIGHT}px`,
+  };
+  const thStyle: CSSProperties = { ...thBase, textAlign: "left" };
+  const thCenterStyle: CSSProperties = { ...thBase, textAlign: "center" };
+
   return (
-    <div style={{ width: 400, borderRight: "1px solid #ccc", display: "flex", flexDirection: "column", minHeight: 0 }}>
+    <div style={{ width: 400, borderRight: "1px solid #ccc", overflowX: "auto", overflowY: "hidden", minHeight: 0, display: "flex", flexDirection: "column" }}>
+      {/* Inner wrapper at TABLE_WIDTH — single horizontal authority for header + body */}
+      <div style={{ width: TABLE_WIDTH, minWidth: TABLE_WIDTH, display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       {/* Fixed header */}
-      <table className="task-table-header" style={{ width: "100%", borderCollapse: "collapse", flexShrink: 0 }}>
+      <table className="task-table-header" style={{ width: TABLE_WIDTH, minWidth: TABLE_WIDTH, borderCollapse: "collapse", tableLayout: "fixed", flexShrink: 0 }}>
+        {colGroup}
         <thead>
           <tr style={{ height: TIMESCALE_HEIGHT, background: "#f5f5f5" }}>
-            <th style={{ padding: 8, textAlign: "left" }}>
-              Task
-            </th>
-            <th style={{ padding: 8, textAlign: "center" }}>
-              Duration
-            </th>
-            <th style={{ padding: 8, textAlign: "center" }}>
-              Start
-            </th>
-            <th style={{ padding: 8, textAlign: "center" }}>
-              Finish
-            </th>
-            <th style={{ padding: 8, textAlign: "center" }}>
-              TF
-            </th>
+            {COLUMN_SCHEMA.map((c, i) => (
+              <th key={i} style={c.align === "left" ? thStyle : thCenterStyle} title={c.title}>{c.label}</th>
+            ))}
           </tr>
         </thead>
       </table>
@@ -96,17 +127,21 @@ export function TaskTable({
           {/* Translated visible-slice wrapper */}
           <table
             style={{
-              width: "100%",
+              width: TABLE_WIDTH,
+              minWidth: TABLE_WIDTH,
               borderCollapse: "collapse",
+              tableLayout: "fixed",
               position: "absolute",
               top: 0,
               left: 0,
               transform: `translateY(${offsetY}px)`,
             }}
           >
+            {colGroup}
             <tbody>
               {visibleTasks.map((task) => {
                 const schedule = scheduleResults[task.id];
+                const variance = variances[task.id];
                 const isSelected = task.id === selectedTaskId;
 
                 const rowBg = isSelected
@@ -210,12 +245,28 @@ export function TaskTable({
                         {schedule?.totalFloat ?? "—"}
                       </div>
                     </td>
+                    <td style={{ ...cellBase, textAlign: "center" }}>
+                      <div style={{ ...cellContentBase, justifyContent: "center", ...( variance ? varianceStyle(variance.startVariance) : {}) }}>
+                        {variance ? variance.startVariance : "—"}
+                      </div>
+                    </td>
+                    <td style={{ ...cellBase, textAlign: "center" }}>
+                      <div style={{ ...cellContentBase, justifyContent: "center", ...(variance ? varianceStyle(variance.finishVariance) : {}) }}>
+                        {variance ? variance.finishVariance : "—"}
+                      </div>
+                    </td>
+                    <td style={{ ...cellBase, textAlign: "center" }}>
+                      <div style={{ ...cellContentBase, justifyContent: "center", ...(variance ? varianceStyle(variance.durationVariance) : {}) }}>
+                        {variance ? variance.durationVariance : "—"}
+                      </div>
+                    </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
         </div>
+      </div>
       </div>
     </div>
   );

@@ -1,11 +1,14 @@
 /**
  * Constants for Gantt chart rendering.
+ * Derived from the single spatial authority: GEOMETRY.
  */
 
-export const ROW_HEIGHT = 40;
-export const DAY_WIDTH = 30;
-export const TIMESCALE_HEIGHT = 40;
-export const BAR_HEIGHT = 24;
+import { GEOMETRY } from "../../constants/geometry";
+
+export const ROW_HEIGHT = GEOMETRY.ROW_HEIGHT;
+export const DAY_WIDTH = GEOMETRY.DAY_WIDTH;
+export const TIMESCALE_HEIGHT = GEOMETRY.HEADER_HEIGHT;
+export const BAR_HEIGHT = GEOMETRY.BAR_HEIGHT;
 export const BAR_VERTICAL_PADDING = (ROW_HEIGHT - BAR_HEIGHT) / 2;
 
 export const COLORS = {

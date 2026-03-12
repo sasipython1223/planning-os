@@ -6,7 +6,7 @@
 
 // Worker protocol types
 export type {
-    AckMessage, AddDependencyCommand, AddTaskCommand, BaselineMap, Command, Dependency, DependencyType, DiffStateMessage, NackMessage, ScheduleErrorMessage, ScheduleResultMap, Task, UpdateDependencyCommand, UpdateTaskCommand, WorkerMessage, WorkerReadyMessage
+    AckMessage, AddAssignmentCommand, AddDependencyCommand, AddResourceCommand, AddTaskCommand, Assignment, BaselineMap, Command, DeleteAssignmentCommand, DeleteResourceCommand, Dependency, DependencyType, DiffStateMessage, NackMessage, RedoCommand, Resource, ResourceHistogram, ScheduleErrorMessage, ScheduleResultMap, Task, TaskVariance, UndoCommand, UpdateAssignmentCommand, UpdateDependencyCommand, UpdateResourceCommand, UpdateTaskCommand, VarianceMap, WorkerMessage, WorkerReadyMessage
 } from "./types.js";
 
 // CPM Kernel scheduling contract

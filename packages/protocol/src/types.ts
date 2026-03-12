@@ -18,6 +18,19 @@ export type Dependency = {
   lag: number;
 };
 
+export type Resource = {
+  id: string;
+  name: string;
+  maxUnitsPerDay: number;
+};
+
+export type Assignment = {
+  id: string;
+  taskId: string;
+  resourceId: string;
+  unitsPerDay: number;
+};
+
 export type AddTaskCommand = {
   type: "ADD_TASK";
   v: 1;
@@ -82,7 +95,68 @@ export type ClearBaselineCommand = {
   reqId: string;
 };
 
-export type Command = AddTaskCommand | UpdateTaskCommand | AddDependencyCommand | DeleteTaskCommand | DeleteDependencyCommand | UpdateDependencyCommand | SnapshotBaselineCommand | ClearBaselineCommand;
+export type AddResourceCommand = {
+  type: "ADD_RESOURCE";
+  v: 1;
+  reqId: string;
+  payload: Resource;
+};
+
+export type UpdateResourceCommand = {
+  type: "UPDATE_RESOURCE";
+  v: 1;
+  reqId: string;
+  resourceId: string;
+  updates: {
+    name?: string;
+    maxUnitsPerDay?: number;
+  };
+};
+
+export type DeleteResourceCommand = {
+  type: "DELETE_RESOURCE";
+  v: 1;
+  reqId: string;
+  resourceId: string;
+};
+
+export type AddAssignmentCommand = {
+  type: "ADD_ASSIGNMENT";
+  v: 1;
+  reqId: string;
+  payload: Assignment;
+};
+
+export type UpdateAssignmentCommand = {
+  type: "UPDATE_ASSIGNMENT";
+  v: 1;
+  reqId: string;
+  assignmentId: string;
+  updates: {
+    unitsPerDay?: number;
+  };
+};
+
+export type DeleteAssignmentCommand = {
+  type: "DELETE_ASSIGNMENT";
+  v: 1;
+  reqId: string;
+  assignmentId: string;
+};
+
+export type UndoCommand = {
+  type: "UNDO";
+  v: 1;
+  reqId: string;
+};
+
+export type RedoCommand = {
+  type: "REDO";
+  v: 1;
+  reqId: string;
+};
+
+export type Command = AddTaskCommand | UpdateTaskCommand | AddDependencyCommand | DeleteTaskCommand | DeleteDependencyCommand | UpdateDependencyCommand | SnapshotBaselineCommand | ClearBaselineCommand | AddResourceCommand | UpdateResourceCommand | DeleteResourceCommand | AddAssignmentCommand | UpdateAssignmentCommand | DeleteAssignmentCommand | UndoCommand | RedoCommand;
 
 export type AckMessage = {
   type: "ACK";
@@ -117,6 +191,16 @@ export type ScheduleResultMap = {
   };
 };
 
+export type TaskVariance = {
+  startVariance: number;
+  finishVariance: number;
+  durationVariance: number;
+};
+
+export type VarianceMap = Record<string, TaskVariance>;
+
+export type ResourceHistogram = Record<string, Record<number, number>>;
+
 export type DiffStateMessage = {
   type: "DIFF_STATE";
   v: 1;
@@ -125,8 +209,14 @@ export type DiffStateMessage = {
     dependencies: Dependency[];
     scheduleResults: ScheduleResultMap;
     baselines: BaselineMap;
+    variances: VarianceMap;
     projectStartDate: string;
     nonWorkingDays: number[];
+    resources: Resource[];
+    assignments: Assignment[];
+    resourceHistogram: ResourceHistogram;
+    canUndo: boolean;
+    canRedo: boolean;
   };
 };
 

@@ -1,4 +1,4 @@
-import type { BaselineMap, Dependency, Task } from "protocol";
+import type { Assignment, BaselineMap, Dependency, Resource, Task } from "protocol";
 
 const DB_NAME = "PlannerStudioDB";
 const STORE_NAME = "workspaces";
@@ -14,6 +14,8 @@ export interface PersistedState {
     tasks: Task[];
     dependencies: Dependency[];
     baselines: BaselineMap;
+    resources?: Resource[];
+    assignments?: Assignment[];
   };
 }
 
@@ -56,6 +58,12 @@ export async function loadPersistedState(): Promise<PersistedState | null> {
     console.warn("[Persistence] Failed to load state:", err);
     return null;
   }
+}
+
+export function migratePersistedState(persisted: PersistedState): PersistedState {
+  if (persisted.version === CURRENT_SCHEMA_VERSION) return persisted;
+  // Future migrations go here (e.g. version 1 → 2)
+  return persisted;
 }
 
 export async function savePersistedState(persisted: PersistedState): Promise<void> {

@@ -1,16 +1,19 @@
 /// <reference lib="webworker" />
 
-import type { Command, WorkerMessage } from "protocol";
+import type { BaselineMap, Command, WorkerMessage } from "protocol";
 import type { ScheduleError } from "protocol/kernel";
 import { generateNonWorkingDays } from "./calendar.js";
+import * as UndoHistory from "./history.js";
 import type { PersistedState } from "./persistence.js";
-import { loadPersistedState, savePersistedState } from "./persistence.js";
+import { loadPersistedState, migratePersistedState, savePersistedState } from "./persistence.js";
+import { computeResourceHistogram } from "./resourceHistogram.js";
 import { rollupSummarySchedules } from "./rollupSummaries.js";
 import { applyScheduleResult } from "./schedule/applyScheduleResult.js";
 import { buildScheduleRequest } from "./schedule/buildScheduleRequest.js";
 import { runSchedule } from "./schedule/runSchedule.js";
 import * as State from "./state.js";
 import * as Validation from "./validation.js";
+import { computeVariances } from "./variance.js";
 import { loadCpmWasm } from "./wasm/loadCpmWasm.js";
 
 const ctx: DedicatedWorkerGlobalScope = self as DedicatedWorkerGlobalScope;
@@ -72,8 +75,14 @@ const runSchedulingAndEmitState = (): boolean => {
       dependencies: [...dependencies],
       scheduleResults: {},
       baselines: State.getBaselineMap(),
+      variances: {},
       projectStartDate: State.getProjectStartDate(),
       nonWorkingDays,
+      resources: [...State.getResources()],
+      assignments: [...State.getAssignments()],
+      resourceHistogram: {},
+      canUndo: UndoHistory.canUndo(),
+      canRedo: UndoHistory.canRedo(),
     };
     console.log("[AUDIT Worker Emit] schedule-error path", {
       taskCount: emptyPayload.tasks.length,
@@ -102,13 +111,28 @@ const runSchedulingAndEmitState = (): boolean => {
       isCritical: s.isCritical,
     })));
 
+    const variances = computeVariances(scheduleResults, State.getBaselineMap());
+
+    const nwdSet = new Set(nonWorkingDays);
+    const resourceHistogram = computeResourceHistogram(
+      State.getAssignments(),
+      scheduleResults,
+      nwdSet,
+    );
+
     const payload = {
       tasks: [...tasks],
       dependencies: [...dependencies],
       scheduleResults,
       baselines: State.getBaselineMap(),
+      variances,
       projectStartDate: State.getProjectStartDate(),
       nonWorkingDays,
+      resources: [...State.getResources()],
+      assignments: [...State.getAssignments()],
+      resourceHistogram,
+      canUndo: UndoHistory.canUndo(),
+      canRedo: UndoHistory.canRedo(),
     };
     const critCount = Object.values(scheduleResults).filter(s => s.isCritical).length;
     console.log("[AUDIT Worker Emit] success path", {
@@ -123,6 +147,80 @@ const runSchedulingAndEmitState = (): boolean => {
 };
 
 /**
+ * Apply a single command as an internal replay (no history, no ACK).
+ * Used by undo/redo transaction replay.
+ */
+const applyReplayCommand = (cmd: Command): void => {
+  switch (cmd.type) {
+    case "ADD_TASK":
+      State.addTask(cmd.payload);
+      break;
+    case "UPDATE_TASK":
+      State.updateTask(cmd.taskId, cmd.updates);
+      break;
+    case "DELETE_TASK":
+      State.deleteTaskRecursive(cmd.taskId);
+      break;
+    case "ADD_DEPENDENCY":
+      State.addDependency(cmd.payload);
+      break;
+    case "DELETE_DEPENDENCY":
+      State.deleteDependency(cmd.dependencyId);
+      break;
+    case "UPDATE_DEPENDENCY":
+      State.updateDependency(cmd.dependencyId, cmd.updates);
+      break;
+    case "SNAPSHOT_BASELINE": {
+      const sr = State.getLatestScheduleResults();
+      const newBaseline: BaselineMap = {};
+      for (const taskId of Object.keys(sr)) {
+        newBaseline[taskId] = { start: sr[taskId].earlyStart, finish: sr[taskId].earlyFinish };
+      }
+      State.setBaselineMap(newBaseline);
+      break;
+    }
+    case "CLEAR_BASELINE":
+      State.setBaselineMap({});
+      break;
+    case "ADD_RESOURCE":
+      State.addResource(cmd.payload);
+      break;
+    case "UPDATE_RESOURCE":
+      State.updateResource(cmd.resourceId, cmd.updates);
+      break;
+    case "DELETE_RESOURCE":
+      State.deleteResource(cmd.resourceId);
+      break;
+    case "ADD_ASSIGNMENT":
+      State.addAssignment(cmd.payload);
+      break;
+    case "UPDATE_ASSIGNMENT":
+      State.updateAssignment(cmd.assignmentId, cmd.updates);
+      break;
+    case "DELETE_ASSIGNMENT":
+      State.deleteAssignment(cmd.assignmentId);
+      break;
+    default: {
+      // Handle internal-only RESTORE_BASELINES command
+      const any = cmd as unknown as { type: string; baselines?: BaselineMap };
+      if (any.type === "RESTORE_BASELINES" && any.baselines) {
+        State.setBaselineMap({ ...any.baselines });
+      }
+      break;
+    }
+  }
+};
+
+/** History-eligible command types. */
+const HISTORY_ELIGIBLE = new Set([
+  "ADD_TASK", "UPDATE_TASK", "DELETE_TASK",
+  "ADD_DEPENDENCY", "DELETE_DEPENDENCY", "UPDATE_DEPENDENCY",
+  "SNAPSHOT_BASELINE", "CLEAR_BASELINE",
+  "ADD_RESOURCE", "UPDATE_RESOURCE", "DELETE_RESOURCE",
+  "ADD_ASSIGNMENT", "UPDATE_ASSIGNMENT", "DELETE_ASSIGNMENT",
+]);
+
+/**
  * Handle incoming commands from UI.
  * Routes to appropriate handlers and triggers scheduling.
  */
@@ -131,6 +229,33 @@ const handleCommand = (cmd: Command): void => {
     emit({ type: "NACK", v: 1, reqId: cmd.reqId, error: "Worker not ready" });
     return;
   }
+
+  // ---- UNDO ----
+  if (cmd.type === "UNDO") {
+    const entry = UndoHistory.popUndo();
+    if (!entry) return;
+    for (const c of entry.undo) applyReplayCommand(c);
+    runSchedulingAndEmitState();
+    debouncedSave();
+    return;
+  }
+
+  // ---- REDO ----
+  if (cmd.type === "REDO") {
+    const entry = UndoHistory.popRedo();
+    if (!entry) return;
+    for (const c of entry.redo) applyReplayCommand(c);
+    runSchedulingAndEmitState();
+    debouncedSave();
+    return;
+  }
+
+  // ---- Forward mutations ----
+
+  // Build history entry BEFORE mutation (captures pre-state)
+  const historyEntry = HISTORY_ELIGIBLE.has(cmd.type)
+    ? UndoHistory.buildHistoryEntry(cmd)
+    : null;
 
   if (cmd.type === "ADD_TASK") {
     const error = Validation.validateTask(cmd.payload);
@@ -142,8 +267,8 @@ const handleCommand = (cmd: Command): void => {
     State.addTask(cmd.payload);
     emit({ type: "ACK", v: 1, reqId: cmd.reqId });
     
-    // Adding isolated task cannot break scheduling - no rollback needed
     runSchedulingAndEmitState();
+    if (historyEntry) UndoHistory.pushEntry(historyEntry);
     debouncedSave();
   }
 
@@ -154,7 +279,6 @@ const handleCommand = (cmd: Command): void => {
       return;
     }
 
-    // Strip schedule-physics fields from summary tasks
     const updates = { ...cmd.updates };
     if (task.isSummary) {
       delete updates.duration;
@@ -167,7 +291,6 @@ const handleCommand = (cmd: Command): void => {
       return;
     }
 
-    // Atomic mutation: snapshot → mutate → schedule → rollback-or-commit
     const snapshot = State.createSnapshot();
     State.updateTask(cmd.taskId, updates);
     emit({ type: "ACK", v: 1, reqId: cmd.reqId });
@@ -177,6 +300,7 @@ const handleCommand = (cmd: Command): void => {
       State.restoreSnapshot(snapshot);
       runSchedulingAndEmitState();
     } else {
+      if (historyEntry) UndoHistory.pushEntry(historyEntry);
       debouncedSave();
     }
   }
@@ -188,7 +312,6 @@ const handleCommand = (cmd: Command): void => {
       return;
     }
 
-    // Atomic mutation: snapshot → mutate → schedule → rollback-or-commit
     const snapshot = State.createSnapshot();
     State.addDependency(cmd.payload);
     emit({ type: "ACK", v: 1, reqId: cmd.reqId });
@@ -198,6 +321,7 @@ const handleCommand = (cmd: Command): void => {
       State.restoreSnapshot(snapshot);
       runSchedulingAndEmitState();
     } else {
+      if (historyEntry) UndoHistory.pushEntry(historyEntry);
       debouncedSave();
     }
   }
@@ -211,6 +335,7 @@ const handleCommand = (cmd: Command): void => {
     State.deleteTaskRecursive(cmd.taskId);
     emit({ type: "ACK", v: 1, reqId: cmd.reqId });
     runSchedulingAndEmitState();
+    if (historyEntry) UndoHistory.pushEntry(historyEntry);
     debouncedSave();
   }
 
@@ -223,6 +348,7 @@ const handleCommand = (cmd: Command): void => {
     State.deleteDependency(cmd.dependencyId);
     emit({ type: "ACK", v: 1, reqId: cmd.reqId });
     runSchedulingAndEmitState();
+    if (historyEntry) UndoHistory.pushEntry(historyEntry);
     debouncedSave();
   }
 
@@ -247,19 +373,21 @@ const handleCommand = (cmd: Command): void => {
       State.restoreSnapshot(snapshot);
       runSchedulingAndEmitState();
     } else {
+      if (historyEntry) UndoHistory.pushEntry(historyEntry);
       debouncedSave();
     }
   }
 
   if (cmd.type === "SNAPSHOT_BASELINE") {
     const sr = State.getLatestScheduleResults();
-    const newBaseline: import("protocol").BaselineMap = {};
+    const newBaseline: BaselineMap = {};
     for (const taskId of Object.keys(sr)) {
       newBaseline[taskId] = { start: sr[taskId].earlyStart, finish: sr[taskId].earlyFinish };
     }
     State.setBaselineMap(newBaseline);
     emit({ type: "ACK", v: 1, reqId: cmd.reqId });
     runSchedulingAndEmitState();
+    if (historyEntry) UndoHistory.pushEntry(historyEntry);
     debouncedSave();
   }
 
@@ -267,6 +395,95 @@ const handleCommand = (cmd: Command): void => {
     State.setBaselineMap({});
     emit({ type: "ACK", v: 1, reqId: cmd.reqId });
     runSchedulingAndEmitState();
+    if (historyEntry) UndoHistory.pushEntry(historyEntry);
+    debouncedSave();
+  }
+
+  // ---- Resource commands ----
+
+  if (cmd.type === "ADD_RESOURCE") {
+    const error = Validation.validateResource(cmd.payload);
+    if (error) {
+      emit({ type: "NACK", v: 1, reqId: cmd.reqId, error });
+      return;
+    }
+    State.addResource(cmd.payload);
+    emit({ type: "ACK", v: 1, reqId: cmd.reqId });
+    runSchedulingAndEmitState();
+    if (historyEntry) UndoHistory.pushEntry(historyEntry);
+    debouncedSave();
+  }
+
+  if (cmd.type === "UPDATE_RESOURCE") {
+    if (!State.findResource(cmd.resourceId)) {
+      emit({ type: "NACK", v: 1, reqId: cmd.reqId, error: `Resource ${cmd.resourceId} not found` });
+      return;
+    }
+    const error = Validation.validateResourceUpdate(cmd.updates);
+    if (error) {
+      emit({ type: "NACK", v: 1, reqId: cmd.reqId, error });
+      return;
+    }
+    State.updateResource(cmd.resourceId, cmd.updates);
+    emit({ type: "ACK", v: 1, reqId: cmd.reqId });
+    runSchedulingAndEmitState();
+    if (historyEntry) UndoHistory.pushEntry(historyEntry);
+    debouncedSave();
+  }
+
+  if (cmd.type === "DELETE_RESOURCE") {
+    if (!State.findResource(cmd.resourceId)) {
+      emit({ type: "NACK", v: 1, reqId: cmd.reqId, error: `Resource ${cmd.resourceId} not found` });
+      return;
+    }
+    State.deleteResource(cmd.resourceId);
+    emit({ type: "ACK", v: 1, reqId: cmd.reqId });
+    runSchedulingAndEmitState();
+    if (historyEntry) UndoHistory.pushEntry(historyEntry);
+    debouncedSave();
+  }
+
+  // ---- Assignment commands ----
+
+  if (cmd.type === "ADD_ASSIGNMENT") {
+    const error = Validation.validateAssignment(cmd.payload);
+    if (error) {
+      emit({ type: "NACK", v: 1, reqId: cmd.reqId, error });
+      return;
+    }
+    State.addAssignment(cmd.payload);
+    emit({ type: "ACK", v: 1, reqId: cmd.reqId });
+    runSchedulingAndEmitState();
+    if (historyEntry) UndoHistory.pushEntry(historyEntry);
+    debouncedSave();
+  }
+
+  if (cmd.type === "UPDATE_ASSIGNMENT") {
+    if (!State.findAssignment(cmd.assignmentId)) {
+      emit({ type: "NACK", v: 1, reqId: cmd.reqId, error: `Assignment ${cmd.assignmentId} not found` });
+      return;
+    }
+    const error = Validation.validateAssignmentUpdate(cmd.updates);
+    if (error) {
+      emit({ type: "NACK", v: 1, reqId: cmd.reqId, error });
+      return;
+    }
+    State.updateAssignment(cmd.assignmentId, cmd.updates);
+    emit({ type: "ACK", v: 1, reqId: cmd.reqId });
+    runSchedulingAndEmitState();
+    if (historyEntry) UndoHistory.pushEntry(historyEntry);
+    debouncedSave();
+  }
+
+  if (cmd.type === "DELETE_ASSIGNMENT") {
+    if (!State.findAssignment(cmd.assignmentId)) {
+      emit({ type: "NACK", v: 1, reqId: cmd.reqId, error: `Assignment ${cmd.assignmentId} not found` });
+      return;
+    }
+    State.deleteAssignment(cmd.assignmentId);
+    emit({ type: "ACK", v: 1, reqId: cmd.reqId });
+    runSchedulingAndEmitState();
+    if (historyEntry) UndoHistory.pushEntry(historyEntry);
     debouncedSave();
   }
 };
@@ -284,6 +501,8 @@ const saveState = (): void => {
       tasks: State.getTasks().map(t => ({ ...t })),
       dependencies: State.getDependencies().map(d => ({ ...d })),
       baselines: { ...State.getBaselineMap() },
+      resources: State.getResources().map(r => ({ ...r })),
+      assignments: State.getAssignments().map(a => ({ ...a })),
     },
   };
   savePersistedState(persisted);
@@ -302,7 +521,8 @@ const initializeWorker = async (): Promise<void> => {
     await loadCpmWasm();
 
     // Attempt hydration from IndexedDB
-    const persisted = await loadPersistedState();
+    const raw = await loadPersistedState();
+    const persisted = raw ? migratePersistedState(raw) : null;
     if (persisted?.state) {
       State.hydrateState(persisted.state);
       console.log("[Persistence] Hydrated", persisted.state.tasks.length, "tasks",

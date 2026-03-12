@@ -1,5 +1,5 @@
-import type { Dependency, DependencyType, Task } from "protocol";
-import { findDependency, findTask } from "./state.js";
+import type { Assignment, Dependency, DependencyType, Resource, Task } from "protocol";
+import { findDependency, findResource, findTask } from "./state.js";
 
 const VALID_DEP_TYPES: ReadonlySet<DependencyType> = new Set(["FS", "SS", "FF", "SF"]);
 
@@ -77,6 +77,46 @@ export const validateDependencyUpdate = (updates: { type?: DependencyType; lag?:
   }
   if (updates.lag !== undefined && !Number.isInteger(updates.lag)) {
     return "Lag must be an integer";
+  }
+  return null;
+};
+
+export const validateResource = (resource: Resource): string | null => {
+  if (resource.name.trim().length === 0) {
+    return "Resource name must not be empty";
+  }
+  if (resource.maxUnitsPerDay <= 0) {
+    return "maxUnitsPerDay must be greater than 0";
+  }
+  return null;
+};
+
+export const validateResourceUpdate = (updates: { name?: string; maxUnitsPerDay?: number }): string | null => {
+  if (updates.name !== undefined && updates.name.trim().length === 0) {
+    return "Resource name must not be empty";
+  }
+  if (updates.maxUnitsPerDay !== undefined && updates.maxUnitsPerDay <= 0) {
+    return "maxUnitsPerDay must be greater than 0";
+  }
+  return null;
+};
+
+export const validateAssignment = (assignment: Assignment): string | null => {
+  if (!findTask(assignment.taskId)) {
+    return `Task ${assignment.taskId} does not exist`;
+  }
+  if (!findResource(assignment.resourceId)) {
+    return `Resource ${assignment.resourceId} does not exist`;
+  }
+  if (assignment.unitsPerDay <= 0) {
+    return "unitsPerDay must be greater than 0";
+  }
+  return null;
+};
+
+export const validateAssignmentUpdate = (updates: { unitsPerDay?: number }): string | null => {
+  if (updates.unitsPerDay !== undefined && updates.unitsPerDay <= 0) {
+    return "unitsPerDay must be greater than 0";
   }
   return null;
 };

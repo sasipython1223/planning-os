@@ -22,6 +22,7 @@ interface GanttPaneProps {
   onSelect: (sel: Selection) => void;
   nonWorkingDays: ReadonlySet<number>;
   baselines: BaselineMap;
+  onScrollLeftChange?: (scrollLeft: number, paneWidth: number) => void;
 }
 
 /**
@@ -44,6 +45,7 @@ export function GanttPane({
   onSelect,
   nonWorkingDays,
   baselines,
+  onScrollLeftChange,
 }: GanttPaneProps) {
   const hScrollRef = useRef<HTMLDivElement>(null);
   const [scrollLeft, setScrollLeft] = useState(0);
@@ -64,8 +66,10 @@ export function GanttPane({
   const handleScroll = useCallback(() => {
     const el = hScrollRef.current;
     if (!el) return;
-    setScrollLeft(el.scrollLeft);
-  }, []);
+    const sl = el.scrollLeft;
+    setScrollLeft(sl);
+    onScrollLeftChange?.(sl, paneWidth);
+  }, [onScrollLeftChange, paneWidth]);
 
   // Measure pane width
   useEffect(() => {
@@ -76,6 +80,7 @@ export function GanttPane({
       const w = el.clientWidth;
       console.log("[GanttPane] paneWidth =", w);
       setPaneWidth(w);
+      onScrollLeftChange?.(scrollLeft, w);
     };
     measure();
 
