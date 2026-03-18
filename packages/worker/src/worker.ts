@@ -3,6 +3,9 @@
 import type { BaselineMap, Command, WorkerMessage } from "protocol";
 import type { ScheduleError } from "protocol/kernel";
 import { generateNonWorkingDays } from "./calendar.js";
+import type { CommandEnvelope, DispatchOutcome } from "./commandEnvelope.js";
+import { auditLog, createEnvelope } from "./commandEnvelope.js";
+import { computeConstraintDiagnostics, mergeResultDiagnostics } from "./constraintDiagnostics.js";
 import * as UndoHistory from "./history.js";
 import type { PersistedState } from "./persistence.js";
 import { loadPersistedState, migratePersistedState, savePersistedState } from "./persistence.js";
@@ -10,7 +13,9 @@ import { computeResourceHistogram } from "./resourceHistogram.js";
 import { rollupSummarySchedules } from "./rollupSummaries.js";
 import { applyScheduleResult } from "./schedule/applyScheduleResult.js";
 import { buildScheduleRequest } from "./schedule/buildScheduleRequest.js";
+import { buildCompiledScheduleRequest } from "./schedule/compiledSchedulePath.js";
 import { runSchedule } from "./schedule/runSchedule.js";
+import { getSchedulingMode } from "./schedulingMode.js";
 import * as State from "./state.js";
 import * as Validation from "./validation.js";
 import { computeVariances } from "./variance.js";
@@ -48,8 +53,15 @@ const runSchedulingAndEmitState = (): boolean => {
     CALENDAR_HORIZON,
   );
 
-  // Build schedule request
-  const request = buildScheduleRequest(tasks, dependencies, nonWorkingDays);
+  // Build schedule request — M07: guarded branch for compiled vs legacy path
+  const request =
+    getSchedulingMode() === "compiled"
+      ? buildCompiledScheduleRequest(
+          State.getAssumptionSet(),
+          State.getAuthoredActivities(),
+          nonWorkingDays,
+        ).request
+      : buildScheduleRequest(tasks, dependencies, nonWorkingDays);
 
   // Run scheduling
   const result = runSchedule(request);
@@ -81,6 +93,7 @@ const runSchedulingAndEmitState = (): boolean => {
       resources: [...State.getResources()],
       assignments: [...State.getAssignments()],
       resourceHistogram: {},
+      diagnosticsMap: computeConstraintDiagnostics(tasks),
       canUndo: UndoHistory.canUndo(),
       canRedo: UndoHistory.canRedo(),
     };
@@ -120,6 +133,9 @@ const runSchedulingAndEmitState = (): boolean => {
       nwdSet,
     );
 
+    const inputDiags = computeConstraintDiagnostics(tasks);
+    const diagnosticsMap = mergeResultDiagnostics(tasks, scheduleResults, inputDiags, nwdSet);
+
     const payload = {
       tasks: [...tasks],
       dependencies: [...dependencies],
@@ -131,6 +147,7 @@ const runSchedulingAndEmitState = (): boolean => {
       resources: [...State.getResources()],
       assignments: [...State.getAssignments()],
       resourceHistogram,
+      diagnosticsMap,
       canUndo: UndoHistory.canUndo(),
       canRedo: UndoHistory.canRedo(),
     };
@@ -149,6 +166,14 @@ const runSchedulingAndEmitState = (): boolean => {
 /**
  * Apply a single command as an internal replay (no history, no ACK).
  * Used by undo/redo transaction replay.
+ *
+ * TRANSITIONAL: This function mutates canonical state directly,
+ * bypassing dispatchCommand() and the envelope/audit path.
+ * This is architecturally necessary for undo/redo (replay commands
+ * are internal reversals, not new user intent). Do not expand this
+ * path to handle new command types or new mutation scenarios.
+ * When undo/redo is refactored to use the command spine natively,
+ * this function should be removed.
  */
 const applyReplayCommand = (cmd: Command): void => {
   switch (cmd.type) {
@@ -220,34 +245,81 @@ const HISTORY_ELIGIBLE = new Set([
   "ADD_ASSIGNMENT", "UPDATE_ASSIGNMENT", "DELETE_ASSIGNMENT",
 ]);
 
+// ── M03 Command Spine ────────────────────────────────────────────────
+//
+// dispatchCommand() is the single entry point for all inbound commands.
+// It wraps commands in a CommandEnvelope (internal metadata), delegates
+// to handleCommand() for routing/execution, and logs at the audit seam.
+//
+// Phase 1: Envelope + coarse audit log (always "ack").
+// Phase 2: handleCommand returns DispatchOutcome for accurate audit.
+//          Replay bypass paths marked as transitional.
+//
+// TRANSITIONAL: handleCommand() retains all existing per-command routing,
+// validation, rollback, history, and persistence logic. It is not yet
+// refactored into per-type handler functions. Future milestones may
+// extract handlers, but behavioral correctness must not change here.
+// ─────────────────────────────────────────────────────────────────────
+
 /**
- * Handle incoming commands from UI.
- * Routes to appropriate handlers and triggers scheduling.
+ * Dispatch a command through the envelope spine.
+ * Creates an envelope, delegates to handleCommand, and logs the outcome.
+ *
+ * This is the only entry point for UI-issued commands.
+ * Internal replay paths (undo/redo) use applyReplayCommand() which
+ * bypasses the envelope spine — see transitional comment there.
+ *
+ * AUDIT SEAM: The auditLog call after handleCommand is the single
+ * attachment point for future event ledger / governance hooks.
+ * Outcome is now classified per-branch: "ack", "nack", or "error".
  */
-const handleCommand = (cmd: Command): void => {
+const dispatchCommand = (cmd: Command): void => {
+  const envelope = createEnvelope(cmd, "human");
+  const outcome = handleCommand(cmd, envelope);
+  auditLog(envelope, outcome);
+};
+
+/**
+ * Handle incoming commands.
+ * Routes to appropriate handlers and triggers scheduling.
+ *
+ * @param cmd      - The protocol command to execute
+ * @param envelope - Optional envelope for audit logging. Absent during
+ *                   internal replay (undo/redo), where audit is not needed.
+ *
+ * TRANSITIONAL: The envelope parameter is optional to allow the existing
+ * applyReplayCommand() and undo/redo paths to call handleCommand directly
+ * without constructing envelopes. Once all mutation paths route through
+ * dispatchCommand, the envelope parameter may become required.
+ */
+const handleCommand = (cmd: Command, envelope?: CommandEnvelope): DispatchOutcome => {
   if (!isReady) {
     emit({ type: "NACK", v: 1, reqId: cmd.reqId, error: "Worker not ready" });
-    return;
+    return "nack";
   }
 
   // ---- UNDO ----
   if (cmd.type === "UNDO") {
     const entry = UndoHistory.popUndo();
-    if (!entry) return;
+    if (!entry) return "nack";
+    // TRANSITIONAL: undo replay mutates state via applyReplayCommand,
+    // bypassing the command spine. See applyReplayCommand() comment.
     for (const c of entry.undo) applyReplayCommand(c);
     runSchedulingAndEmitState();
     debouncedSave();
-    return;
+    return "ack";
   }
 
   // ---- REDO ----
   if (cmd.type === "REDO") {
     const entry = UndoHistory.popRedo();
-    if (!entry) return;
+    if (!entry) return "nack";
+    // TRANSITIONAL: redo replay mutates state via applyReplayCommand,
+    // bypassing the command spine. See applyReplayCommand() comment.
     for (const c of entry.redo) applyReplayCommand(c);
     runSchedulingAndEmitState();
     debouncedSave();
-    return;
+    return "ack";
   }
 
   // ---- Forward mutations ----
@@ -261,7 +333,7 @@ const handleCommand = (cmd: Command): void => {
     const error = Validation.validateTask(cmd.payload);
     if (error) {
       emit({ type: "NACK", v: 1, reqId: cmd.reqId, error });
-      return;
+      return "nack";
     }
 
     State.addTask(cmd.payload);
@@ -270,13 +342,14 @@ const handleCommand = (cmd: Command): void => {
     runSchedulingAndEmitState();
     if (historyEntry) UndoHistory.pushEntry(historyEntry);
     debouncedSave();
+    return "ack";
   }
 
   if (cmd.type === "UPDATE_TASK") {
     const task = State.findTask(cmd.taskId);
     if (!task) {
       emit({ type: "NACK", v: 1, reqId: cmd.reqId, error: `Task ${cmd.taskId} not found` });
-      return;
+      return "nack";
     }
 
     const updates = { ...cmd.updates };
@@ -288,7 +361,7 @@ const handleCommand = (cmd: Command): void => {
     const error = Validation.validateTaskUpdate(cmd.taskId, updates);
     if (error) {
       emit({ type: "NACK", v: 1, reqId: cmd.reqId, error });
-      return;
+      return "nack";
     }
 
     const snapshot = State.createSnapshot();
@@ -299,9 +372,11 @@ const handleCommand = (cmd: Command): void => {
     if (!success) {
       State.restoreSnapshot(snapshot);
       runSchedulingAndEmitState();
+      return "error";
     } else {
       if (historyEntry) UndoHistory.pushEntry(historyEntry);
       debouncedSave();
+      return "ack";
     }
   }
 
@@ -309,7 +384,7 @@ const handleCommand = (cmd: Command): void => {
     const error = Validation.validateDependency(cmd.payload);
     if (error) {
       emit({ type: "NACK", v: 1, reqId: cmd.reqId, error });
-      return;
+      return "nack";
     }
 
     const snapshot = State.createSnapshot();
@@ -320,16 +395,18 @@ const handleCommand = (cmd: Command): void => {
     if (!success) {
       State.restoreSnapshot(snapshot);
       runSchedulingAndEmitState();
+      return "error";
     } else {
       if (historyEntry) UndoHistory.pushEntry(historyEntry);
       debouncedSave();
+      return "ack";
     }
   }
 
   if (cmd.type === "DELETE_TASK") {
     if (!State.findTask(cmd.taskId)) {
       emit({ type: "NACK", v: 1, reqId: cmd.reqId, error: `Task ${cmd.taskId} not found` });
-      return;
+      return "nack";
     }
 
     State.deleteTaskRecursive(cmd.taskId);
@@ -337,12 +414,13 @@ const handleCommand = (cmd: Command): void => {
     runSchedulingAndEmitState();
     if (historyEntry) UndoHistory.pushEntry(historyEntry);
     debouncedSave();
+    return "ack";
   }
 
   if (cmd.type === "DELETE_DEPENDENCY") {
     if (!State.findDependencyById(cmd.dependencyId)) {
       emit({ type: "NACK", v: 1, reqId: cmd.reqId, error: `Dependency ${cmd.dependencyId} not found` });
-      return;
+      return "nack";
     }
 
     State.deleteDependency(cmd.dependencyId);
@@ -350,18 +428,19 @@ const handleCommand = (cmd: Command): void => {
     runSchedulingAndEmitState();
     if (historyEntry) UndoHistory.pushEntry(historyEntry);
     debouncedSave();
+    return "ack";
   }
 
   if (cmd.type === "UPDATE_DEPENDENCY") {
     if (!State.findDependencyById(cmd.dependencyId)) {
       emit({ type: "NACK", v: 1, reqId: cmd.reqId, error: `Dependency ${cmd.dependencyId} not found` });
-      return;
+      return "nack";
     }
 
     const error = Validation.validateDependencyUpdate(cmd.updates);
     if (error) {
       emit({ type: "NACK", v: 1, reqId: cmd.reqId, error });
-      return;
+      return "nack";
     }
 
     const snapshot = State.createSnapshot();
@@ -372,9 +451,11 @@ const handleCommand = (cmd: Command): void => {
     if (!success) {
       State.restoreSnapshot(snapshot);
       runSchedulingAndEmitState();
+      return "error";
     } else {
       if (historyEntry) UndoHistory.pushEntry(historyEntry);
       debouncedSave();
+      return "ack";
     }
   }
 
@@ -389,6 +470,7 @@ const handleCommand = (cmd: Command): void => {
     runSchedulingAndEmitState();
     if (historyEntry) UndoHistory.pushEntry(historyEntry);
     debouncedSave();
+    return "ack";
   }
 
   if (cmd.type === "CLEAR_BASELINE") {
@@ -397,6 +479,7 @@ const handleCommand = (cmd: Command): void => {
     runSchedulingAndEmitState();
     if (historyEntry) UndoHistory.pushEntry(historyEntry);
     debouncedSave();
+    return "ack";
   }
 
   // ---- Resource commands ----
@@ -405,42 +488,45 @@ const handleCommand = (cmd: Command): void => {
     const error = Validation.validateResource(cmd.payload);
     if (error) {
       emit({ type: "NACK", v: 1, reqId: cmd.reqId, error });
-      return;
+      return "nack";
     }
     State.addResource(cmd.payload);
     emit({ type: "ACK", v: 1, reqId: cmd.reqId });
     runSchedulingAndEmitState();
     if (historyEntry) UndoHistory.pushEntry(historyEntry);
     debouncedSave();
+    return "ack";
   }
 
   if (cmd.type === "UPDATE_RESOURCE") {
     if (!State.findResource(cmd.resourceId)) {
       emit({ type: "NACK", v: 1, reqId: cmd.reqId, error: `Resource ${cmd.resourceId} not found` });
-      return;
+      return "nack";
     }
     const error = Validation.validateResourceUpdate(cmd.updates);
     if (error) {
       emit({ type: "NACK", v: 1, reqId: cmd.reqId, error });
-      return;
+      return "nack";
     }
     State.updateResource(cmd.resourceId, cmd.updates);
     emit({ type: "ACK", v: 1, reqId: cmd.reqId });
     runSchedulingAndEmitState();
     if (historyEntry) UndoHistory.pushEntry(historyEntry);
     debouncedSave();
+    return "ack";
   }
 
   if (cmd.type === "DELETE_RESOURCE") {
     if (!State.findResource(cmd.resourceId)) {
       emit({ type: "NACK", v: 1, reqId: cmd.reqId, error: `Resource ${cmd.resourceId} not found` });
-      return;
+      return "nack";
     }
     State.deleteResource(cmd.resourceId);
     emit({ type: "ACK", v: 1, reqId: cmd.reqId });
     runSchedulingAndEmitState();
     if (historyEntry) UndoHistory.pushEntry(historyEntry);
     debouncedSave();
+    return "ack";
   }
 
   // ---- Assignment commands ----
@@ -449,43 +535,49 @@ const handleCommand = (cmd: Command): void => {
     const error = Validation.validateAssignment(cmd.payload);
     if (error) {
       emit({ type: "NACK", v: 1, reqId: cmd.reqId, error });
-      return;
+      return "nack";
     }
     State.addAssignment(cmd.payload);
     emit({ type: "ACK", v: 1, reqId: cmd.reqId });
     runSchedulingAndEmitState();
     if (historyEntry) UndoHistory.pushEntry(historyEntry);
     debouncedSave();
+    return "ack";
   }
 
   if (cmd.type === "UPDATE_ASSIGNMENT") {
     if (!State.findAssignment(cmd.assignmentId)) {
       emit({ type: "NACK", v: 1, reqId: cmd.reqId, error: `Assignment ${cmd.assignmentId} not found` });
-      return;
+      return "nack";
     }
     const error = Validation.validateAssignmentUpdate(cmd.updates);
     if (error) {
       emit({ type: "NACK", v: 1, reqId: cmd.reqId, error });
-      return;
+      return "nack";
     }
     State.updateAssignment(cmd.assignmentId, cmd.updates);
     emit({ type: "ACK", v: 1, reqId: cmd.reqId });
     runSchedulingAndEmitState();
     if (historyEntry) UndoHistory.pushEntry(historyEntry);
     debouncedSave();
+    return "ack";
   }
 
   if (cmd.type === "DELETE_ASSIGNMENT") {
     if (!State.findAssignment(cmd.assignmentId)) {
       emit({ type: "NACK", v: 1, reqId: cmd.reqId, error: `Assignment ${cmd.assignmentId} not found` });
-      return;
+      return "nack";
     }
     State.deleteAssignment(cmd.assignmentId);
     emit({ type: "ACK", v: 1, reqId: cmd.reqId });
     runSchedulingAndEmitState();
     if (historyEntry) UndoHistory.pushEntry(historyEntry);
     debouncedSave();
+    return "ack";
   }
+
+  // Unrecognized command type — should not happen with typed protocol.
+  return "nack";
 };
 
 // ---- Debounced persistence ----
@@ -540,9 +632,9 @@ const initializeWorker = async (): Promise<void> => {
   }
 };
 
-// Set up message handler
+// Set up message handler — all UI commands enter through the envelope spine.
 ctx.onmessage = (event: MessageEvent<Command>) => {
-  handleCommand(event.data);
+  dispatchCommand(event.data);
 };
 
 // Start initialization

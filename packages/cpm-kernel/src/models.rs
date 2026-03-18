@@ -8,6 +8,17 @@ pub enum DepType {
     SF,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum ConstraintType {
+    #[default]
+    ASAP,
+    ALAP,
+    SNET,
+    FNLT,
+    MSO,
+    MFO,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct RawTask {
     pub id: String,
@@ -15,6 +26,8 @@ pub struct RawTask {
     pub min_early_start: u32,
     pub parent_id: Option<String>,
     pub is_summary: bool,
+    pub constraint_type: ConstraintType,
+    pub constraint_date: Option<i32>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -1,7 +1,9 @@
-import type { Assignment, Dependency, DependencyType, Resource, Task } from "protocol";
+import type { Assignment, ConstraintType, Dependency, DependencyType, Resource, Task } from "protocol";
 import { findDependency, findResource, findTask } from "./state.js";
 
 const VALID_DEP_TYPES: ReadonlySet<DependencyType> = new Set(["FS", "SS", "FF", "SF"]);
+const VALID_CONSTRAINT_TYPES: ReadonlySet<ConstraintType> = new Set(["ASAP", "ALAP", "SNET", "FNLT", "MSO", "MFO"]);
+const DATED_CONSTRAINTS: ReadonlySet<ConstraintType> = new Set(["SNET", "FNLT", "MSO", "MFO"]);
 
 /**
  * Validation logic for tasks and dependencies.
@@ -18,7 +20,7 @@ export const validateTask = (task: Task): string | null => {
   return null;
 };
 
-export const validateTaskUpdate = (taskId: string, updates: { name?: string; duration?: number; minEarlyStart?: number; parentId?: string | null }): string | null => {
+export const validateTaskUpdate = (taskId: string, updates: { name?: string; duration?: number; minEarlyStart?: number; parentId?: string | null; constraintType?: ConstraintType; constraintDate?: number | null }): string | null => {
   if (updates.name !== undefined && updates.name.trim().length === 0) {
     return "Task name must not be empty";
   }
@@ -27,6 +29,23 @@ export const validateTaskUpdate = (taskId: string, updates: { name?: string; dur
   }
   if (updates.minEarlyStart !== undefined && updates.minEarlyStart < 0) {
     return "minEarlyStart must not be negative";
+  }
+  if (updates.constraintType !== undefined) {
+    if (!VALID_CONSTRAINT_TYPES.has(updates.constraintType)) {
+      return `Invalid constraint type: ${updates.constraintType}`;
+    }
+    // Dated constraint without a date is allowed — diagnosed, not rejected.
+    // The kernel safely treats missing constraintDate as unconstrained.
+  }
+  if (updates.constraintDate !== undefined && updates.constraintDate != null) {
+    if (updates.constraintDate < 0) {
+      return "constraintDate must not be negative";
+    }
+    // If setting a date without also setting type, check existing type
+    const effectiveType = updates.constraintType ?? findTask(taskId)?.constraintType ?? "ASAP";
+    if (!DATED_CONSTRAINTS.has(effectiveType as ConstraintType)) {
+      return `Cannot set constraintDate on ${effectiveType} constraint`;
+    }
   }
   if (updates.parentId !== undefined && updates.parentId !== null) {
     if (updates.parentId === taskId) {

@@ -14,6 +14,10 @@ struct ScheduleTask {
     parent_id: Option<String>,
     #[serde(default)]
     is_summary: bool,
+    #[serde(default = "default_constraint_type")]
+    constraint_type: String,
+    #[serde(default)]
+    constraint_date: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -25,6 +29,10 @@ struct ScheduleDependency {
     dep_type: String,
     #[serde(default)]
     lag: i32,
+}
+
+fn default_constraint_type() -> String {
+    "ASAP".to_string()
 }
 
 fn default_dep_type() -> String {
@@ -68,6 +76,18 @@ enum ScheduleError {
     CycleDetected { message: String },
 }
 
+/// Parse constraint type string to kernel ConstraintType
+fn parse_constraint_type(s: &str) -> cpm_kernel::ConstraintType {
+    match s {
+        "ALAP" => cpm_kernel::ConstraintType::ALAP,
+        "SNET" => cpm_kernel::ConstraintType::SNET,
+        "FNLT" => cpm_kernel::ConstraintType::FNLT,
+        "MSO" => cpm_kernel::ConstraintType::MSO,
+        "MFO" => cpm_kernel::ConstraintType::MFO,
+        _ => cpm_kernel::ConstraintType::ASAP,
+    }
+}
+
 /// Convert boundary ScheduleTask to kernel RawTask
 fn to_raw_task(task: &ScheduleTask) -> cpm_kernel::RawTask {
     cpm_kernel::RawTask {
@@ -76,6 +96,8 @@ fn to_raw_task(task: &ScheduleTask) -> cpm_kernel::RawTask {
         min_early_start: task.min_early_start,
         parent_id: task.parent_id.clone(),
         is_summary: task.is_summary,
+        constraint_type: parse_constraint_type(&task.constraint_type),
+        constraint_date: task.constraint_date,
     }
 }
 

@@ -23,6 +23,8 @@ export type ScheduleTask = {
   readonly minEarlyStart: number;
   readonly parentId?: string;
   readonly isSummary: boolean;
+  readonly constraintType?: string;
+  readonly constraintDate?: number | null;
 };
 
 /**

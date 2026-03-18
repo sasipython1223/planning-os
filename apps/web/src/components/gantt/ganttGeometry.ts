@@ -1,5 +1,5 @@
 import type { ScheduleResultMap, Task } from "protocol";
-import { BAR_HEIGHT, BAR_VERTICAL_PADDING, DAY_WIDTH, ROW_HEIGHT } from "./ganttConstants";
+import { DAY_WIDTH, getDensityConstants } from "./ganttConstants";
 
 /**
  * Geometry information for a single task bar.
@@ -29,15 +29,16 @@ export function computeTaskGeometry(
   scheduleResults: ScheduleResultMap
 ): Map<string, TaskGeometry> {
   const geometryMap = new Map<string, TaskGeometry>();
+  const { rowHeight, barHeight, barVerticalPadding } = getDensityConstants();
 
   tasks.forEach((task, index) => {
     const schedule = scheduleResults[task.id];
     if (!schedule) return;
 
     const x = schedule.earlyStart * DAY_WIDTH;
-    const y = index * ROW_HEIGHT + BAR_VERTICAL_PADDING;
+    const y = index * rowHeight + barVerticalPadding;
     const width = (schedule.earlyFinish - schedule.earlyStart) * DAY_WIDTH;
-    const height = BAR_HEIGHT;
+    const height = barHeight;
     const centerY = y + height / 2;
 
     geometryMap.set(task.id, {

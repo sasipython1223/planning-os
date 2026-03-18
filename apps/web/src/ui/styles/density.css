@@ -1,0 +1,21 @@
+/* density.css — visual density variables (padding, font size).
+   Does NOT define canonical rowHeight or timelineHeight for JS layout math.
+   Those values live in themeConfig.ts / uiStore.ts. */
+
+[data-density="compact"] {
+  --density-padding-v: 2px;
+  --density-padding-h: 4px;
+  --density-font-size: 12px;
+}
+
+[data-density="comfortable"] {
+  --density-padding-v: 4px;
+  --density-padding-h: 8px;
+  --density-font-size: 13px;
+}
+
+[data-density="cozy"] {
+  --density-padding-v: 6px;
+  --density-padding-h: 8px;
+  --density-font-size: 14px;
+}

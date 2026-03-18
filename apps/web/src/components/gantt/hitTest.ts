@@ -1,5 +1,5 @@
 import type { Dependency, ScheduleResultMap, Task } from "protocol";
-import { BAR_HEIGHT, BAR_VERTICAL_PADDING, DAY_WIDTH, ROW_HEIGHT } from "./ganttConstants";
+import { DAY_WIDTH, getDensityConstants } from "./ganttConstants";
 import type { TaskGeometry } from "./ganttGeometry";
 
 const EDGE_THRESHOLD = 5;
@@ -31,6 +31,7 @@ export function hitTestBar(
   tasks: Task[],
   scheduleResults: ScheduleResultMap,
 ): HitResult {
+  const { rowHeight: ROW_HEIGHT, barHeight: BAR_HEIGHT, barVerticalPadding: BAR_VERTICAL_PADDING } = getDensityConstants();
   // O(1) row lookup
   const rowIndex = Math.floor(worldY / ROW_HEIGHT);
   if (rowIndex < 0 || rowIndex >= tasks.length) return BACKGROUND_HIT;

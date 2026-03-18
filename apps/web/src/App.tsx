@@ -1,11 +1,18 @@
-import type { Assignment, BaselineMap, Dependency, DependencyType, Resource, ResourceHistogram, ScheduleResultMap, Task, VarianceMap, WorkerMessage } from "protocol";
+import type { Assignment, BaselineMap, Dependency, DependencyType, DiagnosticsMap, Resource, ResourceHistogram, ScheduleResultMap, Task, VarianceMap, WorkerMessage } from "protocol";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DependencyList } from "./components/DependencyList";
-import { ROW_HEIGHT, TIMESCALE_HEIGHT } from "./components/gantt/ganttConstants";
 import { GanttPane } from "./components/gantt/GanttPane";
 import { HistogramPane } from "./components/HistogramPane";
+import { TaskDetailsPanel } from "./components/TaskDetailsPanel";
 import { TaskTable } from "./components/TaskTable";
+import { BottomDrawer } from "./ui/components/drawer/BottomDrawer";
+import { MainWorkspace } from "./ui/components/shell/MainWorkspace";
+import { WorkspaceContainer } from "./ui/components/shell/WorkspaceContainer";
+import { WorkspaceSplitter } from "./ui/components/WorkspaceSplitter";
+import { HEADER_METRICS } from "./ui/config/themeConfig";
+import { useDensityMetrics, useUIStore } from "./ui/store/uiStore";
+import { filterByConstraint } from "./utils/filterByConstraint";
 import { getVisibleTasks } from "./utils/getVisibleTasks";
+import { computeTimelineGeometry } from "./utils/timelineGeometry";
 
 export type Selection = { type: "task"; id: string } | { type: "dependency"; id: string } | null;
 
@@ -14,6 +21,17 @@ function makeId() {
 }
 
 export default function App() {
+  const { rowHeight } = useDensityMetrics();
+  const isBottomOpen = useUIStore((s) => s.isBottomOpen);
+  const activeBottomTab = useUIStore((s) => s.activeBottomTab);
+  const setStatusText = useUIStore((s) => s.setStatusText);
+  const constraintFilter = useUIStore((s) => s.constraintFilter);
+  const tableWidth = useUIStore((s) => s.tableWidth);
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const mainContentRowRef = useRef<HTMLDivElement>(null);
+  const tableBodyRef = useRef<HTMLDivElement>(null);
+  const ganttBodyRef = useRef<HTMLDivElement>(null);
+  const histogramAxisRef = useRef<HTMLDivElement>(null);
   const workerRef = useRef<Worker | null>(null);
   const [taskName, setTaskName] = useState("");
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -37,13 +55,25 @@ export default function App() {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [resourceName, setResourceName] = useState("");
   const [resourceHistogram, setResourceHistogram] = useState<ResourceHistogram>({});
+  const [diagnosticsMap, setDiagnosticsMap] = useState<DiagnosticsMap>({});
   const [selectedResourceId, setSelectedResourceId] = useState<string | null>(null);
   const [ganttScrollLeft, setGanttScrollLeft] = useState(0);
   const [ganttPaneWidth, setGanttPaneWidth] = useState(0);
+  const ganttScrollElRef = useRef<HTMLDivElement | null>(null);
+
+  const handleGanttHScrollMount = useCallback((el: HTMLDivElement | null) => {
+    ganttScrollElRef.current = el;
+  }, []);
+
+  // Shared timeline geometry — single owner for both Gantt and Histogram
+  const timeline = useMemo(
+    () => computeTimelineGeometry(scheduleResults, projectStartDate),
+    [scheduleResults, projectStartDate],
+  );
 
   const visibleTasks = useMemo(
-    () => getVisibleTasks(tasks, collapsedIds),
-    [tasks, collapsedIds],
+    () => filterByConstraint(getVisibleTasks(tasks, collapsedIds), constraintFilter),
+    [tasks, collapsedIds, constraintFilter],
   );
 
   // Temporary diagnostic: measure header/body box metrics
@@ -64,7 +94,14 @@ export default function App() {
     });
   }, []);
 
-  const phantomHeight = visibleTasks.length * ROW_HEIGHT;
+  const phantomHeight = visibleTasks.length * rowHeight;
+
+  // Push status text into TopBar via store
+  useEffect(() => {
+    setStatusText(
+      `Tasks: ${tasks.length} | Deps: ${dependencies.length} | Scheduled: ${Object.keys(scheduleResults).length} | Worker: ${workerReady ? 'Ready' : 'Starting...'}`
+    );
+  }, [tasks.length, dependencies.length, scheduleResults, workerReady, setStatusText]);
 
   // Clamp scroll after collapse/expand to avoid blank space
   useEffect(() => {
@@ -79,7 +116,11 @@ export default function App() {
   const handleScrollTrack = useCallback(() => {
     const el = scrollTrackRef.current;
     if (!el) return;
-    setScrollTop(el.scrollTop);
+    const st = el.scrollTop;
+    setScrollTop(st);
+    // Imperatively sync both upper-pane body containers
+    if (tableBodyRef.current) tableBodyRef.current.scrollTop = st;
+    if (ganttBodyRef.current) ganttBodyRef.current.scrollTop = st;
   }, []);
 
   // Forward mouse-wheel events from anywhere in the main content area
@@ -145,6 +186,7 @@ export default function App() {
         setResources(msg.payload.resources ?? []);
         setAssignments(msg.payload.assignments ?? []);
         setResourceHistogram(msg.payload.resourceHistogram ?? {});
+        setDiagnosticsMap(msg.payload.diagnosticsMap ?? {});
         // Purge selection if the selected entity no longer exists
         setSelection((prev) => {
           if (!prev) return null;
@@ -203,7 +245,7 @@ export default function App() {
     });
   }, []);
 
-  const handleUpdateTask = useCallback((taskId: string, updates: { name?: string; duration?: number; minEarlyStart?: number; parentId?: string | null }) => {
+  const handleUpdateTask = useCallback((taskId: string, updates: { name?: string; duration?: number; minEarlyStart?: number; parentId?: string | null; constraintType?: string; constraintDate?: number | null }) => {
     if (!workerRef.current) return;
     workerRef.current.postMessage({
       type: "UPDATE_TASK",
@@ -364,216 +406,186 @@ export default function App() {
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100vh", fontFamily: "Arial, sans-serif" }}>
-      {/* Header */}
-      <div style={{ padding: 16, borderBottom: "2px solid #ccc", background: "#f5f5f5" }}>
-        <h1 style={{ margin: "0 0 16px 0", fontSize: "1.5em" }}>Planning OS - Gantt Demo</h1>
+    <WorkspaceContainer>
+      <MainWorkspace>
+        <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, minWidth: 0, fontFamily: "Arial, sans-serif" }}>
+          {/* Compressed controls header */}
+          <div style={{ padding: '4px 8px', borderBottom: '1px solid #ccc', background: '#f5f5f5', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'nowrap', overflowX: 'auto', overflowY: 'hidden', scrollbarWidth: 'none', flexShrink: 0 }}>
+              <input
+                value={taskName}
+                onChange={(e) => setTaskName(e.target.value)}
+                placeholder="Task name"
+                style={{ height: 28, padding: '0 6px', flex: '0 1 200px', minWidth: 100, boxSizing: 'border-box', fontSize: 12 }}
+              />
+              <select
+                value={selectedParentId}
+                onChange={(e) => setSelectedParentId(e.target.value)}
+                style={{ height: 28, fontSize: 12 }}
+              >
+                <option value="">(no parent)</option>
+                {tasks.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+              <button onClick={handleAdd} disabled={!canAdd} style={{ height: 28, padding: '0 10px', fontSize: 12, whiteSpace: 'nowrap' }}>
+                Add Task
+              </button>
+              <button onClick={handleLinkLastTwo} disabled={tasks.length < 2} style={{ height: 28, padding: '0 10px', fontSize: 12, whiteSpace: 'nowrap' }}>
+                Link Last Two
+              </button>
+              <button
+                onClick={() => workerRef.current?.postMessage({ type: "SNAPSHOT_BASELINE", v: 1, reqId: makeId() })}
+                disabled={!workerReady || Object.keys(scheduleResults).length === 0}
+                style={{ height: 28, padding: '0 10px', fontSize: 12, whiteSpace: 'nowrap' }}
+              >
+                Set Baseline
+              </button>
+              <button
+                onClick={() => workerRef.current?.postMessage({ type: "CLEAR_BASELINE", v: 1, reqId: makeId() })}
+                disabled={!workerReady || Object.keys(baselines).length === 0}
+                style={{ height: 28, padding: '0 10px', fontSize: 12, whiteSpace: 'nowrap' }}
+              >
+                Clear Baseline
+              </button>
+              <button
+                onClick={() => workerRef.current?.postMessage({ type: "UNDO", v: 1, reqId: makeId() })}
+                disabled={!canUndo}
+                style={{ height: 28, padding: '0 10px', fontSize: 12 }}
+              >
+                Undo
+              </button>
+              <button
+                onClick={() => workerRef.current?.postMessage({ type: "REDO", v: 1, reqId: makeId() })}
+                disabled={!canRedo}
+                style={{ height: 28, padding: '0 10px', fontSize: 12 }}
+              >
+                Redo
+              </button>
+              {resources.length > 0 && (
+                <select
+                  value={selectedResourceId ?? ""}
+                  onChange={(e) => setSelectedResourceId(e.target.value || null)}
+                  style={{ height: 28, fontSize: 12 }}
+                >
+                  {resources.map((r) => (
+                    <option key={r.id} value={r.id}>{r.name}</option>
+                  ))}
+                </select>
+              )}
+          </div>
 
-        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-          <input
-            value={taskName}
-            onChange={(e) => setTaskName(e.target.value)}
-            placeholder="Task name"
-            style={{ padding: 8, flex: 1, maxWidth: 300 }}
-          />
-          <select
-            value={selectedParentId}
-            onChange={(e) => setSelectedParentId(e.target.value)}
-            style={{ padding: 8 }}
-          >
-            <option value="">(no parent)</option>
-            {tasks.map((t) => (
-              <option key={t.id} value={t.id}>{t.name}</option>
-            ))}
-          </select>
-          <button onClick={handleAdd} disabled={!canAdd} style={{ padding: "8px 16px" }}>
-            Add Task
-          </button>
-          <button onClick={handleLinkLastTwo} disabled={tasks.length < 2} style={{ padding: "8px 16px" }}>
-            Link Last Two (FS)
-          </button>
-          <button
-            onClick={() => workerRef.current?.postMessage({ type: "SNAPSHOT_BASELINE", v: 1, reqId: makeId() })}
-            disabled={!workerReady || Object.keys(scheduleResults).length === 0}
-            style={{ padding: "8px 16px" }}
-          >
-            Set Baseline
-          </button>
-          <button
-            onClick={() => workerRef.current?.postMessage({ type: "CLEAR_BASELINE", v: 1, reqId: makeId() })}
-            disabled={!workerReady || Object.keys(baselines).length === 0}
-            style={{ padding: "8px 16px" }}
-          >
-            Clear Baseline
-          </button>
-          <button
-            onClick={() => workerRef.current?.postMessage({ type: "UNDO", v: 1, reqId: makeId() })}
-            disabled={!canUndo}
-            style={{ padding: "8px 16px" }}
-          >
-            Undo
-          </button>
-          <button
-            onClick={() => workerRef.current?.postMessage({ type: "REDO", v: 1, reqId: makeId() })}
-            disabled={!canRedo}
-            style={{ padding: "8px 16px" }}
-          >
-            Redo
-          </button>
-          {resources.length > 0 && (
-            <select
-              value={selectedResourceId ?? ""}
-              onChange={(e) => setSelectedResourceId(e.target.value || null)}
-              style={{ padding: 8 }}
+          {/* Main content: table + gantt + shared vertical scroll track */}
+          <div ref={mainContentRowRef} style={{ display: "flex", flex: 1, overflow: "hidden" }} onWheel={handleWheel}>
+            {/* Left upper pane — fixed width from tableWidth, full height */}
+            <div ref={tableContainerRef} style={{ width: tableWidth, flexShrink: 0, display: "flex", flexDirection: "column", height: "100%" }}>
+            <TaskTable
+              tasks={visibleTasks}
+              scheduleResults={scheduleResults}
+              variances={variances}
+              diagnosticsMap={diagnosticsMap}
+              onUpdateTask={handleUpdateTask}
+              scrollTop={scrollTop}
+              viewportHeight={viewportHeight}
+              projectStartDate={projectStartDate}
+              selectedTaskId={selection?.type === "task" ? selection.id : null}
+              onSelectTask={(id) => handleSelect({ type: "task", id })}
+              collapsedIds={collapsedIds}
+              onToggleCollapse={handleToggleCollapse}
+              bodyRef={tableBodyRef}
+            />
+            </div>
+            <WorkspaceSplitter tableRef={tableContainerRef} containerRef={mainContentRowRef} lowerAxisRef={histogramAxisRef} />
+            {/* Right pane: Gantt only (histogram moved to BottomDrawer) */}
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden" }}>
+              <GanttPane
+                tasks={visibleTasks}
+                scheduleResults={scheduleResults}
+                dependencies={dependencies}
+                scrollTop={scrollTop}
+                viewportHeight={viewportHeight}
+                onUpdateDuration={handleUpdateDuration}
+                onUpdateTask={handleUpdateTask}
+                onAddDependency={handleAddDependency}
+                vScrollRef={scrollTrackRef}
+                timeline={timeline}
+                selection={selection}
+                onSelect={handleSelect}
+                nonWorkingDays={nonWorkingDays}
+                baselines={baselines}
+                onScrollLeftChange={handleGanttScrollLeftChange}
+                onHScrollMount={handleGanttHScrollMount}
+                bodyRef={ganttBodyRef}
+              />
+            </div>
+
+            {/* Shared vertical scroll track — single owner of vertical scrollTop */}
+            <div
+              ref={scrollTrackRef}
+              onScroll={handleScrollTrack}
+              style={{
+                width: 17,
+                overflowY: "auto",
+                overflowX: "hidden",
+                flexShrink: 0,
+                marginTop: HEADER_METRICS.totalHeight,
+              }}
             >
-              {resources.map((r) => (
-                <option key={r.id} value={r.id}>{r.name}</option>
-              ))}
-            </select>
-          )}
-        </div>
+              <div style={{ width: 1, height: phantomHeight }} />
+            </div>
+          </div>
 
-        <div style={{ fontSize: "0.9em", color: "#666" }}>
-          Tasks: {tasks.length} | Dependencies: {dependencies.length} | 
-          Scheduled: {Object.keys(scheduleResults).length} | 
-          Worker: {workerReady ? "Ready" : "Starting..."}
-        </div>
-      </div>
 
-      {/* Main content: table + gantt + shared vertical scroll track */}
-      <div style={{ display: "flex", flex: 1, overflow: "hidden" }} onWheel={handleWheel}>
-        <TaskTable
-          tasks={visibleTasks}
-          scheduleResults={scheduleResults}
-          variances={variances}
-          onUpdateTask={handleUpdateTask}
-          scrollTop={scrollTop}
-          viewportHeight={viewportHeight}
-          projectStartDate={projectStartDate}
-          selectedTaskId={selection?.type === "task" ? selection.id : null}
-          onSelectTask={(id) => handleSelect({ type: "task", id })}
-          collapsedIds={collapsedIds}
-          onToggleCollapse={handleToggleCollapse}
-        />
-        {/* Right pane: Gantt + Histogram stacked vertically */}
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden" }}>
-          <GanttPane
-            tasks={visibleTasks}
-            scheduleResults={scheduleResults}
-            dependencies={dependencies}
-            scrollTop={scrollTop}
-            viewportHeight={viewportHeight}
-            onUpdateDuration={handleUpdateDuration}
-            onUpdateTask={handleUpdateTask}
-            onAddDependency={handleAddDependency}
-            vScrollRef={scrollTrackRef}
-            projectStartDate={projectStartDate}
-            selection={selection}
-            onSelect={handleSelect}
-            nonWorkingDays={nonWorkingDays}
-            baselines={baselines}
-            onScrollLeftChange={handleGanttScrollLeftChange}
-          />
-          <HistogramPane
-            resourceHistogram={resourceHistogram}
-            selectedResource={selectedResource}
-            scrollLeft={ganttScrollLeft}
-            viewportWidth={ganttPaneWidth}
-          />
         </div>
+      </MainWorkspace>
 
-        {/* Shared vertical scroll track — single owner of vertical scrollTop */}
-        <div
-          ref={scrollTrackRef}
-          onScroll={handleScrollTrack}
-          style={{
-            width: 17,
-            overflowY: "auto",
-            overflowX: "hidden",
-            flexShrink: 0,
-            marginTop: TIMESCALE_HEIGHT,
-          }}
-        >
-          <div style={{ width: 1, height: phantomHeight }} />
-        </div>
-      </div>
-
-      {/* Footer: Dependencies and logs */}
-      <div style={{ borderTop: "1px solid #ccc", padding: 16, background: "#fafafa", maxHeight: 200, overflow: "auto" }}>
-        <div style={{ display: "flex", gap: 32 }}>
-          <div style={{ flex: 1 }}>
-            <DependencyList
+      {/* Bottom drawer — push layout, sibling of MainWorkspace */}
+      {isBottomOpen && (
+        <BottomDrawer>
+          {activeBottomTab === 'task-details' ? (
+            <TaskDetailsPanel
               dependencies={dependencies}
               tasks={tasks}
               getTaskName={getTaskName}
-              onUpdateType={handleUpdateDependencyType}
-              onUpdateLag={handleUpdateDependencyLag}
-              onDelete={handleDeleteDependency}
-              onAdd={handleAddDependency}
+              onUpdateDependencyType={handleUpdateDependencyType}
+              onUpdateDependencyLag={handleUpdateDependencyLag}
+              onDeleteDependency={handleDeleteDependency}
+              onAddDependency={handleAddDependency}
+              resources={resources}
+              assignments={assignments}
+              resourceName={resourceName}
+              onResourceNameChange={setResourceName}
+              onAddResource={handleAddResource}
+              onDeleteResource={handleDeleteResource}
+              onAddAssignment={handleAddAssignment}
+              onDeleteAssignment={handleDeleteAssignment}
+              selectedTask={selection?.type === "task" ? tasks.find(t => t.id === selection.id) ?? null : null}
+              onUpdateTask={handleUpdateTask}
+              diagnosticsMap={diagnosticsMap}
             />
-          </div>
-
-          {/* Resources panel */}
-          <div style={{ flex: 1 }}>
-            <h3 style={{ margin: "0 0 8px 0", fontSize: "1em" }}>Resources</h3>
-            <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
-              <input
-                value={resourceName}
-                onChange={(e) => setResourceName(e.target.value)}
-                placeholder="Resource name"
-                style={{ padding: 4, flex: 1 }}
-              />
-              <button onClick={handleAddResource} disabled={!resourceName.trim()} style={{ padding: "4px 8px" }}>Add</button>
+          ) : activeBottomTab === 'logs' ? (
+            <div style={{ padding: 12, overflow: "auto", height: "100%", fontFamily: "Arial, sans-serif" }}>
+              <h3 style={{ margin: "0 0 8px 0", fontSize: "1em" }}>Worker Logs</h3>
+              <ul style={{ margin: 0, paddingLeft: 20, fontSize: "0.9em" }}>
+                {logs.slice(0, 50).map((log, i) => (
+                  <li key={`${log}-${i}`} style={{ fontFamily: "monospace", fontSize: "0.85em" }}>
+                    {log}
+                  </li>
+                ))}
+              </ul>
             </div>
-            <ul style={{ margin: 0, paddingLeft: 20, fontSize: "0.85em" }}>
-              {resources.map((r) => (
-                <li key={r.id} style={{ fontFamily: "monospace", marginBottom: 2 }}>
-                  {r.name} (max {r.maxUnitsPerDay}/d)
-                  <button onClick={() => handleDeleteResource(r.id)} style={{ marginLeft: 8, fontSize: "0.8em" }}>x</button>
-                </li>
-              ))}
-            </ul>
-            {/* Assignments */}
-            {tasks.length > 0 && resources.length > 0 && (
-              <div style={{ marginTop: 8 }}>
-                <h4 style={{ margin: "0 0 4px 0", fontSize: "0.9em" }}>Assignments</h4>
-                <ul style={{ margin: 0, paddingLeft: 20, fontSize: "0.85em" }}>
-                  {assignments.map((a) => (
-                    <li key={a.id} style={{ fontFamily: "monospace", marginBottom: 2 }}>
-                      {getTaskName(a.taskId)} ← {resources.find(r => r.id === a.resourceId)?.name ?? a.resourceId} ({a.unitsPerDay}/d)
-                      <button onClick={() => handleDeleteAssignment(a.id)} style={{ marginLeft: 8, fontSize: "0.8em" }}>x</button>
-                    </li>
-                  ))}
-                </ul>
-                <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
-                  <select id="assign-task" style={{ flex: 1, fontSize: "0.85em" }}>
-                    {tasks.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                  </select>
-                  <select id="assign-resource" style={{ flex: 1, fontSize: "0.85em" }}>
-                    {resources.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                  </select>
-                  <button onClick={() => {
-                    const taskId = (document.getElementById("assign-task") as HTMLSelectElement)?.value;
-                    const resourceId = (document.getElementById("assign-resource") as HTMLSelectElement)?.value;
-                    if (taskId && resourceId) handleAddAssignment(taskId, resourceId);
-                  }} style={{ padding: "4px 8px", fontSize: "0.85em" }}>Assign</button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div style={{ flex: 1 }}>
-            <h3 style={{ margin: "0 0 8px 0", fontSize: "1em" }}>Worker Logs</h3>
-            <ul style={{ margin: 0, paddingLeft: 20, fontSize: "0.9em" }}>
-              {logs.slice(0, 5).map((log, i) => (
-                <li key={`${log}-${i}`} style={{ fontFamily: "monospace", fontSize: "0.85em" }}>
-                  {log}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      </div>
-    </div>
+          ) : (
+            <HistogramPane
+              resourceHistogram={resourceHistogram}
+              selectedResource={selectedResource}
+              ganttScrollElRef={ganttScrollElRef}
+              timeline={timeline}
+              tableWidth={tableWidth}
+              nonWorkingDays={nonWorkingDays}
+              axisPaneRef={histogramAxisRef}
+            />
+          )}
+        </BottomDrawer>
+      )}
+    </WorkspaceContainer>
   );
 }

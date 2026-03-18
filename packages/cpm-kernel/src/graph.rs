@@ -1,4 +1,4 @@
-use crate::models::{CpmError, DepType, RawDependency, RawTask};
+use crate::models::{ConstraintType, CpmError, DepType, RawDependency, RawTask};
 use std::collections::HashMap;
 
 /// Stored per-edge metadata needed by the engine.
@@ -20,6 +20,8 @@ pub struct CpmGraph {
     pub parent: Vec<Option<usize>>,
     pub children: Vec<Vec<usize>>,
     pub is_summary: Vec<bool>,
+    pub constraint_type: Vec<ConstraintType>,
+    pub constraint_date: Vec<Option<i32>>,
 }
 
 impl CpmGraph {
@@ -35,6 +37,8 @@ impl CpmGraph {
                 parent: Vec::new(),
                 children: Vec::new(),
                 is_summary: Vec::new(),
+                constraint_type: Vec::new(),
+                constraint_date: Vec::new(),
             });
         }
 
@@ -43,6 +47,8 @@ impl CpmGraph {
         let mut node_to_id: Vec<String> = Vec::new();
         let mut durations: Vec<u32> = Vec::new();
         let mut min_early_start: Vec<u32> = Vec::new();
+        let mut constraint_type_vec: Vec<ConstraintType> = Vec::new();
+        let mut constraint_date_vec: Vec<Option<i32>> = Vec::new();
 
         for task in tasks {
             // Reject duplicate task IDs
@@ -55,6 +61,8 @@ impl CpmGraph {
             node_to_id.push(task.id.clone());
             durations.push(task.duration);
             min_early_start.push(task.min_early_start);
+            constraint_type_vec.push(task.constraint_type);
+            constraint_date_vec.push(task.constraint_date);
         }
 
         let n = node_to_id.len();
@@ -124,6 +132,8 @@ impl CpmGraph {
             parent,
             children,
             is_summary,
+            constraint_type: constraint_type_vec,
+            constraint_date: constraint_date_vec,
         })
     }
 

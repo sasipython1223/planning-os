@@ -1,4 +1,4 @@
-import type { Assignment, BaselineMap, Dependency, DependencyType, Resource, ScheduleResultMap, Task } from "protocol";
+import type { Assignment, AssumptionSet, AuthoredActivity, BaselineMap, ConstraintType, Dependency, DependencyType, Resource, ScheduleResultMap, Task } from "protocol";
 
 /**
  * State module - owns canonical in-memory tasks and dependencies.
@@ -75,7 +75,7 @@ export const addTask = (task: Task): void => {
   }
 };
 
-export const updateTask = (id: string, updates: { name?: string; duration?: number; minEarlyStart?: number; parentId?: string | null }): boolean => {
+export const updateTask = (id: string, updates: { name?: string; duration?: number; minEarlyStart?: number; parentId?: string | null; constraintType?: ConstraintType; constraintDate?: number | null }): boolean => {
   const task = findTask(id);
   if (!task) return false;
 
@@ -90,6 +90,16 @@ export const updateTask = (id: string, updates: { name?: string; duration?: numb
   }
   if (updates.parentId !== undefined) {
     task.parentId = updates.parentId === null ? undefined : updates.parentId;
+  }
+  if (updates.constraintType !== undefined) {
+    task.constraintType = updates.constraintType;
+    // When switching to ASAP/ALAP, clear the date
+    if (updates.constraintType === "ASAP" || updates.constraintType === "ALAP") {
+      task.constraintDate = null;
+    }
+  }
+  if (updates.constraintDate !== undefined) {
+    task.constraintDate = updates.constraintDate;
   }
 
   return true;
@@ -225,7 +235,11 @@ export const hydrateState = (persisted: {
 }): void => {
   projectStartDate = persisted.projectStartDate;
   excludeWeekends = persisted.excludeWeekends;
-  tasks = persisted.tasks.map(t => ({ ...t }));
+  tasks = persisted.tasks.map(t => ({
+    ...t,
+    constraintType: t.constraintType ?? "ASAP",
+    constraintDate: t.constraintDate ?? null,
+  }));
   dependencies = persisted.dependencies.map(d => ({ ...d }));
   baselineMap = { ...persisted.baselines };
   resources = (persisted.resources ?? []).map(r => ({ ...r }));
@@ -280,4 +294,24 @@ export const deleteAssignment = (id: string): boolean => {
   assignments.splice(index, 1);
   return true;
 };
+
+// ── Domain Model Seams (M07 — compiled path placeholders) ───────────
+// These return empty defaults until domain model state is stored in the worker.
+// The compiled scheduling path calls these; the legacy path does not.
+
+const EMPTY_ASSUMPTION_SET: AssumptionSet = {
+  id: "placeholder",
+  version: 0,
+  name: "Placeholder",
+  zones: [],
+  quantities: [],
+  resources: [],
+  productivityRules: [],
+};
+
+/** Return the current AssumptionSet. Placeholder until domain state is stored. */
+export const getAssumptionSet = (): AssumptionSet => EMPTY_ASSUMPTION_SET;
+
+/** Return authored activities. Placeholder until domain state is stored. */
+export const getAuthoredActivities = (): readonly AuthoredActivity[] => [];
 

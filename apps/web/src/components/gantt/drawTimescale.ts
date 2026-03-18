@@ -1,5 +1,6 @@
+import { HEADER_METRICS } from "../../ui/config/themeConfig";
 import { formatDateShort, projectDate } from "../../utils/dateProjection";
-import { COLORS, DAY_WIDTH, TIMESCALE_HEIGHT } from "./ganttConstants";
+import { COLORS } from "./ganttConstants";
 
 /**
  * Draws the timescale (date ruler) on a viewport-sized canvas.
@@ -13,8 +14,9 @@ export function drawTimescale(
   scrollLeft: number,
   projectStartDate: string,
   nonWorkingDays: ReadonlySet<number>,
+  pixelsPerDay: number,
 ): void {
-  const height = TIMESCALE_HEIGHT;
+  const height = HEADER_METRICS.totalHeight;
 
   // Clear background (viewport-sized)
   ctx.fillStyle = COLORS.timescaleBackground;
@@ -25,14 +27,14 @@ export function drawTimescale(
   ctx.translate(-scrollLeft, 0);
 
   // Compute visible day range for efficient rendering
-  const firstVisibleDay = Math.max(0, Math.floor(scrollLeft / DAY_WIDTH) - 1);
-  const lastVisibleDay = Math.min(maxDay, Math.ceil((scrollLeft + viewportWidth) / DAY_WIDTH) + 1);
+  const firstVisibleDay = Math.max(0, Math.floor(scrollLeft / pixelsPerDay) - 1);
+  const lastVisibleDay = Math.min(maxDay, Math.ceil((scrollLeft + viewportWidth) / pixelsPerDay) + 1);
 
   // Shade non-working day columns
   ctx.fillStyle = "rgba(0, 0, 0, 0.06)";
   for (let day = firstVisibleDay; day <= lastVisibleDay; day++) {
     if (nonWorkingDays.has(day)) {
-      ctx.fillRect(day * DAY_WIDTH, 0, DAY_WIDTH, height);
+      ctx.fillRect(day * pixelsPerDay, 0, pixelsPerDay, height);
     }
   }
 
@@ -43,7 +45,7 @@ export function drawTimescale(
   ctx.textBaseline = "middle";
 
   for (let day = firstVisibleDay; day <= lastVisibleDay; day++) {
-    const x = day * DAY_WIDTH;
+    const x = day * pixelsPerDay;
 
     // Draw tick mark
     ctx.strokeStyle = COLORS.grid;

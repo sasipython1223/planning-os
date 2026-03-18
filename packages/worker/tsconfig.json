@@ -9,7 +9,7 @@
     "noEmit": true,
     "allowImportingTsExtensions": true,
     "paths": {
-      "protocol": ["../protocol/src/types.ts"],
+      "protocol": ["../protocol/src/index.ts"],
       "protocol/kernel": ["../protocol/src/kernel.ts"]
     }
   },

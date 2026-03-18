@@ -62,6 +62,8 @@ export function buildHistoryEntry(cmd: Command): HistoryEntry | null {
       for (const key of Object.keys(cmd.updates) as (keyof typeof cmd.updates)[]) {
         if (key === "parentId") {
           prevUpdates[key] = task.parentId ?? null;
+        } else if (key === "constraintDate") {
+          prevUpdates[key] = task.constraintDate ?? null;
         } else {
           prevUpdates[key] = task[key];
         }

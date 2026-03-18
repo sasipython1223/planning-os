@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use crate::graph::CpmGraph;
-use crate::models::{CpmError, DepType, RawDependency, RawTask, ScheduleResult};
+use crate::models::{ConstraintType, CpmError, DepType, RawDependency, RawTask, ScheduleResult};
 
 // ── Calendar-aware helpers ───────────────────────────────────────
 
@@ -248,6 +248,34 @@ pub fn calculate_schedule(
             early_start[node] = snap_forward(raw_es, &blocked);
             early_finish[node] = advance_working(early_start[node], graph.durations[node], &blocked);
         }
+
+        // ── Apply forward-driving constraints ────────────────────
+        match graph.constraint_type[node] {
+            ConstraintType::SNET => {
+                if let Some(cd) = graph.constraint_date[node] {
+                    let cd_u = cd.max(0) as u32;
+                    if cd_u > early_start[node] {
+                        early_start[node] = snap_forward(cd_u, &blocked);
+                        early_finish[node] = advance_working(early_start[node], graph.durations[node], &blocked);
+                    }
+                }
+            }
+            ConstraintType::MSO => {
+                if let Some(cd) = graph.constraint_date[node] {
+                    let cd_u = cd.max(0) as u32;
+                    early_start[node] = snap_forward(cd_u, &blocked);
+                    early_finish[node] = advance_working(early_start[node], graph.durations[node], &blocked);
+                }
+            }
+            ConstraintType::MFO => {
+                if let Some(cd) = graph.constraint_date[node] {
+                    let cd_u = cd.max(0) as u32;
+                    early_finish[node] = cd_u;
+                    early_start[node] = retreat_working(early_finish[node], graph.durations[node], &blocked);
+                }
+            }
+            _ => {} // ASAP, ALAP, FNLT: no forward-pass change
+        }
     }
 
     // ── Bottom-up summary rollup ─────────────────────────────────
@@ -348,12 +376,52 @@ pub fn calculate_schedule(
         } else {
             late_start[node] = retreat_working(late_finish[node], graph.durations[node], &blocked);
         }
+
+        // ── Apply backward-driving constraints ───────────────────
+        match graph.constraint_type[node] {
+            ConstraintType::FNLT => {
+                if let Some(cd) = graph.constraint_date[node] {
+                    let cd_u = cd.max(0) as u32;
+                    if cd_u < late_finish[node] {
+                        late_finish[node] = cd_u;
+                        late_start[node] = retreat_working(late_finish[node], graph.durations[node], &blocked);
+                    }
+                }
+            }
+            ConstraintType::MFO => {
+                if let Some(cd) = graph.constraint_date[node] {
+                    let cd_u = cd.max(0) as u32;
+                    late_finish[node] = cd_u;
+                    late_start[node] = retreat_working(late_finish[node], graph.durations[node], &blocked);
+                }
+            }
+            ConstraintType::MSO => {
+                if let Some(cd) = graph.constraint_date[node] {
+                    let cd_u = cd.max(0) as u32;
+                    late_start[node] = snap_forward(cd_u, &blocked);
+                    late_finish[node] = advance_working(late_start[node], graph.durations[node], &blocked);
+                }
+            }
+            _ => {} // ASAP, ALAP, SNET: no backward-pass change
+        }
+    }
+
+    // ── ALAP post-processing ─────────────────────────────────────
+    // ALAP tasks shift their early dates to late dates after both passes.
+    for &node in &topo_order {
+        if graph.is_summary[node] {
+            continue;
+        }
+        if graph.constraint_type[node] == ConstraintType::ALAP {
+            early_start[node] = late_start[node];
+            early_finish[node] = late_finish[node];
+        }
     }
 
     // ── Calculate total float and critical path ──────────────────
     let mut results: Vec<ScheduleResult> = Vec::with_capacity(n);
     for i in 0..n {
-        let total_float = count_working_days_signed(early_start[i], late_start[i], &blocked);
+        let total_float = count_working_days_signed(early_finish[i], late_finish[i], &blocked);
         let is_critical = total_float <= 0;
 
         results.push(ScheduleResult {

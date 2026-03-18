@@ -1,3 +1,32 @@
+export type ConstraintType =
+  | "ASAP"
+  | "ALAP"
+  | "SNET"
+  | "FNLT"
+  | "MSO"
+  | "MFO";
+
+/* ------------------------------------------------------------------ */
+/*  Constraint Diagnostics (V.10b)                                     */
+/* ------------------------------------------------------------------ */
+
+/** Constraint diagnostic codes — input-only and result-derived. */
+export type ConstraintDiagnosticCode =
+  | "MISSING_DATE_FOR_CONSTRAINT"
+  | "DATE_IGNORED_BY_MODE"
+  | "GENERATING_NEGATIVE_FLOAT"
+  | "SUPERSEDED_BY_LOGIC"
+  | "SUPERSEDED_BY_CALENDAR";
+
+/** Diagnostics keyed by task id. Codes only — React maps to UI. Derived — never persisted. */
+export type DiagnosticsMap = Record<string, ConstraintDiagnosticCode[]>;
+
+/** Severity levels for constraint diagnostics — ordered by priority. */
+export type DiagnosticSeverity = "error" | "warning" | "info";
+
+/** Numeric rank for severity comparison — higher = more severe. */
+export const SEVERITY_RANK: Record<DiagnosticSeverity, number> = { error: 2, warning: 1, info: 0 };
+
 export type Task = {
   id: string;
   name: string;
@@ -6,6 +35,8 @@ export type Task = {
   parentId?: string;
   depth: number;
   isSummary: boolean;
+  constraintType?: ConstraintType;
+  constraintDate?: number | null;
 };
 
 export type DependencyType = "FS" | "SS" | "FF" | "SF";
@@ -48,6 +79,8 @@ export type UpdateTaskCommand = {
     duration?: number;
     minEarlyStart?: number;
     parentId?: string | null;
+    constraintType?: ConstraintType;
+    constraintDate?: number | null;
   };
 };
 
@@ -215,6 +248,7 @@ export type DiffStateMessage = {
     resources: Resource[];
     assignments: Assignment[];
     resourceHistogram: ResourceHistogram;
+    diagnosticsMap?: DiagnosticsMap;
     canUndo: boolean;
     canRedo: boolean;
   };

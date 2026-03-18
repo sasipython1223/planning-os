@@ -2137,3 +2137,1516 @@ describe("Phase U.2 — computeResourceHistogram", () => {
     expect(result["r1"]).toBeUndefined();
   });
 });
+
+// ────────────────────────────────────────────────────────────────────────────
+// Phase V — Constraints & Scheduling Modes
+// ────────────────────────────────────────────────────────────────────────────
+
+describe("Phase V — Constraint Validation", () => {
+  beforeEach(() => {
+    State.clearState();
+  });
+
+  it("rejects invalid constraint type", () => {
+    const err = validateTaskUpdate("t1", { constraintType: "BOGUS" as any });
+    expect(err).toBe("Invalid constraint type: BOGUS");
+  });
+
+  it("accepts all valid constraint types", () => {
+    for (const ct of ["ASAP", "ALAP", "SNET", "FNLT", "MSO", "MFO"] as const) {
+      expect(validateTaskUpdate("t1", { constraintType: ct })).toBeNull();
+    }
+  });
+
+  it("allows dated constraint without constraintDate (diagnostic, not rejection)", () => {
+    const err = validateTaskUpdate("t1", { constraintType: "SNET" });
+    expect(err).toBeNull();
+  });
+
+  it("rejects negative constraintDate", () => {
+    const err = validateTaskUpdate("t1", { constraintType: "SNET", constraintDate: -1 });
+    expect(err).toBe("constraintDate must not be negative");
+  });
+
+  it("rejects constraintDate on ASAP constraint", () => {
+    State.addTask({ id: "t1", name: "T", duration: 5, depth: 0, isSummary: false, constraintType: "ASAP" });
+    const err = validateTaskUpdate("t1", { constraintDate: 10 });
+    expect(err).toBe("Cannot set constraintDate on ASAP constraint");
+  });
+
+  it("rejects constraintDate on ALAP constraint", () => {
+    State.addTask({ id: "t1", name: "T", duration: 5, depth: 0, isSummary: false, constraintType: "ALAP" });
+    const err = validateTaskUpdate("t1", { constraintDate: 10 });
+    expect(err).toBe("Cannot set constraintDate on ALAP constraint");
+  });
+
+  it("accepts dated constraint when task already has a date", () => {
+    State.addTask({ id: "t1", name: "T", duration: 5, depth: 0, isSummary: false, constraintType: "SNET", constraintDate: 5 });
+    // Switch to another dated type — existing date satisfies
+    const err = validateTaskUpdate("t1", { constraintType: "FNLT" });
+    expect(err).toBeNull();
+  });
+});
+
+describe("Phase V — Constraint State Management", () => {
+  beforeEach(() => {
+    State.clearState();
+  });
+
+  it("persists constraintType and constraintDate on update", () => {
+    State.addTask({ id: "t1", name: "T", duration: 5, depth: 0, isSummary: false });
+    State.updateTask("t1", { constraintType: "SNET", constraintDate: 10 });
+    const t = State.findTask("t1");
+    expect(t?.constraintType).toBe("SNET");
+    expect(t?.constraintDate).toBe(10);
+  });
+
+  it("switching to ASAP auto-clears constraintDate", () => {
+    State.addTask({ id: "t1", name: "T", duration: 5, depth: 0, isSummary: false, constraintType: "SNET", constraintDate: 10 });
+    State.updateTask("t1", { constraintType: "ASAP" });
+    const t = State.findTask("t1");
+    expect(t?.constraintType).toBe("ASAP");
+    expect(t?.constraintDate).toBeNull();
+  });
+
+  it("switching to ALAP auto-clears constraintDate", () => {
+    State.addTask({ id: "t1", name: "T", duration: 5, depth: 0, isSummary: false, constraintType: "FNLT", constraintDate: 7 });
+    State.updateTask("t1", { constraintType: "ALAP" });
+    const t = State.findTask("t1");
+    expect(t?.constraintType).toBe("ALAP");
+    expect(t?.constraintDate).toBeNull();
+  });
+});
+
+describe("Phase V — Constraint Hydration", () => {
+  beforeEach(() => {
+    State.clearState();
+  });
+
+  it("defaults legacy tasks without constraint fields to ASAP + null", () => {
+    const legacyTask = { id: "t1", name: "T", duration: 5, depth: 0, isSummary: false } as any;
+    State.hydrateState({
+      projectStartDate: "2025-01-01",
+      excludeWeekends: false,
+      tasks: [legacyTask],
+      dependencies: [],
+      baselines: {},
+    });
+    const t = State.findTask("t1");
+    expect(t?.constraintType).toBe("ASAP");
+    expect(t?.constraintDate).toBeNull();
+  });
+
+  it("preserves existing constraint fields during hydration", () => {
+    State.hydrateState({
+      projectStartDate: "2025-01-01",
+      excludeWeekends: false,
+      tasks: [{ id: "t1", name: "T", duration: 5, depth: 0, isSummary: false, constraintType: "MSO", constraintDate: 12 }],
+      dependencies: [],
+      baselines: {},
+    });
+    const t = State.findTask("t1");
+    expect(t?.constraintType).toBe("MSO");
+    expect(t?.constraintDate).toBe(12);
+  });
+});
+
+describe("Phase V — Constraint in buildScheduleRequest", () => {
+  it("passes constraintType and constraintDate to schedule request", () => {
+    const tasks: Task[] = [
+      { id: "A", name: "A", duration: 5, depth: 0, isSummary: false, constraintType: "SNET", constraintDate: 10 },
+    ];
+    const req = buildScheduleRequest(tasks, [], []);
+    expect(req.tasks[0].constraintType).toBe("SNET");
+    expect(req.tasks[0].constraintDate).toBe(10);
+  });
+
+  it("omits constraint fields when absent on canonical task", () => {
+    const tasks: Task[] = [
+      { id: "A", name: "A", duration: 5, depth: 0, isSummary: false },
+    ];
+    const req = buildScheduleRequest(tasks, [], []);
+    expect(req.tasks[0]).not.toHaveProperty("constraintType");
+    expect(req.tasks[0]).not.toHaveProperty("constraintDate");
+  });
+});
+
+describe("Phase V.1 — Constraint Pipeline Integration", () => {
+  beforeEach(() => {
+    State.clearState();
+  });
+
+  it("SNET constraint survives State → buildScheduleRequest pipeline", () => {
+    State.addTask({ id: "A", name: "A", duration: 3, depth: 0, isSummary: false });
+    State.addTask({ id: "B", name: "B", duration: 5, depth: 0, isSummary: false, constraintType: "SNET", constraintDate: 10 });
+    State.addDependency({ id: "d1", predId: "A", succId: "B", type: "FS", lag: 0 });
+
+    const req = buildScheduleRequest(State.getTasks(), State.getDependencies(), []);
+    const taskB = req.tasks.find(t => t.id === "B")!;
+    expect(taskB.constraintType).toBe("SNET");
+    expect(taskB.constraintDate).toBe(10);
+    expect(taskB.duration).toBe(5);
+    expect(req.dependencies).toHaveLength(1);
+  });
+
+  it("FNLT constraint survives State → buildScheduleRequest pipeline", () => {
+    State.addTask({ id: "A", name: "A", duration: 4, depth: 0, isSummary: false, constraintType: "FNLT", constraintDate: 3 });
+
+    const req = buildScheduleRequest(State.getTasks(), State.getDependencies(), []);
+    const taskA = req.tasks[0];
+    expect(taskA.constraintType).toBe("FNLT");
+    expect(taskA.constraintDate).toBe(3);
+  });
+
+  it("MSO constraint survives State → buildScheduleRequest pipeline", () => {
+    State.addTask({ id: "A", name: "A", duration: 3, depth: 0, isSummary: false, constraintType: "MSO", constraintDate: 5 });
+
+    const req = buildScheduleRequest(State.getTasks(), State.getDependencies(), []);
+    const taskA = req.tasks[0];
+    expect(taskA.constraintType).toBe("MSO");
+    expect(taskA.constraintDate).toBe(5);
+  });
+
+  it("MFO constraint survives State → buildScheduleRequest pipeline", () => {
+    State.addTask({ id: "A", name: "A", duration: 3, depth: 0, isSummary: false, constraintType: "MFO", constraintDate: 10 });
+
+    const req = buildScheduleRequest(State.getTasks(), State.getDependencies(), []);
+    const taskA = req.tasks[0];
+    expect(taskA.constraintType).toBe("MFO");
+    expect(taskA.constraintDate).toBe(10);
+  });
+
+  it("ALAP constraint survives without constraintDate", () => {
+    State.addTask({ id: "A", name: "A", duration: 3, depth: 0, isSummary: false, constraintType: "ALAP" });
+
+    const req = buildScheduleRequest(State.getTasks(), State.getDependencies(), []);
+    const taskA = req.tasks[0];
+    expect(taskA.constraintType).toBe("ALAP");
+    // ALAP tasks have no constraintDate — worker does not inject one
+    expect(taskA.constraintDate).toBeUndefined();
+  });
+
+  it("unconstrained task emits no constraint fields", () => {
+    State.addTask({ id: "A", name: "A", duration: 5, depth: 0, isSummary: false });
+
+    const req = buildScheduleRequest(State.getTasks(), State.getDependencies(), []);
+    const taskA = req.tasks[0];
+    expect(taskA).not.toHaveProperty("constraintType");
+    expect(taskA).not.toHaveProperty("constraintDate");
+    expect(taskA.id).toBe("A");
+    expect(taskA.duration).toBe(5);
+  });
+
+  it("Worker does not inject default constraintType for bare tasks", () => {
+    // Bare task with no constraintType set — worker must not inject "ASAP"
+    const tasks: Task[] = [
+      { id: "X", name: "X", duration: 3, depth: 0, isSummary: false },
+    ];
+    const req = buildScheduleRequest(tasks, [], []);
+    expect(req.tasks[0]).not.toHaveProperty("constraintType");
+  });
+
+  it("mixed constrained and unconstrained tasks in same request", () => {
+    State.addTask({ id: "A", name: "A", duration: 3, depth: 0, isSummary: false, constraintType: "SNET", constraintDate: 5 });
+    State.addTask({ id: "B", name: "B", duration: 4, depth: 0, isSummary: false });
+    State.addTask({ id: "C", name: "C", duration: 2, depth: 0, isSummary: false, constraintType: "MFO", constraintDate: 20 });
+    State.addDependency({ id: "d1", predId: "A", succId: "B", type: "FS", lag: 0 });
+
+    const req = buildScheduleRequest(State.getTasks(), State.getDependencies(), []);
+    expect(req.tasks).toHaveLength(3);
+
+    const a = req.tasks.find(t => t.id === "A")!;
+    expect(a.constraintType).toBe("SNET");
+    expect(a.constraintDate).toBe(5);
+
+    const b = req.tasks.find(t => t.id === "B")!;
+    expect(b).not.toHaveProperty("constraintType");
+    expect(b).not.toHaveProperty("constraintDate");
+
+    const c = req.tasks.find(t => t.id === "C")!;
+    expect(c.constraintType).toBe("MFO");
+    expect(c.constraintDate).toBe(20);
+
+    expect(req.dependencies).toHaveLength(1);
+  });
+});
+
+describe("Phase V.2 — Constraint Persistence Round-Trip", () => {
+  beforeEach(() => {
+    State.clearState();
+  });
+
+  it("SNET + constraintDate survives persist/hydrate round-trip", () => {
+    State.addTask({ id: "A", name: "A", duration: 5, depth: 0, isSummary: false, constraintType: "SNET", constraintDate: 10 });
+
+    const snapshot: PersistedState = {
+      version: 1,
+      lastModified: Date.now(),
+      state: {
+        projectStartDate: State.getProjectStartDate(),
+        excludeWeekends: State.getExcludeWeekends(),
+        tasks: State.getTasks().map(t => ({ ...t })),
+        dependencies: State.getDependencies().map(d => ({ ...d })),
+        baselines: { ...State.getBaselineMap() },
+      },
+    };
+
+    State.clearState();
+    State.hydrateState(snapshot.state);
+
+    const t = State.findTask("A")!;
+    expect(t.constraintType).toBe("SNET");
+    expect(t.constraintDate).toBe(10);
+  });
+
+  it("ALAP persists without injected constraintDate", () => {
+    State.addTask({ id: "A", name: "A", duration: 3, depth: 0, isSummary: false, constraintType: "ALAP" });
+
+    const snapshot: PersistedState = {
+      version: 1,
+      lastModified: Date.now(),
+      state: {
+        projectStartDate: State.getProjectStartDate(),
+        excludeWeekends: State.getExcludeWeekends(),
+        tasks: State.getTasks().map(t => ({ ...t })),
+        dependencies: State.getDependencies().map(d => ({ ...d })),
+        baselines: { ...State.getBaselineMap() },
+      },
+    };
+
+    State.clearState();
+    State.hydrateState(snapshot.state);
+
+    const t = State.findTask("A")!;
+    expect(t.constraintType).toBe("ALAP");
+    expect(t.constraintDate).toBeNull();
+  });
+
+  it("unconstrained task persists without injected constraint defaults", () => {
+    State.addTask({ id: "A", name: "A", duration: 4, depth: 0, isSummary: false });
+
+    const persisted = State.getTasks().map(t => ({ ...t }));
+    // Spread must not inject constraintType/constraintDate where they didn't exist
+    // After hydration, defaults apply
+    const snapshot: PersistedState = {
+      version: 1,
+      lastModified: Date.now(),
+      state: {
+        projectStartDate: State.getProjectStartDate(),
+        excludeWeekends: State.getExcludeWeekends(),
+        tasks: persisted,
+        dependencies: [],
+        baselines: {},
+      },
+    };
+
+    State.clearState();
+    State.hydrateState(snapshot.state);
+
+    const t = State.findTask("A")!;
+    expect(t.constraintType).toBe("ASAP");
+    expect(t.constraintDate).toBeNull();
+  });
+
+  it("mixed constrained/unconstrained tasks round-trip correctly", () => {
+    State.addTask({ id: "A", name: "A", duration: 3, depth: 0, isSummary: false, constraintType: "SNET", constraintDate: 5 });
+    State.addTask({ id: "B", name: "B", duration: 4, depth: 0, isSummary: false });
+    State.addTask({ id: "C", name: "C", duration: 2, depth: 0, isSummary: false, constraintType: "MFO", constraintDate: 20 });
+    State.addDependency({ id: "d1", predId: "A", succId: "B", type: "FS", lag: 0 });
+
+    const snapshot: PersistedState = {
+      version: 1,
+      lastModified: Date.now(),
+      state: {
+        projectStartDate: State.getProjectStartDate(),
+        excludeWeekends: State.getExcludeWeekends(),
+        tasks: State.getTasks().map(t => ({ ...t })),
+        dependencies: State.getDependencies().map(d => ({ ...d })),
+        baselines: { ...State.getBaselineMap() },
+      },
+    };
+
+    State.clearState();
+    expect(State.getTasks()).toHaveLength(0);
+
+    State.hydrateState(snapshot.state);
+
+    const a = State.findTask("A")!;
+    expect(a.constraintType).toBe("SNET");
+    expect(a.constraintDate).toBe(5);
+
+    const b = State.findTask("B")!;
+    expect(b.constraintType).toBe("ASAP");
+    expect(b.constraintDate).toBeNull();
+
+    const c = State.findTask("C")!;
+    expect(c.constraintType).toBe("MFO");
+    expect(c.constraintDate).toBe(20);
+
+    expect(State.getDependencies()).toHaveLength(1);
+  });
+});
+
+describe("Phase V — Constraint Undo/Redo", () => {
+  beforeEach(() => {
+    State.clearState();
+    UndoHistory.clearHistory();
+  });
+
+  it("undo restores previous constraintType and constraintDate", () => {
+    State.addTask({ id: "A", name: "A", duration: 5, depth: 0, isSummary: false, constraintType: "ASAP", constraintDate: null });
+
+    const cmd = { type: "UPDATE_TASK" as const, v: 1 as const, reqId: "r1", taskId: "A", updates: { constraintType: "SNET" as const, constraintDate: 10 } };
+    const entry = UndoHistory.buildHistoryEntry(cmd);
+    State.updateTask("A", { constraintType: "SNET", constraintDate: 10 });
+    expect(State.findTask("A")!.constraintType).toBe("SNET");
+    expect(State.findTask("A")!.constraintDate).toBe(10);
+
+    UndoHistory.pushEntry(entry!);
+    const undoEntry = UndoHistory.popUndo();
+    for (const c of undoEntry!.undo) {
+      if (c.type === "UPDATE_TASK") State.updateTask(c.taskId, c.updates);
+    }
+    expect(State.findTask("A")!.constraintType).toBe("ASAP");
+    expect(State.findTask("A")!.constraintDate).toBeNull();
+  });
+
+  it("redo reapplies constraint changes", () => {
+    State.addTask({ id: "A", name: "A", duration: 5, depth: 0, isSummary: false, constraintType: "ASAP", constraintDate: null });
+
+    const cmd = { type: "UPDATE_TASK" as const, v: 1 as const, reqId: "r1", taskId: "A", updates: { constraintType: "MFO" as const, constraintDate: 20 } };
+    const entry = UndoHistory.buildHistoryEntry(cmd);
+    State.updateTask("A", { constraintType: "MFO", constraintDate: 20 });
+    UndoHistory.pushEntry(entry!);
+
+    // Undo
+    const undoEntry = UndoHistory.popUndo();
+    for (const c of undoEntry!.undo) {
+      if (c.type === "UPDATE_TASK") State.updateTask(c.taskId, c.updates);
+    }
+    expect(State.findTask("A")!.constraintType).toBe("ASAP");
+
+    // Redo
+    const redoEntry = UndoHistory.popRedo();
+    for (const c of redoEntry!.redo) {
+      if (c.type === "UPDATE_TASK") State.updateTask(c.taskId, c.updates);
+    }
+    expect(State.findTask("A")!.constraintType).toBe("MFO");
+    expect(State.findTask("A")!.constraintDate).toBe(20);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// M03 Phase 1 — Command Spine (internal envelope)
+// ────────────────────────────────────────────────────────────────────────────
+
+import type { DispatchOutcome } from "../src/commandEnvelope.js";
+import { _resetEnvelopeSeq, auditLog, createEnvelope } from "../src/commandEnvelope.js";
+
+describe("M03 — CommandEnvelope", () => {
+  beforeEach(() => {
+    _resetEnvelopeSeq();
+  });
+
+  it("createEnvelope populates all required fields", () => {
+    const cmd = { type: "ADD_TASK" as const, v: 1 as const, reqId: "r1", payload: { id: "t1", name: "T", duration: 5, depth: 0, isSummary: false } };
+    const before = Date.now();
+    const envelope = createEnvelope(cmd, "human");
+    const after = Date.now();
+
+    expect(envelope.commandId).toBe("env-1");
+    expect(envelope.command).toBe(cmd);
+    expect(envelope.correlationId).toBe("r1");
+    expect(envelope.issuerType).toBe("human");
+    expect(envelope.receivedAt).toBeGreaterThanOrEqual(before);
+    expect(envelope.receivedAt).toBeLessThanOrEqual(after);
+  });
+
+  it("commandId increments monotonically", () => {
+    const cmd = { type: "UNDO" as const, v: 1 as const, reqId: "r1" };
+    const e1 = createEnvelope(cmd, "human");
+    const e2 = createEnvelope(cmd, "system");
+    expect(e1.commandId).toBe("env-1");
+    expect(e2.commandId).toBe("env-2");
+  });
+
+  it("issuerType correctly distinguishes human vs system", () => {
+    const cmd = { type: "UNDO" as const, v: 1 as const, reqId: "r1" };
+    expect(createEnvelope(cmd, "human").issuerType).toBe("human");
+    expect(createEnvelope(cmd, "system").issuerType).toBe("system");
+  });
+
+  it("correlationId mirrors reqId from the protocol command", () => {
+    const cmd = { type: "REDO" as const, v: 1 as const, reqId: "custom-req-42" };
+    const envelope = createEnvelope(cmd, "human");
+    expect(envelope.correlationId).toBe("custom-req-42");
+  });
+
+  it("envelope does not mutate the original command", () => {
+    const cmd = { type: "ADD_TASK" as const, v: 1 as const, reqId: "r1", payload: { id: "t1", name: "T", duration: 5, depth: 0, isSummary: false } };
+    const envelope = createEnvelope(cmd, "human");
+    expect(envelope.command).toBe(cmd); // same reference, not cloned
+    expect(envelope.command.reqId).toBe("r1");
+  });
+
+  it("auditLog does not throw for any outcome", () => {
+    const cmd = { type: "UNDO" as const, v: 1 as const, reqId: "r1" };
+    const envelope = createEnvelope(cmd, "human");
+    const outcomes: DispatchOutcome[] = ["ack", "nack", "error"];
+    for (const outcome of outcomes) {
+      expect(() => auditLog(envelope, outcome)).not.toThrow();
+    }
+  });
+
+  it("_resetEnvelopeSeq resets counter for test isolation", () => {
+    const cmd = { type: "UNDO" as const, v: 1 as const, reqId: "r1" };
+    createEnvelope(cmd, "human");
+    createEnvelope(cmd, "human");
+    _resetEnvelopeSeq();
+    const fresh = createEnvelope(cmd, "human");
+    expect(fresh.commandId).toBe("env-1");
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// M03 Phase 2 — Audit Outcome Classification
+// ────────────────────────────────────────────────────────────────────────────
+
+describe("M03 Phase 2 — DispatchOutcome type coverage", () => {
+  it("DispatchOutcome covers ack, nack, and error", () => {
+    // Type-level test: verify all three outcomes are valid DispatchOutcome values.
+    const outcomes: DispatchOutcome[] = ["ack", "nack", "error"];
+    expect(outcomes).toHaveLength(3);
+    expect(new Set(outcomes).size).toBe(3);
+  });
+
+  it("auditLog includes commandId, type, outcome, issuerType, and correlationId", () => {
+    _resetEnvelopeSeq();
+    const cmd = { type: "UPDATE_TASK" as const, v: 1 as const, reqId: "r99", taskId: "t1", updates: { duration: 10 } };
+    const envelope = createEnvelope(cmd, "human");
+
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: unknown[]) => { logs.push(args.join(" ")); };
+    try {
+      auditLog(envelope, "nack");
+    } finally {
+      console.log = origLog;
+    }
+
+    expect(logs).toHaveLength(1);
+    const line = logs[0];
+    expect(line).toContain("[AUDIT]");
+    expect(line).toContain("env-1");
+    expect(line).toContain("UPDATE_TASK");
+    expect(line).toContain("nack");
+    expect(line).toContain("human");
+    expect(line).toContain("corr=r99");
+  });
+
+  it("auditLog correctly logs error outcome", () => {
+    _resetEnvelopeSeq();
+    const cmd = { type: "ADD_DEPENDENCY" as const, v: 1 as const, reqId: "r50", payload: { id: "d1", predId: "A", succId: "B", type: "FS" as const, lag: 0 } };
+    const envelope = createEnvelope(cmd, "human");
+
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: unknown[]) => { logs.push(args.join(" ")); };
+    try {
+      auditLog(envelope, "error");
+    } finally {
+      console.log = origLog;
+    }
+
+    expect(logs[0]).toContain("error");
+    expect(logs[0]).toContain("ADD_DEPENDENCY");
+  });
+
+  it("auditLog correctly logs system issuer", () => {
+    _resetEnvelopeSeq();
+    const cmd = { type: "UNDO" as const, v: 1 as const, reqId: "r1" };
+    const envelope = createEnvelope(cmd, "system");
+
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: unknown[]) => { logs.push(args.join(" ")); };
+    try {
+      auditLog(envelope, "ack");
+    } finally {
+      console.log = origLog;
+    }
+
+    expect(logs[0]).toContain("system");
+    expect(logs[0]).toContain("UNDO");
+    expect(logs[0]).toContain("ack");
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// M04 — Domain Compiler Runtime Scaffolding
+// ────────────────────────────────────────────────────────────────────────────
+
+import type { AssumptionSet, DomainCompiler } from "protocol";
+import {
+    _resetCompilerService,
+    compile,
+    getCompiler,
+    NullCompiler,
+    setCompiler,
+} from "../src/compilerService.js";
+
+describe("M04 — CompilerService", () => {
+  beforeEach(() => {
+    _resetCompilerService();
+  });
+
+  const minimalAssumptionSet: AssumptionSet = {
+    id: "as-1",
+    version: 1,
+    name: "Test Scenario",
+    zones: [],
+    quantities: [],
+    resources: [],
+    productivityRules: [],
+  };
+
+  describe("NullCompiler", () => {
+    it("returns a valid CompiledScheduleGraph shape", () => {
+      const compiler = new NullCompiler();
+      const result = compiler.compile(minimalAssumptionSet, [], []);
+
+      expect(result.activities).toEqual([]);
+      expect(result.dependencies).toEqual([]);
+      expect(result.nonWorkingDays).toEqual([]);
+      expect(result.sourceAssumptionSetId).toBe("as-1");
+      expect(result.sourceAssumptionSetVersion).toBe(1);
+      expect(result.compiledAt).toBeTruthy();
+    });
+
+    it("passes through nonWorkingDays", () => {
+      const compiler = new NullCompiler();
+      const nwd = [0, 6, 7, 13, 14];
+      const result = compiler.compile(minimalAssumptionSet, [], nwd);
+
+      expect(result.nonWorkingDays).toEqual(nwd);
+    });
+
+    it("tracks AssumptionSet identity and version", () => {
+      const compiler = new NullCompiler();
+      const asV3: AssumptionSet = { ...minimalAssumptionSet, id: "as-99", version: 3 };
+      const result = compiler.compile(asV3, [], []);
+
+      expect(result.sourceAssumptionSetId).toBe("as-99");
+      expect(result.sourceAssumptionSetVersion).toBe(3);
+    });
+
+    it("produces ISO 8601 compiledAt timestamp", () => {
+      const compiler = new NullCompiler();
+      const result = compiler.compile(minimalAssumptionSet, [], []);
+
+      // Verify it parses as a valid date
+      const parsed = new Date(result.compiledAt);
+      expect(parsed.getTime()).not.toBeNaN();
+    });
+  });
+
+  describe("Service boundary", () => {
+    it("defaults to NullCompiler", () => {
+      expect(getCompiler()).toBeInstanceOf(NullCompiler);
+    });
+
+    it("compile() delegates to NullCompiler by default", () => {
+      const result = compile(minimalAssumptionSet, [], [1, 2, 3]);
+
+      expect(result.activities).toEqual([]);
+      expect(result.dependencies).toEqual([]);
+      expect(result.nonWorkingDays).toEqual([1, 2, 3]);
+      expect(result.sourceAssumptionSetId).toBe("as-1");
+    });
+
+    it("setCompiler() swaps the active implementation", () => {
+      const stubActivity = {
+        id: "gen-1",
+        sourceAuthoredActivityId: "auth-1",
+        name: "Stub Activity",
+        durationDays: 5,
+        resolvedStrategyKind: "fixed" as const,
+        zoneId: "z-1",
+      };
+
+      const stubCompiler: DomainCompiler = {
+        compile: (as, _activities, nwd) => ({
+          activities: [stubActivity],
+          dependencies: [],
+          nonWorkingDays: [...nwd],
+          sourceAssumptionSetId: as.id,
+          sourceAssumptionSetVersion: as.version,
+          compiledAt: new Date().toISOString(),
+        }),
+      };
+
+      setCompiler(stubCompiler);
+      const result = compile(minimalAssumptionSet, [], []);
+
+      expect(result.activities).toHaveLength(1);
+      expect(result.activities[0].name).toBe("Stub Activity");
+      expect(result.activities[0].durationDays).toBe(5);
+    });
+
+    it("_resetCompilerService restores NullCompiler", () => {
+      const custom: DomainCompiler = {
+        compile: (as, _, nwd) => ({
+          activities: [],
+          dependencies: [],
+          nonWorkingDays: [...nwd],
+          sourceAssumptionSetId: as.id,
+          sourceAssumptionSetVersion: as.version,
+          compiledAt: new Date().toISOString(),
+        }),
+      };
+
+      setCompiler(custom);
+      expect(getCompiler()).toBe(custom);
+
+      _resetCompilerService();
+      expect(getCompiler()).toBeInstanceOf(NullCompiler);
+    });
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// M05 — Compiler-to-Solver Bridge
+// ────────────────────────────────────────────────────────────────────────────
+
+import type { CompiledScheduleGraph, GeneratedActivity, GeneratedDependency } from "protocol";
+import { mapCompiledGraphToRequest } from "../src/schedule/mapCompiledGraph.js";
+
+describe("M05 — mapCompiledGraphToRequest", () => {
+  const makeGraph = (
+    activities: GeneratedActivity[] = [],
+    dependencies: GeneratedDependency[] = [],
+    nonWorkingDays: number[] = [],
+  ): CompiledScheduleGraph => ({
+    activities,
+    dependencies,
+    nonWorkingDays,
+    sourceAssumptionSetId: "as-1",
+    sourceAssumptionSetVersion: 1,
+    compiledAt: "2026-03-15T00:00:00.000Z",
+  });
+
+  it("maps an empty graph to an empty ScheduleRequest", () => {
+    const request = mapCompiledGraphToRequest(makeGraph());
+
+    expect(request.tasks).toEqual([]);
+    expect(request.dependencies).toEqual([]);
+    expect(request.nonWorkingDays).toEqual([]);
+  });
+
+  it("maps a single activity to a ScheduleTask", () => {
+    const activity: GeneratedActivity = {
+      id: "gen-1",
+      sourceAuthoredActivityId: "auth-1",
+      name: "Pour Concrete",
+      durationDays: 5,
+      resolvedStrategyKind: "fixed",
+      zoneId: "z-1",
+    };
+
+    const request = mapCompiledGraphToRequest(makeGraph([activity]));
+
+    expect(request.tasks).toHaveLength(1);
+    const task = request.tasks[0];
+    expect(task.id).toBe("gen-1");
+    expect(task.duration).toBe(5);
+    expect(task.minEarlyStart).toBe(0);
+    expect(task.isSummary).toBe(false);
+    expect(task.constraintType).toBe("ASAP");
+    expect(task.constraintDate).toBeNull();
+  });
+
+  it("forwards constraint fields from activity", () => {
+    const activity: GeneratedActivity = {
+      id: "gen-2",
+      sourceAuthoredActivityId: "auth-2",
+      name: "Install Forms",
+      durationDays: 3,
+      resolvedStrategyKind: "productivity-driven",
+      zoneId: "z-1",
+      constraintType: "SNET",
+      constraintDate: 10,
+    };
+
+    const request = mapCompiledGraphToRequest(makeGraph([activity]));
+
+    const task = request.tasks[0];
+    expect(task.constraintType).toBe("SNET");
+    expect(task.constraintDate).toBe(10);
+  });
+
+  it("maps dependencies with field renaming", () => {
+    const dep: GeneratedDependency = {
+      predecessorId: "gen-1",
+      successorId: "gen-2",
+      type: "FS",
+      lagDays: 2,
+    };
+
+    const request = mapCompiledGraphToRequest(makeGraph([], [dep]));
+
+    expect(request.dependencies).toHaveLength(1);
+    const mapped = request.dependencies[0];
+    expect(mapped.predId).toBe("gen-1");
+    expect(mapped.succId).toBe("gen-2");
+    expect(mapped.depType).toBe("FS");
+    expect(mapped.lag).toBe(2);
+  });
+
+  it("maps all four dependency types", () => {
+    const types = ["FS", "SS", "FF", "SF"] as const;
+    const deps: GeneratedDependency[] = types.map((t, i) => ({
+      predecessorId: `gen-${i}`,
+      successorId: `gen-${i + 10}`,
+      type: t,
+      lagDays: i,
+    }));
+
+    const request = mapCompiledGraphToRequest(makeGraph([], deps));
+
+    expect(request.dependencies).toHaveLength(4);
+    types.forEach((t, i) => {
+      expect(request.dependencies[i].depType).toBe(t);
+      expect(request.dependencies[i].lag).toBe(i);
+    });
+  });
+
+  it("passes nonWorkingDays through unchanged", () => {
+    const nwd = [0, 6, 7, 13, 14, 20, 21];
+    const request = mapCompiledGraphToRequest(makeGraph([], [], nwd));
+
+    expect(request.nonWorkingDays).toEqual(nwd);
+  });
+
+  it("drops domain traceability fields (sourceAuthoredActivityId, zoneId, resolvedStrategyKind)", () => {
+    const activity: GeneratedActivity = {
+      id: "gen-1",
+      sourceAuthoredActivityId: "auth-1",
+      name: "Pour Concrete",
+      durationDays: 5,
+      resolvedStrategyKind: "productivity-driven",
+      zoneId: "z-1",
+    };
+
+    const request = mapCompiledGraphToRequest(makeGraph([activity]));
+
+    const task = request.tasks[0];
+    // These domain fields must not leak to the kernel
+    expect(task).not.toHaveProperty("sourceAuthoredActivityId");
+    expect(task).not.toHaveProperty("zoneId");
+    expect(task).not.toHaveProperty("resolvedStrategyKind");
+    expect(task).not.toHaveProperty("name");
+  });
+
+  it("drops compilation provenance (sourceAssumptionSetId, compiledAt)", () => {
+    const request = mapCompiledGraphToRequest(makeGraph());
+
+    // ScheduleRequest has no provenance fields
+    expect(request).not.toHaveProperty("sourceAssumptionSetId");
+    expect(request).not.toHaveProperty("sourceAssumptionSetVersion");
+    expect(request).not.toHaveProperty("compiledAt");
+  });
+
+  it("maps a multi-activity graph with dependencies and calendar", () => {
+    const activities: GeneratedActivity[] = [
+      {
+        id: "gen-1",
+        sourceAuthoredActivityId: "auth-1",
+        name: "Excavation",
+        durationDays: 10,
+        resolvedStrategyKind: "productivity-driven",
+        zoneId: "z-1",
+      },
+      {
+        id: "gen-2",
+        sourceAuthoredActivityId: "auth-2",
+        name: "Foundation",
+        durationDays: 7,
+        resolvedStrategyKind: "fixed",
+        zoneId: "z-1",
+        constraintType: "SNET",
+        constraintDate: 15,
+      },
+      {
+        id: "gen-3",
+        sourceAuthoredActivityId: "auth-3",
+        name: "Steel Erection",
+        durationDays: 14,
+        resolvedStrategyKind: "manual-override",
+        zoneId: "z-2",
+      },
+    ];
+
+    const deps: GeneratedDependency[] = [
+      { predecessorId: "gen-1", successorId: "gen-2", type: "FS", lagDays: 0 },
+      { predecessorId: "gen-2", successorId: "gen-3", type: "SS", lagDays: 3 },
+    ];
+
+    const nwd = [5, 6, 12, 13];
+
+    const request = mapCompiledGraphToRequest(makeGraph(activities, deps, nwd));
+
+    expect(request.tasks).toHaveLength(3);
+    expect(request.dependencies).toHaveLength(2);
+    expect(request.nonWorkingDays).toEqual(nwd);
+
+    // Verify durations mapped correctly
+    expect(request.tasks[0].duration).toBe(10);
+    expect(request.tasks[1].duration).toBe(7);
+    expect(request.tasks[2].duration).toBe(14);
+
+    // Verify constraint on second task
+    expect(request.tasks[1].constraintType).toBe("SNET");
+    expect(request.tasks[1].constraintDate).toBe(15);
+
+    // Verify all tasks are leaf (not summary, no hierarchy)
+    for (const task of request.tasks) {
+      expect(task.isSummary).toBe(false);
+      expect(task.minEarlyStart).toBe(0);
+      expect(task.parentId).toBeUndefined();
+    }
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// M06 — Controlled Compiler Invocation Path
+// ────────────────────────────────────────────────────────────────────────────
+
+import type { AuthoredActivity } from "protocol";
+import { buildCompiledScheduleRequest } from "../src/schedule/compiledSchedulePath.js";
+
+describe("M06 — buildCompiledScheduleRequest", () => {
+  beforeEach(() => {
+    _resetCompilerService();
+  });
+
+  const minimalAssumptionSet: AssumptionSet = {
+    id: "as-1",
+    version: 1,
+    name: "Test Scenario",
+    zones: [],
+    quantities: [],
+    resources: [],
+    productivityRules: [],
+  };
+
+  describe("NullCompiler pipeline (default)", () => {
+    it("returns an empty ScheduleRequest with compiledAt timestamp", () => {
+      const { request, compiledAt } = buildCompiledScheduleRequest(
+        minimalAssumptionSet,
+        [],
+        [],
+      );
+
+      expect(request.tasks).toEqual([]);
+      expect(request.dependencies).toEqual([]);
+      expect(request.nonWorkingDays).toEqual([]);
+      expect(new Date(compiledAt).getTime()).not.toBeNaN();
+    });
+
+    it("passes nonWorkingDays through the full pipeline", () => {
+      const nwd = [0, 6, 7, 13, 14];
+      const { request } = buildCompiledScheduleRequest(
+        minimalAssumptionSet,
+        [],
+        nwd,
+      );
+
+      expect(request.nonWorkingDays).toEqual(nwd);
+    });
+  });
+
+  describe("Stub compiler pipeline (end-to-end)", () => {
+    const stubActivities: AuthoredActivity[] = [
+      {
+        id: "auth-1",
+        name: "Excavation",
+        zoneId: "z-1",
+        durationStrategy: { kind: "fixed", durationDays: 10 },
+        dependencies: [],
+      },
+      {
+        id: "auth-2",
+        name: "Foundation",
+        zoneId: "z-1",
+        durationStrategy: { kind: "fixed", durationDays: 7 },
+        dependencies: [
+          { predecessorActivityId: "auth-1", type: "FS", lagDays: 0 },
+        ],
+        constraintType: "SNET",
+        constraintDate: 15,
+      },
+    ];
+
+    /**
+     * A stub compiler that resolves fixed-duration authored activities
+     * into generated activities, mirroring what a real compiler would do.
+     */
+    const stubCompiler: DomainCompiler = {
+      compile: (
+        assumptionSet: AssumptionSet,
+        authoredActivities: readonly AuthoredActivity[],
+        nonWorkingDays: readonly number[],
+      ): CompiledScheduleGraph => ({
+        activities: authoredActivities.map((aa) => ({
+          id: `gen-${aa.id}`,
+          sourceAuthoredActivityId: aa.id,
+          name: aa.name,
+          durationDays:
+            aa.durationStrategy.kind === "fixed"
+              ? aa.durationStrategy.durationDays
+              : 1,
+          resolvedStrategyKind: aa.durationStrategy.kind,
+          zoneId: aa.zoneId,
+          constraintType: aa.constraintType,
+          constraintDate: aa.constraintDate,
+        })),
+        dependencies: authoredActivities.flatMap((aa) =>
+          aa.dependencies.map((dep) => ({
+            predecessorId: `gen-${dep.predecessorActivityId}`,
+            successorId: `gen-${aa.id}`,
+            type: dep.type,
+            lagDays: dep.lagDays,
+          })),
+        ),
+        nonWorkingDays: [...nonWorkingDays],
+        sourceAssumptionSetId: assumptionSet.id,
+        sourceAssumptionSetVersion: assumptionSet.version,
+        compiledAt: new Date().toISOString(),
+      }),
+    };
+
+    it("produces a complete ScheduleRequest from authored activities", () => {
+      setCompiler(stubCompiler);
+      const nwd = [5, 6, 12, 13];
+
+      const { request, compiledAt } = buildCompiledScheduleRequest(
+        minimalAssumptionSet,
+        stubActivities,
+        nwd,
+      );
+
+      // Tasks
+      expect(request.tasks).toHaveLength(2);
+      expect(request.tasks[0].id).toBe("gen-auth-1");
+      expect(request.tasks[0].duration).toBe(10);
+      expect(request.tasks[0].constraintType).toBe("ASAP");
+      expect(request.tasks[0].constraintDate).toBeNull();
+
+      expect(request.tasks[1].id).toBe("gen-auth-2");
+      expect(request.tasks[1].duration).toBe(7);
+      expect(request.tasks[1].constraintType).toBe("SNET");
+      expect(request.tasks[1].constraintDate).toBe(15);
+
+      // Dependencies
+      expect(request.dependencies).toHaveLength(1);
+      expect(request.dependencies[0].predId).toBe("gen-auth-1");
+      expect(request.dependencies[0].succId).toBe("gen-auth-2");
+      expect(request.dependencies[0].depType).toBe("FS");
+      expect(request.dependencies[0].lag).toBe(0);
+
+      // Calendar
+      expect(request.nonWorkingDays).toEqual(nwd);
+
+      // Timestamp
+      expect(new Date(compiledAt).getTime()).not.toBeNaN();
+    });
+
+    it("domain traceability is absent from the returned ScheduleRequest", () => {
+      setCompiler(stubCompiler);
+
+      const { request } = buildCompiledScheduleRequest(
+        minimalAssumptionSet,
+        stubActivities,
+        [],
+      );
+
+      // ScheduleRequest must not carry domain fields
+      for (const task of request.tasks) {
+        expect(task).not.toHaveProperty("sourceAuthoredActivityId");
+        expect(task).not.toHaveProperty("zoneId");
+        expect(task).not.toHaveProperty("resolvedStrategyKind");
+        expect(task).not.toHaveProperty("name");
+      }
+      expect(request).not.toHaveProperty("sourceAssumptionSetId");
+      expect(request).not.toHaveProperty("compiledAt");
+    });
+
+    it("all tasks are leaf activities (no hierarchy)", () => {
+      setCompiler(stubCompiler);
+
+      const { request } = buildCompiledScheduleRequest(
+        minimalAssumptionSet,
+        stubActivities,
+        [],
+      );
+
+      for (const task of request.tasks) {
+        expect(task.isSummary).toBe(false);
+        expect(task.minEarlyStart).toBe(0);
+        expect(task.parentId).toBeUndefined();
+      }
+    });
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// M07 — Optional Compiler Scheduling Path
+// ────────────────────────────────────────────────────────────────────────────
+
+import {
+    _resetSchedulingMode,
+    getSchedulingMode,
+    setSchedulingMode,
+} from "../src/schedulingMode.js";
+
+describe("M07 — SchedulingMode", () => {
+  beforeEach(() => {
+    _resetSchedulingMode();
+  });
+
+  it("defaults to legacy", () => {
+    expect(getSchedulingMode()).toBe("legacy");
+  });
+
+  it("can be set to compiled", () => {
+    setSchedulingMode("compiled");
+    expect(getSchedulingMode()).toBe("compiled");
+  });
+
+  it("can be set back to legacy", () => {
+    setSchedulingMode("compiled");
+    setSchedulingMode("legacy");
+    expect(getSchedulingMode()).toBe("legacy");
+  });
+
+  it("_resetSchedulingMode restores default", () => {
+    setSchedulingMode("compiled");
+    _resetSchedulingMode();
+    expect(getSchedulingMode()).toBe("legacy");
+  });
+});
+
+describe("M07 — Compiled path produces valid ScheduleRequest via mode switch", () => {
+  beforeEach(() => {
+    _resetCompilerService();
+    _resetSchedulingMode();
+  });
+
+  it("compiled mode with NullCompiler returns empty request", () => {
+    setSchedulingMode("compiled");
+
+    const { request } = buildCompiledScheduleRequest(
+      { id: "as-1", version: 1, name: "S", zones: [], quantities: [], resources: [], productivityRules: [] },
+      [],
+      [5, 6],
+    );
+
+    expect(request.tasks).toEqual([]);
+    expect(request.dependencies).toEqual([]);
+    expect(request.nonWorkingDays).toEqual([5, 6]);
+  });
+
+  it("compiled mode with stub compiler returns solver-ready request", () => {
+    const stubCompiler: DomainCompiler = {
+      compile: (
+        as: AssumptionSet,
+        activities: readonly AuthoredActivity[],
+        nwd: readonly number[],
+      ): CompiledScheduleGraph => ({
+        activities: activities.map((a) => ({
+          id: `g-${a.id}`,
+          sourceAuthoredActivityId: a.id,
+          name: a.name,
+          durationDays: a.durationStrategy.kind === "fixed" ? a.durationStrategy.durationDays : 1,
+          resolvedStrategyKind: a.durationStrategy.kind,
+          zoneId: a.zoneId,
+          constraintType: a.constraintType,
+          constraintDate: a.constraintDate,
+        })),
+        dependencies: [],
+        nonWorkingDays: [...nwd],
+        sourceAssumptionSetId: as.id,
+        sourceAssumptionSetVersion: as.version,
+        compiledAt: new Date().toISOString(),
+      }),
+    };
+
+    setCompiler(stubCompiler);
+    setSchedulingMode("compiled");
+
+    const authored: AuthoredActivity[] = [
+      {
+        id: "a1",
+        name: "Task A",
+        zoneId: "z1",
+        durationStrategy: { kind: "fixed", durationDays: 5 },
+        dependencies: [],
+      },
+    ];
+
+    const { request } = buildCompiledScheduleRequest(
+      { id: "as-1", version: 1, name: "S", zones: [], quantities: [], resources: [], productivityRules: [] },
+      authored,
+      [],
+    );
+
+    expect(request.tasks).toHaveLength(1);
+    expect(request.tasks[0].id).toBe("g-a1");
+    expect(request.tasks[0].duration).toBe(5);
+    expect(request.tasks[0].isSummary).toBe(false);
+
+    // Domain fields must not leak to solver
+    expect(request.tasks[0]).not.toHaveProperty("zoneId");
+    expect(request.tasks[0]).not.toHaveProperty("sourceAuthoredActivityId");
+  });
+
+  it("legacy mode is unchanged by compiled path existence", () => {
+    // Default mode is legacy — buildScheduleRequest still works
+    expect(getSchedulingMode()).toBe("legacy");
+
+    const request = buildScheduleRequest(
+      [{ id: "t1", name: "T1", duration: 3, depth: 0, isSummary: false }],
+      [],
+      [],
+    );
+
+    expect(request.tasks).toHaveLength(1);
+    expect(request.tasks[0].id).toBe("t1");
+    expect(request.tasks[0].duration).toBe(3);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/*  Phase V.10b — computeConstraintDiagnostics                         */
+/* ------------------------------------------------------------------ */
+import { computeConstraintDiagnostics, mergeResultDiagnostics } from "../src/constraintDiagnostics.js";
+
+describe("computeConstraintDiagnostics", () => {
+  it("returns empty map for ASAP tasks", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false }];
+    expect(computeConstraintDiagnostics(tasks)).toEqual({});
+  });
+
+  it("emits MISSING_DATE_FOR_CONSTRAINT for dated type without date", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "SNET" }];
+    const map = computeConstraintDiagnostics(tasks);
+    expect(map["t1"]).toEqual(["MISSING_DATE_FOR_CONSTRAINT"]);
+  });
+
+  it("emits no code for dated type with date set", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "SNET", constraintDate: 10 }];
+    expect(computeConstraintDiagnostics(tasks)).toEqual({});
+  });
+
+  it("emits DATE_IGNORED_BY_MODE for ALAP with date", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "ALAP", constraintDate: 5 }];
+    const map = computeConstraintDiagnostics(tasks);
+    expect(map["t1"]).toEqual(["DATE_IGNORED_BY_MODE"]);
+  });
+
+  it("emits no code for ALAP without date", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "ALAP" }];
+    expect(computeConstraintDiagnostics(tasks)).toEqual({});
+  });
+
+  it("skips summary tasks", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: true, constraintType: "SNET" }];
+    expect(computeConstraintDiagnostics(tasks)).toEqual({});
+  });
+
+  it("emits MISSING_DATE for MSO without date", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "MSO" }];
+    const map = computeConstraintDiagnostics(tasks);
+    expect(map["t1"]).toEqual(["MISSING_DATE_FOR_CONSTRAINT"]);
+  });
+
+  it("handles multiple tasks with mixed diagnostics", () => {
+    const tasks: Task[] = [
+      { id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "SNET" },
+      { id: "t2", name: "T2", duration: 3, depth: 0, isSummary: false, constraintType: "ALAP", constraintDate: 10 },
+      { id: "t3", name: "T3", duration: 2, depth: 0, isSummary: false },
+    ];
+    const map = computeConstraintDiagnostics(tasks);
+    expect(map["t1"]).toEqual(["MISSING_DATE_FOR_CONSTRAINT"]);
+    expect(map["t2"]).toEqual(["DATE_IGNORED_BY_MODE"]);
+    expect(map["t3"]).toBeUndefined();
+  });
+});
+
+describe("Phase V.10b — Incomplete dated constraints allowed", () => {
+  beforeEach(() => {
+    State.clearState();
+  });
+
+  it("allows SNET without date in canonical state", () => {
+    State.addTask({ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false });
+    State.updateTask("t1", { constraintType: "SNET" });
+    const t = State.findTask("t1");
+    expect(t?.constraintType).toBe("SNET");
+    expect(t?.constraintDate).toBeUndefined();
+  });
+
+  it("allows MSO without date in canonical state", () => {
+    State.addTask({ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false });
+    State.updateTask("t1", { constraintType: "MSO" });
+    const t = State.findTask("t1");
+    expect(t?.constraintType).toBe("MSO");
+  });
+
+  it("diagnostic fires for incomplete dated constraint", () => {
+    const tasks: Task[] = [
+      { id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "FNLT" },
+    ];
+    const map = computeConstraintDiagnostics(tasks);
+    expect(map["t1"]).toEqual(["MISSING_DATE_FOR_CONSTRAINT"]);
+  });
+
+  it("buildScheduleRequest succeeds with incomplete constraint", () => {
+    State.addTask({ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false });
+    State.updateTask("t1", { constraintType: "SNET" });
+    const req = buildScheduleRequest(State.getTasks(), [], []);
+    // Request builds successfully — kernel treats missing date as unconstrained
+    expect(req.tasks).toHaveLength(1);
+    expect(req.tasks[0].id).toBe("t1");
+    expect(req.tasks[0].constraintType).toBe("SNET");
+    expect(req.tasks[0].constraintDate).toBeUndefined();
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/*  Phase V.10c — mergeResultDiagnostics (GENERATING_NEGATIVE_FLOAT)    */
+/* ------------------------------------------------------------------ */
+
+describe("mergeResultDiagnostics", () => {
+  const mkResult = (totalFloat: number): ScheduleResultMap["string"] => ({
+    earlyStart: 0, earlyFinish: 5, lateStart: 0, lateFinish: 5, totalFloat, isCritical: totalFloat <= 0,
+  });
+
+  it("emits GENERATING_NEGATIVE_FLOAT for constrained task with negative float", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "SNET", constraintDate: 10 }];
+    const sr: ScheduleResultMap = { t1: mkResult(-2) };
+    const map = mergeResultDiagnostics(tasks, sr, {});
+    expect(map["t1"]).toEqual(["GENERATING_NEGATIVE_FLOAT"]);
+  });
+
+  it("does not emit when totalFloat >= 0", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "SNET", constraintDate: 10 }];
+    const sr: ScheduleResultMap = { t1: mkResult(3) };
+    const map = mergeResultDiagnostics(tasks, sr, {});
+    expect(map["t1"]).toBeUndefined();
+  });
+
+  it("does not emit when constraintDate is missing", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "SNET" }];
+    const sr: ScheduleResultMap = { t1: mkResult(-2) };
+    const map = mergeResultDiagnostics(tasks, sr, {});
+    expect(map["t1"]).toBeUndefined();
+  });
+
+  it("does not emit for ASAP task with negative float", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false }];
+    const sr: ScheduleResultMap = { t1: mkResult(-1) };
+    const map = mergeResultDiagnostics(tasks, sr, {});
+    expect(map["t1"]).toBeUndefined();
+  });
+
+  it("does not emit for ALAP task with negative float", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "ALAP" }];
+    const sr: ScheduleResultMap = { t1: mkResult(-1) };
+    const map = mergeResultDiagnostics(tasks, sr, {});
+    expect(map["t1"]).toBeUndefined();
+  });
+
+  it("merges with existing input diagnostics", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "FNLT", constraintDate: 2 }];
+    const sr: ScheduleResultMap = { t1: mkResult(-3) };
+    const inputDiags = { t1: ["DATE_IGNORED_BY_MODE" as const] };
+    const map = mergeResultDiagnostics(tasks, sr, inputDiags);
+    expect(map["t1"]).toEqual(["DATE_IGNORED_BY_MODE", "GENERATING_NEGATIVE_FLOAT"]);
+  });
+
+  it("skips summary tasks", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: true, constraintType: "SNET", constraintDate: 10 }];
+    const sr: ScheduleResultMap = { t1: mkResult(-5) };
+    const map = mergeResultDiagnostics(tasks, sr, {});
+    expect(map["t1"]).toBeUndefined();
+  });
+
+  it("does not emit when no schedule result exists for task", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "MSO", constraintDate: 10 }];
+    const map = mergeResultDiagnostics(tasks, {}, {});
+    expect(map["t1"]).toBeUndefined();
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/*  Phase V.10d — SUPERSEDED_BY_LOGIC                                  */
+/* ------------------------------------------------------------------ */
+
+describe("mergeResultDiagnostics — SUPERSEDED_BY_LOGIC", () => {
+  const mkResult = (overrides: Partial<ScheduleResultMap[string]> = {}): ScheduleResultMap[string] => ({
+    earlyStart: 0, earlyFinish: 5, lateStart: 0, lateFinish: 5, totalFloat: 0, isCritical: false, ...overrides,
+  });
+
+  it("emits for SNET when earlyStart > constraintDate", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "SNET", constraintDate: 3 }];
+    const sr: ScheduleResultMap = { t1: mkResult({ earlyStart: 5 }) };
+    const map = mergeResultDiagnostics(tasks, sr, {});
+    expect(map["t1"]).toContain("SUPERSEDED_BY_LOGIC");
+  });
+
+  it("does not emit for SNET when earlyStart === constraintDate", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "SNET", constraintDate: 5 }];
+    const sr: ScheduleResultMap = { t1: mkResult({ earlyStart: 5 }) };
+    const map = mergeResultDiagnostics(tasks, sr, {});
+    expect(map["t1"]).toBeUndefined();
+  });
+
+  it("does not emit for SNET when earlyStart < constraintDate", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "SNET", constraintDate: 10 }];
+    const sr: ScheduleResultMap = { t1: mkResult({ earlyStart: 5 }) };
+    const map = mergeResultDiagnostics(tasks, sr, {});
+    expect(map["t1"]).toBeUndefined();
+  });
+
+  it("emits for FNLT when lateFinish < constraintDate", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "FNLT", constraintDate: 20 }];
+    const sr: ScheduleResultMap = { t1: mkResult({ lateFinish: 15 }) };
+    const map = mergeResultDiagnostics(tasks, sr, {});
+    expect(map["t1"]).toContain("SUPERSEDED_BY_LOGIC");
+  });
+
+  it("does not emit for FNLT when lateFinish === constraintDate", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "FNLT", constraintDate: 15 }];
+    const sr: ScheduleResultMap = { t1: mkResult({ lateFinish: 15 }) };
+    const map = mergeResultDiagnostics(tasks, sr, {});
+    expect(map["t1"]).toBeUndefined();
+  });
+
+  it("does not emit for FNLT when lateFinish > constraintDate", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "FNLT", constraintDate: 10 }];
+    const sr: ScheduleResultMap = { t1: mkResult({ lateFinish: 15 }) };
+    const map = mergeResultDiagnostics(tasks, sr, {});
+    expect(map["t1"]).toBeUndefined();
+  });
+
+  it("does not emit for MSO (must-constraint)", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "MSO", constraintDate: 3 }];
+    const sr: ScheduleResultMap = { t1: mkResult({ earlyStart: 10 }) };
+    const map = mergeResultDiagnostics(tasks, sr, {});
+    expect(map["t1"]?.includes("SUPERSEDED_BY_LOGIC")).toBeFalsy();
+  });
+
+  it("does not emit for MFO (must-constraint)", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "MFO", constraintDate: 3 }];
+    const sr: ScheduleResultMap = { t1: mkResult({ lateFinish: 1 }) };
+    const map = mergeResultDiagnostics(tasks, sr, {});
+    expect(map["t1"]?.includes("SUPERSEDED_BY_LOGIC")).toBeFalsy();
+  });
+
+  it("does not emit for SNET without constraintDate", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "SNET" }];
+    const sr: ScheduleResultMap = { t1: mkResult({ earlyStart: 10 }) };
+    const map = mergeResultDiagnostics(tasks, sr, {});
+    expect(map["t1"]?.includes("SUPERSEDED_BY_LOGIC")).toBeFalsy();
+  });
+
+  it("skips summary tasks", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: true, constraintType: "SNET", constraintDate: 0 }];
+    const sr: ScheduleResultMap = { t1: mkResult({ earlyStart: 10 }) };
+    const map = mergeResultDiagnostics(tasks, sr, {});
+    expect(map["t1"]).toBeUndefined();
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/*  Phase V.10e — SUPERSEDED_BY_CALENDAR                               */
+/* ------------------------------------------------------------------ */
+
+describe("mergeResultDiagnostics — SUPERSEDED_BY_CALENDAR", () => {
+  const mkResult = (overrides: Partial<ScheduleResultMap[string]> = {}): ScheduleResultMap[string] => ({
+    earlyStart: 0, earlyFinish: 5, lateStart: 0, lateFinish: 5, totalFloat: 0, isCritical: false, ...overrides,
+  });
+
+  it("emits when constraintDate falls on a non-working day", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "SNET", constraintDate: 6 }];
+    const sr: ScheduleResultMap = { t1: mkResult() };
+    const nwd = new Set([5, 6, 12, 13]);
+    const map = mergeResultDiagnostics(tasks, sr, {}, nwd);
+    expect(map["t1"]).toContain("SUPERSEDED_BY_CALENDAR");
+  });
+
+  it("does not emit when constraintDate is a working day", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "SNET", constraintDate: 7 }];
+    const sr: ScheduleResultMap = { t1: mkResult() };
+    const nwd = new Set([5, 6, 12, 13]);
+    const map = mergeResultDiagnostics(tasks, sr, {}, nwd);
+    expect(map["t1"]?.includes("SUPERSEDED_BY_CALENDAR")).toBeFalsy();
+  });
+
+  it("emits for FNLT on non-working day", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "FNLT", constraintDate: 13 }];
+    const sr: ScheduleResultMap = { t1: mkResult({ lateFinish: 15 }) };
+    const nwd = new Set([5, 6, 12, 13]);
+    const map = mergeResultDiagnostics(tasks, sr, {}, nwd);
+    expect(map["t1"]).toContain("SUPERSEDED_BY_CALENDAR");
+  });
+
+  it("emits for MSO on non-working day", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "MSO", constraintDate: 5 }];
+    const sr: ScheduleResultMap = { t1: mkResult() };
+    const nwd = new Set([5, 6, 12, 13]);
+    const map = mergeResultDiagnostics(tasks, sr, {}, nwd);
+    expect(map["t1"]).toContain("SUPERSEDED_BY_CALENDAR");
+  });
+
+  it("does not emit for ASAP", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false }];
+    const sr: ScheduleResultMap = { t1: mkResult() };
+    const nwd = new Set([0, 1, 2, 3, 4, 5]);
+    const map = mergeResultDiagnostics(tasks, sr, {}, nwd);
+    expect(map["t1"]).toBeUndefined();
+  });
+
+  it("does not emit when constraintDate is missing", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "SNET" }];
+    const sr: ScheduleResultMap = { t1: mkResult() };
+    const nwd = new Set([0, 1, 2, 3]);
+    const map = mergeResultDiagnostics(tasks, sr, {}, nwd);
+    expect(map["t1"]?.includes("SUPERSEDED_BY_CALENDAR")).toBeFalsy();
+  });
+
+  it("does not emit when nonWorkingDays is not provided", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "SNET", constraintDate: 6 }];
+    const sr: ScheduleResultMap = { t1: mkResult() };
+    const map = mergeResultDiagnostics(tasks, sr, {});
+    expect(map["t1"]?.includes("SUPERSEDED_BY_CALENDAR")).toBeFalsy();
+  });
+
+  it("coexists with SUPERSEDED_BY_LOGIC when both true", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "SNET", constraintDate: 6 }];
+    const sr: ScheduleResultMap = { t1: mkResult({ earlyStart: 10 }) };
+    const nwd = new Set([5, 6, 12, 13]);
+    const map = mergeResultDiagnostics(tasks, sr, {}, nwd);
+    expect(map["t1"]).toContain("SUPERSEDED_BY_LOGIC");
+    expect(map["t1"]).toContain("SUPERSEDED_BY_CALENDAR");
+  });
+
+  it("skips summary tasks", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: true, constraintType: "SNET", constraintDate: 6 }];
+    const sr: ScheduleResultMap = { t1: mkResult() };
+    const nwd = new Set([5, 6]);
+    const map = mergeResultDiagnostics(tasks, sr, {}, nwd);
+    expect(map["t1"]).toBeUndefined();
+  });
+});

@@ -4,11 +4,9 @@ import { computeVirtualWindow } from "../../hooks/useVirtualWindow";
 import { projectDateShort } from "../../utils/dateProjection";
 import { drawDependencies } from "./drawDependencies";
 import {
-    BAR_HEIGHT,
-    BAR_VERTICAL_PADDING,
     COLORS,
     DAY_WIDTH,
-    ROW_HEIGHT,
+    getDensityConstants,
 } from "./ganttConstants";
 import { computeTaskGeometry } from "./ganttGeometry";
 import { LINK_NODE_RADIUS } from "./hitTest";
@@ -54,6 +52,7 @@ export function drawGantt(
   baselines?: BaselineMap,
 ): void {
   const { scrollLeft, scrollTop, viewportWidth, viewportHeight } = viewport;
+  const { rowHeight: ROW_HEIGHT, barHeight: BAR_HEIGHT, barVerticalPadding: BAR_VERTICAL_PADDING } = getDensityConstants();
 
   // Clear canvas (viewport-sized)
   ctx.fillStyle = COLORS.background;

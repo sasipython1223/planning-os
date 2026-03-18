@@ -6,7 +6,7 @@ import type { DragState } from "./dragPreview";
 import { emptyDrag, previewDuration, previewEarlyStart } from "./dragPreview";
 import type { DurationOverrides, PositionOverrides } from "./drawGantt";
 import { drawGantt } from "./drawGantt";
-import { BAR_HEIGHT, BAR_VERTICAL_PADDING, DAY_WIDTH, ROW_HEIGHT } from "./ganttConstants";
+import { DAY_WIDTH, getDensityConstants } from "./ganttConstants";
 import { computeTaskGeometry } from "./ganttGeometry";
 import { cursorForZone, hitTestBar, hitTestDependency } from "./hitTest";
 import type { LinkDragState } from "./linkDrag";
@@ -128,8 +128,9 @@ export function GanttCanvas({
         const task = tasks[hit.rowIndex];
         const schedule = scheduleResults[task.id];
         if (!schedule) return;
+        const { rowHeight, barHeight, barVerticalPadding } = getDensityConstants();
         const barRight = schedule.earlyStart * DAY_WIDTH + (schedule.earlyFinish - schedule.earlyStart) * DAY_WIDTH;
-        const barCenterY = hit.rowIndex * ROW_HEIGHT + BAR_VERTICAL_PADDING + BAR_HEIGHT / 2;
+        const barCenterY = hit.rowIndex * rowHeight + barVerticalPadding + barHeight / 2;
         linkDragRef.current = {
           active: true,
           sourceTaskId: hit.taskId,

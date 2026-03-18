@@ -18,6 +18,8 @@ export const buildScheduleRequest = (
     minEarlyStart: task.minEarlyStart ?? 0,
     parentId: task.parentId,
     isSummary: task.isSummary,
+    ...(task.constraintType !== undefined ? { constraintType: task.constraintType } : {}),
+    ...(task.constraintDate !== undefined ? { constraintDate: task.constraintDate } : {}),
   }));
 
   // Map all dependencies to kernel format with type and lag

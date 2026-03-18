@@ -1,0 +1,34 @@
+/* theme.css — semantic color aliases switched via data-theme attribute.
+   NOT the source of truth for layout math. */
+
+[data-theme="light"] {
+  --bg-primary:   var(--color-white);
+  --bg-secondary: var(--color-grey-100);
+  --bg-surface:   var(--color-grey-50);
+
+  --text-primary:   var(--color-grey-900);
+  --text-secondary: var(--color-grey-600);
+
+  --border-default: var(--color-grey-300);
+
+  --accent:        var(--color-blue-600);
+  --accent-hover:  var(--color-blue-700);
+  --critical:      var(--color-red-700);
+  --positive:      var(--color-green-700);
+}
+
+[data-theme="dark"] {
+  --bg-primary:   var(--color-grey-900);
+  --bg-secondary: var(--color-grey-800);
+  --bg-surface:   var(--color-grey-800);
+
+  --text-primary:   var(--color-grey-200);
+  --text-secondary: var(--color-grey-400);
+
+  --border-default: var(--color-grey-700);
+
+  --accent:        var(--color-blue-600);
+  --accent-hover:  var(--color-blue-700);
+  --critical:      var(--color-red-600);
+  --positive:      var(--color-green-700);
+}

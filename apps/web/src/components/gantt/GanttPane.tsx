@@ -1,10 +1,11 @@
 import type { BaselineMap, Dependency, ScheduleResultMap, Task } from "protocol";
 import type { RefObject } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
 import type { Selection } from "../../App";
+import { HEADER_METRICS } from "../../ui/config/themeConfig";
+import type { TimelineGeometry } from "../../utils/timelineGeometry";
 import { GanttCanvas } from "./GanttCanvas";
 import { TimescaleCanvas } from "./TimescaleCanvas";
-import { DAY_WIDTH } from "./ganttConstants";
 import type { Viewport } from "./viewportTypes";
 
 interface GanttPaneProps {
@@ -17,12 +18,14 @@ interface GanttPaneProps {
   onUpdateTask: (taskId: string, updates: { minEarlyStart?: number }) => void;
   onAddDependency: (predId: string, succId: string) => void;
   vScrollRef: RefObject<HTMLDivElement | null>;
-  projectStartDate: string;
+  timeline: TimelineGeometry;
   selection: Selection;
   onSelect: (sel: Selection) => void;
   nonWorkingDays: ReadonlySet<number>;
   baselines: BaselineMap;
   onScrollLeftChange?: (scrollLeft: number, paneWidth: number) => void;
+  onHScrollMount?: (el: HTMLDivElement | null) => void;
+  bodyRef?: RefObject<HTMLDivElement | null>;
 }
 
 /**
@@ -40,27 +43,29 @@ export function GanttPane({
   onUpdateTask,
   onAddDependency,
   vScrollRef,
-  projectStartDate,
+  timeline,
   selection,
   onSelect,
   nonWorkingDays,
   baselines,
   onScrollLeftChange,
+  onHScrollMount,
+  bodyRef: externalBodyRef,
 }: GanttPaneProps) {
   const hScrollRef = useRef<HTMLDivElement>(null);
+
+  // Merge internal hScrollRef with external bodyRef so App can imperatively set scrollTop
+  const mergedBodyRef = useCallback((el: HTMLDivElement | null) => {
+    (hScrollRef as MutableRefObject<HTMLDivElement | null>).current = el;
+    if (externalBodyRef) {
+      (externalBodyRef as MutableRefObject<HTMLDivElement | null>).current = el;
+    }
+  }, [externalBodyRef]);
   const [scrollLeft, setScrollLeft] = useState(0);
   const [paneWidth, setPaneWidth] = useState(0);
 
-  // Total content dimensions (world coordinates)
-  const maxDay = useMemo(() => {
-    let max = 20;
-    Object.values(scheduleResults).forEach((s) => {
-      if (s.earlyFinish > max) max = s.earlyFinish;
-    });
-    return Math.ceil(max * 1.2);
-  }, [scheduleResults]);
-
-  const totalWidth = maxDay * DAY_WIDTH + 100;
+  // Timeline geometry — single owner is App via computeTimelineGeometry
+  const { maxDay, totalTimelineWidth, pixelsPerDay, projectStartDate } = timeline;
 
   // Handle horizontal scroll
   const handleScroll = useCallback(() => {
@@ -75,6 +80,8 @@ export function GanttPane({
   useEffect(() => {
     const el = hScrollRef.current;
     if (!el) return;
+
+    onHScrollMount?.(el);
 
     const measure = () => {
       const w = el.clientWidth;
@@ -99,19 +106,20 @@ export function GanttPane({
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
       {/* Fixed timescale header */}
-      <div className="gantt-header">
+      <div className="gantt-header" style={{ flexShrink: 0, height: HEADER_METRICS.totalHeight }}>
         <TimescaleCanvas
           viewportWidth={paneWidth}
           scrollLeft={scrollLeft}
           maxDay={maxDay}
           projectStartDate={projectStartDate}
           nonWorkingDays={nonWorkingDays}
+          pixelsPerDay={pixelsPerDay}
         />
       </div>
 
       {/* Horizontal-only scroll container */}
       <div
-        ref={hScrollRef}
+        ref={mergedBodyRef}
         className="gantt-body"
         onScroll={handleScroll}
         style={{
@@ -125,7 +133,7 @@ export function GanttPane({
         {/* Horizontal phantom for scrollbar sizing */}
         <div
           style={{
-            width: totalWidth,
+            width: totalTimelineWidth,
             height: 1,
             position: "absolute",
             top: 0,
