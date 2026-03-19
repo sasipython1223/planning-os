@@ -36,3 +36,10 @@ export type {
 
 export type { DomainCompiler } from "./compiler.js";
 
+// Import/export contracts (W.1)
+export type {
+    CancelImportPreviewCommand, ImportDiagnostic, ImportDiagnosticCode,
+    ImportDiagnosticsSummary, ImportFormat, ImportPreviewMessage,
+    ImportScheduleCommand, ImportSummary, PreviewImportCommand
+} from "./import.js";
+

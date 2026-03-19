@@ -7,6 +7,8 @@ import type { CommandEnvelope, DispatchOutcome } from "./commandEnvelope.js";
 import { auditLog, createEnvelope } from "./commandEnvelope.js";
 import { computeConstraintDiagnostics, mergeResultDiagnostics } from "./constraintDiagnostics.js";
 import * as UndoHistory from "./history.js";
+import { clearPendingCandidate, getPendingCandidate } from "./import/importCandidate.js";
+import { runImportPreview } from "./import/previewOrchestrator.js";
 import type { PersistedState } from "./persistence.js";
 import { loadPersistedState, migratePersistedState, savePersistedState } from "./persistence.js";
 import { computeResourceHistogram } from "./resourceHistogram.js";
@@ -226,10 +228,14 @@ const applyReplayCommand = (cmd: Command): void => {
       State.deleteAssignment(cmd.assignmentId);
       break;
     default: {
-      // Handle internal-only RESTORE_BASELINES command
-      const any = cmd as unknown as { type: string; baselines?: BaselineMap };
+      // Handle internal-only replay commands
+      const any = cmd as unknown as { type: string; baselines?: BaselineMap; snapshot?: State.StateSnapshot };
       if (any.type === "RESTORE_BASELINES" && any.baselines) {
         State.setBaselineMap({ ...any.baselines });
+      } else if (any.type === "RESTORE_FULL_STATE" && any.snapshot) {
+        // W.4: Restore full canonical state for import undo/redo
+        State.restoreSnapshot(any.snapshot);
+        State.setBaselineMap({});
       }
       break;
     }
@@ -572,6 +578,79 @@ const handleCommand = (cmd: Command, envelope?: CommandEnvelope): DispatchOutcom
     emit({ type: "ACK", v: 1, reqId: cmd.reqId });
     runSchedulingAndEmitState();
     if (historyEntry) UndoHistory.pushEntry(historyEntry);
+    debouncedSave();
+    return "ack";
+  }
+
+  // ---- Import preview commands (W.2) ----
+
+  if (cmd.type === "PREVIEW_IMPORT") {
+    const result = runImportPreview(cmd.reqId, cmd.payload.format, cmd.payload.content);
+    if (result.ok) {
+      emit(result.message);
+      return "ack";
+    } else {
+      emit({ type: "NACK", v: 1, reqId: cmd.reqId, error: result.error });
+      return "nack";
+    }
+  }
+
+  if (cmd.type === "CANCEL_IMPORT_PREVIEW") {
+    clearPendingCandidate();
+    emit({ type: "ACK", v: 1, reqId: cmd.reqId });
+    return "ack";
+  }
+
+  if (cmd.type === "IMPORT_SCHEDULE") {
+    // W.4: Atomic import commit — replace canonical state with mapped candidate.
+    const candidate = getPendingCandidate();
+    if (!candidate) {
+      emit({ type: "NACK", v: 1, reqId: cmd.reqId, error: "No pending import candidate" });
+      return "nack";
+    }
+    if (!candidate.canCommit) {
+      emit({ type: "NACK", v: 1, reqId: cmd.reqId, error: "Import candidate has errors — cannot commit" });
+      return "nack";
+    }
+    if (!candidate.mappedTasks || !candidate.mappedDependencies || !candidate.mappedResources || !candidate.mappedAssignments) {
+      emit({ type: "NACK", v: 1, reqId: cmd.reqId, error: "Import candidate has no mapped data" });
+      return "nack";
+    }
+
+    // Capture pre-import snapshot for undo (full state strategy per spec §5.1)
+    const preImportSnapshot = State.createSnapshot();
+    const preImportBaselines = { ...State.getBaselineMap() };
+
+    // Replace canonical state atomically (replace-only, spec §5.2)
+    State.restoreSnapshot({
+      tasks: [...candidate.mappedTasks],
+      dependencies: [...candidate.mappedDependencies],
+      resources: [...candidate.mappedResources],
+      assignments: [...candidate.mappedAssignments],
+    });
+    State.setBaselineMap({}); // Imported project starts with no baseline
+
+    // Run scheduling — rollback on failure (spec §5.3)
+    const success = runSchedulingAndEmitState();
+    if (!success) {
+      // Roll back to pre-import state
+      State.restoreSnapshot(preImportSnapshot);
+      State.setBaselineMap(preImportBaselines);
+      runSchedulingAndEmitState();
+      emit({ type: "NACK", v: 1, reqId: cmd.reqId, error: "Scheduling failed after import — rolled back" });
+      return "error";
+    }
+
+    // Success — push undo entry (one entry for entire import)
+    const undoEntry: UndoHistory.HistoryEntry = {
+      undo: [{ type: "RESTORE_FULL_STATE", snapshot: preImportSnapshot, baselines: preImportBaselines } as unknown as Command],
+      redo: [{ type: "RESTORE_FULL_STATE", snapshot: State.createSnapshot(), baselines: {} } as unknown as Command],
+    };
+    UndoHistory.pushEntry(undoEntry);
+
+    // Clear held candidate and persist
+    clearPendingCandidate();
+    emit({ type: "ACK", v: 1, reqId: cmd.reqId });
     debouncedSave();
     return "ack";
   }

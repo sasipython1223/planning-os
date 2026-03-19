@@ -8,10 +8,11 @@
     "test": "vitest"
   },
   "dependencies": {
-    "protocol": "workspace:*",
-    "cpm-wasm": "workspace:*"
+    "cpm-wasm": "workspace:*",
+    "protocol": "workspace:*"
   },
   "devDependencies": {
+    "jsdom": "^29.0.0",
     "vitest": "^1.0.0"
   }
 }

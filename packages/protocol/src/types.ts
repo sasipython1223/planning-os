@@ -189,7 +189,10 @@ export type RedoCommand = {
   reqId: string;
 };
 
-export type Command = AddTaskCommand | UpdateTaskCommand | AddDependencyCommand | DeleteTaskCommand | DeleteDependencyCommand | UpdateDependencyCommand | SnapshotBaselineCommand | ClearBaselineCommand | AddResourceCommand | UpdateResourceCommand | DeleteResourceCommand | AddAssignmentCommand | UpdateAssignmentCommand | DeleteAssignmentCommand | UndoCommand | RedoCommand;
+// W.1: Import command types are defined in import.ts and joined here.
+import type { CancelImportPreviewCommand, ImportScheduleCommand, PreviewImportCommand } from "./import.js";
+
+export type Command = AddTaskCommand | UpdateTaskCommand | AddDependencyCommand | DeleteTaskCommand | DeleteDependencyCommand | UpdateDependencyCommand | SnapshotBaselineCommand | ClearBaselineCommand | AddResourceCommand | UpdateResourceCommand | DeleteResourceCommand | AddAssignmentCommand | UpdateAssignmentCommand | DeleteAssignmentCommand | UndoCommand | RedoCommand | PreviewImportCommand | ImportScheduleCommand | CancelImportPreviewCommand;
 
 export type AckMessage = {
   type: "ACK";
@@ -269,9 +272,13 @@ export type ScheduleErrorMessage = {
   };
 };
 
+// W.1: Import preview message is defined in import.ts and joined here.
+import type { ImportPreviewMessage } from "./import.js";
+
 export type WorkerMessage =
   | AckMessage
   | NackMessage
   | DiffStateMessage
   | WorkerReadyMessage
-  | ScheduleErrorMessage;
+  | ScheduleErrorMessage
+  | ImportPreviewMessage;

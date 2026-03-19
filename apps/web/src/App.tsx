@@ -1,7 +1,8 @@
-import type { Assignment, BaselineMap, Dependency, DependencyType, DiagnosticsMap, Resource, ResourceHistogram, ScheduleResultMap, Task, VarianceMap, WorkerMessage } from "protocol";
+import type { Assignment, BaselineMap, Dependency, DependencyType, DiagnosticsMap, ImportFormat, Resource, ResourceHistogram, ScheduleResultMap, Task, VarianceMap, WorkerMessage } from "protocol";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GanttPane } from "./components/gantt/GanttPane";
 import { HistogramPane } from "./components/HistogramPane";
+import { ImportPreviewPanel, type ImportPreviewData } from "./components/ImportPreviewPanel";
 import { TaskDetailsPanel } from "./components/TaskDetailsPanel";
 import { TaskTable } from "./components/TaskTable";
 import { BottomDrawer } from "./ui/components/drawer/BottomDrawer";
@@ -60,9 +61,56 @@ export default function App() {
   const [ganttScrollLeft, setGanttScrollLeft] = useState(0);
   const [ganttPaneWidth, setGanttPaneWidth] = useState(0);
   const ganttScrollElRef = useRef<HTMLDivElement | null>(null);
+  const [importPreview, setImportPreview] = useState<ImportPreviewData | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleGanttHScrollMount = useCallback((el: HTMLDivElement | null) => {
     ganttScrollElRef.current = el;
+  }, []);
+
+  // ── Import flow callbacks ──────────────────────────────────────────
+
+  const handleImportFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !workerRef.current) return;
+    // Reset input so the same file can be re-selected
+    e.target.value = "";
+
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    let format: ImportFormat;
+    if (ext === "xer") {
+      format = "xer";
+    } else if (ext === "xml") {
+      format = "msp-xml";
+    } else {
+      setLogs((prev) => [`Import: unsupported file extension ".${ext}"`, ...prev]);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result !== "string" || !workerRef.current) return;
+      workerRef.current.postMessage({
+        type: "PREVIEW_IMPORT",
+        v: 1,
+        reqId: makeId(),
+        payload: { format, content: reader.result },
+      });
+    };
+    reader.readAsText(file);
+  }, []);
+
+  const handleImportCommit = useCallback(() => {
+    if (!workerRef.current) return;
+    workerRef.current.postMessage({ type: "IMPORT_SCHEDULE", v: 1, reqId: makeId() });
+    setImportPreview(null);
+  }, []);
+
+  const handleImportCancel = useCallback(() => {
+    if (workerRef.current) {
+      workerRef.current.postMessage({ type: "CANCEL_IMPORT_PREVIEW", v: 1, reqId: makeId() });
+    }
+    setImportPreview(null);
   }, []);
 
   // Shared timeline geometry — single owner for both Gantt and Histogram
@@ -197,6 +245,14 @@ export default function App() {
         setLogs((prev) => [
           `DIFF_STATE tasks=${msg.payload.tasks.length} deps=${msg.payload.dependencies.length} scheduled=${Object.keys(msg.payload.scheduleResults).length}`,
           ...prev
+        ]);
+      }
+
+      if (msg.type === "IMPORT_PREVIEW") {
+        setImportPreview(msg.payload);
+        setLogs((prev) => [
+          `IMPORT_PREVIEW project="${msg.payload.projectName}" tasks=${msg.payload.summary.taskCount} canCommit=${msg.payload.canCommit}`,
+          ...prev,
         ]);
       }
     };
@@ -461,6 +517,20 @@ export default function App() {
               >
                 Redo
               </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xer,.xml"
+                style={{ display: "none" }}
+                onChange={handleImportFileSelect}
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={!workerReady}
+                style={{ height: 28, padding: '0 10px', fontSize: 12, whiteSpace: 'nowrap' }}
+              >
+                Import…
+              </button>
               {resources.length > 0 && (
                 <select
                   value={selectedResourceId ?? ""}
@@ -585,6 +655,34 @@ export default function App() {
             />
           )}
         </BottomDrawer>
+      )}
+      {/* Import preview overlay */}
+      {importPreview && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.4)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+          onClick={handleImportCancel}
+        >
+          <div
+            style={{
+              background: "#fff",
+              borderRadius: 8,
+              boxShadow: "0 4px 24px rgba(0,0,0,0.2)",
+              maxHeight: "80vh",
+              overflowY: "auto",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <ImportPreviewPanel data={importPreview} onImport={handleImportCommit} onCancel={handleImportCancel} />
+          </div>
+        </div>
       )}
     </WorkspaceContainer>
   );
