@@ -1,5 +1,5 @@
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: "IBM Plex Sans", "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
 
@@ -71,6 +71,805 @@ button:focus-visible {
   button {
     background-color: #f9f9f9;
   }
+}
+
+/* ── Phase 5: WBS / Hierarchy UI tokens ─────────────────────────────── */
+:root {
+  --indent-step: 16px;
+  --toggle-width: 16px;
+  --cell-padding-base: 8px;
+  --hier-left-gutter-width: 32px;
+
+  --shell-chrome-bg: #f4f7fb;
+  --shell-chrome-accent: #d8e5f4;
+  --shell-chrome-border: #d3dde8;
+
+  --row-depth-0: #f8fafb;
+  --row-depth-1: #fafbfc;
+  --row-depth-2: #fbfcfd;
+  --row-depth-3: #fcfdfe;
+  --row-depth-4: #ffffff;
+  --row-selected: #d8e9ff;
+  --row-critical: #ffecef;
+
+  --wbs-bg-0: #E5E9F0;
+  --wbs-bg-1: #F4F5F7;
+  --wbs-bg-2: #FAFBFC;
+  --wbs-bg-3: #FFFFFF;
+  --wbs-bg-4: #FFFFFF;
+
+  --wbs-owner-project: #10a8b8;
+  --wbs-owner-phase: #4b9a2d;
+  --wbs-owner-milestones: #c79b12;
+  --wbs-owner-lower-0: #16837b;
+  --wbs-owner-lower-1: #176f69;
+  --wbs-owner-row-fill-project: var(--wbs-owner-project);
+  --wbs-owner-row-fill-phase: var(--wbs-owner-phase);
+  --wbs-owner-row-fill-milestones: var(--wbs-owner-milestones);
+  --wbs-owner-row-fill-lower-0: var(--wbs-owner-lower-0);
+  --wbs-owner-row-fill-lower-1: var(--wbs-owner-lower-1);
+
+  --hier-lane-0: var(--wbs-owner-project);
+  --hier-lane-1: var(--wbs-owner-phase);
+  --hier-lane-2: var(--wbs-owner-milestones);
+  --hier-lane-3: var(--wbs-owner-lower-0);
+  --hier-lane-4: var(--wbs-owner-lower-1);
+
+  /* Precomputed per-depth wall and roof fills — single source of truth for both
+     summary-row and activity-row walls so the same lane always looks the same.
+     Identical pale bases per lane; wall is 1-2 points stronger pigment than roof. */
+  --hier-lane-0-wall: color-mix(in srgb, var(--hier-lane-0) 36%, #f2f8fb 64%);
+  --hier-lane-0-roof: color-mix(in srgb, var(--hier-lane-0) 34%, #f2f8fb 66%);
+
+  --hier-lane-1-wall: color-mix(in srgb, var(--hier-lane-1) 36%, #f3f9f5 64%);
+  --hier-lane-1-roof: color-mix(in srgb, var(--hier-lane-1) 34%, #f3f9f5 66%);
+
+  --hier-lane-2-wall: color-mix(in srgb, var(--hier-lane-2) 35%, #fbf8ee 65%);
+  --hier-lane-2-roof: color-mix(in srgb, var(--hier-lane-2) 33%, #fbf8ee 67%);
+
+  --hier-lane-3-wall: color-mix(in srgb, var(--hier-lane-3) 35%, #f2f8f7 65%);
+  --hier-lane-3-roof: color-mix(in srgb, var(--hier-lane-3) 33%, #f2f8f7 67%);
+
+  --hier-lane-4-wall: color-mix(in srgb, var(--hier-lane-4) 35%, #f2f8f8 65%);
+  --hier-lane-4-roof: color-mix(in srgb, var(--hier-lane-4) 33%, #f2f8f8 67%);
+
+  --hier-summary-soft: rgba(227, 237, 246, 0.55);
+  --hier-summary-connected: rgba(225, 236, 246, 0.9);
+  --hier-summary-connected-fade: rgba(237, 245, 251, 0.78);
+  --hier-id-task-divider-soft: rgba(179, 199, 217, 0.42);
+
+  --z-gantt-bg: 0;
+  --z-gantt-gridlines: 10;
+  --z-gantt-baselines: 20;
+  --z-gantt-bars: 30;
+  --z-gantt-dependencies: 40;
+  --z-hit-areas: 50;
+}
+
+/* ── Shell chrome ─────────────────────────────────────────────────────── */
+.topbar {
+  height: 36px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--shell-chrome-border);
+  background: linear-gradient(180deg, #fbfdff 0%, var(--shell-chrome-bg) 100%);
+  font-size: 13px;
+}
+
+.topbar-title {
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: #2b3b4b;
+}
+
+.topbar-status {
+  font-size: 11px;
+  color: #5f7286;
+}
+
+.shell-toolbar {
+  height: 36px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--shell-chrome-border);
+  background: #f8fbff;
+  font-size: 12px;
+}
+
+.shell-toolbar-segment {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.shell-toolbar-btn {
+  height: 26px;
+  border: 1px solid #c9d5e2;
+  border-radius: 6px;
+  padding: 0 10px;
+  background: #ffffff;
+  color: #34506b;
+  font-size: 12px;
+  line-height: 24px;
+}
+
+.shell-toolbar-btn:hover {
+  border-color: #9fb4ca;
+  background: #f2f7fd;
+}
+
+.shell-toolbar-btn.is-active {
+  color: #0f4f93;
+  border-color: #7fa8d2;
+  background: #e9f3ff;
+}
+
+.shell-toolbar-sep {
+  width: 1px;
+  height: 18px;
+  background: #cad5e1;
+}
+
+.shell-toolbar-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #5f7286;
+}
+
+.shell-toolbar-select {
+  height: 26px;
+  border: 1px solid #c9d5e2;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #34506b;
+  font-size: 12px;
+}
+
+/* ── Table header structure ─────────────────────────────────────────── */
+.task-table-grid {
+  border-spacing: 0;
+}
+
+.task-table-th {
+  border-right: 1px solid #d9e3ee;
+}
+
+.task-table-th:last-child {
+  border-right: none;
+}
+
+.task-table-grid tbody .task-cell,
+.task-table-grid tbody .task-name-cell {
+  border-right: 1px solid #e0e8f1;
+}
+
+.task-table-grid tbody td:last-child {
+  border-right: none;
+}
+
+.task-table-th-content {
+  box-sizing: border-box;
+}
+
+.task-table-th-label {
+  display: inline-block;
+  letter-spacing: 0.02em;
+}
+
+.task-table-th-tier-B .task-table-th-label,
+.task-table-th-tier-C .task-table-th-label {
+  font-size: 11px;
+}
+
+.task-table-th[data-col-key="diag"] .task-table-th-label,
+.task-table-th[data-col-key="id"] .task-table-th-label {
+  color: #5f7286;
+}
+
+.task-table-th[data-col-key="task"] .task-table-th-label {
+  font-size: 12.5px;
+  color: #22384c;
+}
+
+.task-table-th[data-col-key="start"] .task-table-th-label,
+.task-table-th[data-col-key="finish"] .task-table-th-label,
+.task-table-th[data-col-key="cd"] .task-table-th-label {
+  letter-spacing: 0.04em;
+}
+
+/* ── Summary row styling (restrained P6-inspired depth palette) ─────── */
+.task-row[data-is-summary="true"] {
+  --summary-owner-color: var(--hier-lane-4);
+  --summary-owner-row-fill: var(--wbs-owner-row-fill-lower-1);
+  --summary-band-fill: color-mix(in srgb, var(--summary-owner-row-fill) 34%, #ffffff 66%);
+  --summary-band-fill-soft: color-mix(in srgb, var(--summary-owner-row-fill) 18%, #ffffff 82%);
+  --summary-band-edge: color-mix(in srgb, var(--summary-owner-row-fill) 58%, #36556d 42%);
+  --summary-band-rail: color-mix(in srgb, var(--summary-owner-row-fill) 50%, #2e4f67 50%);
+  --summary-tree-line: color-mix(in srgb, var(--summary-owner-row-fill) 44%, #27465c 56%);
+  box-shadow: none;
+}
+
+.task-row[data-is-summary="true"][data-wbs-depth="0"] {
+  --summary-owner-color: var(--hier-lane-0);
+  --summary-owner-row-fill: var(--wbs-owner-row-fill-project);
+  --summary-band-fill: color-mix(in srgb, var(--summary-owner-row-fill) 50%, #f2fbfc 50%);
+  --summary-band-fill-soft: color-mix(in srgb, var(--summary-owner-row-fill) 32%, #f7fcfd 68%);
+  --summary-band-edge: color-mix(in srgb, var(--summary-owner-row-fill) 72%, #1d4358 28%);
+  --summary-band-rail: color-mix(in srgb, var(--summary-owner-row-fill) 64%, #23485f 36%);
+  --summary-tree-line: color-mix(in srgb, var(--summary-owner-row-fill) 62%, #173648 38%);
+}
+
+.task-row[data-is-summary="true"][data-wbs-depth="1"] {
+  --summary-owner-color: var(--hier-lane-1);
+  --summary-owner-row-fill: var(--wbs-owner-row-fill-phase);
+  --summary-band-fill: color-mix(in srgb, var(--summary-owner-row-fill) 44%, #f5fbf7 56%);
+  --summary-band-fill-soft: color-mix(in srgb, var(--summary-owner-row-fill) 26%, #f8fcf9 74%);
+  --summary-band-edge: color-mix(in srgb, var(--summary-owner-row-fill) 64%, #22435b 36%);
+  --summary-band-rail: color-mix(in srgb, var(--summary-owner-row-fill) 56%, #294a61 44%);
+  --summary-tree-line: color-mix(in srgb, var(--summary-owner-row-fill) 56%, #1e4056 44%);
+}
+
+.task-row[data-is-summary="true"][data-wbs-depth="2"] {
+  --summary-owner-color: var(--hier-lane-2);
+  --summary-owner-row-fill: var(--wbs-owner-row-fill-milestones);
+  --summary-band-fill: color-mix(in srgb, var(--summary-owner-row-fill) 34%, #fdfbf2 66%);
+  --summary-band-fill-soft: color-mix(in srgb, var(--summary-owner-row-fill) 20%, #fdfcf6 80%);
+  --summary-band-edge: color-mix(in srgb, var(--summary-owner-row-fill) 52%, #2f5068 48%);
+  --summary-band-rail: color-mix(in srgb, var(--summary-owner-row-fill) 48%, #35546a 52%);
+  --summary-tree-line: color-mix(in srgb, var(--summary-owner-row-fill) 46%, #305066 54%);
+}
+
+.task-row[data-is-summary="true"][data-wbs-depth="3"] {
+  --summary-owner-color: var(--hier-lane-3);
+  --summary-owner-row-fill: var(--wbs-owner-row-fill-lower-0);
+  --summary-band-fill: color-mix(in srgb, var(--summary-owner-row-fill) 28%, #f7fafc 72%);
+  --summary-band-fill-soft: color-mix(in srgb, var(--summary-owner-row-fill) 16%, #fafcfd 84%);
+  --summary-band-edge: color-mix(in srgb, var(--summary-owner-row-fill) 44%, #3a596f 56%);
+  --summary-band-rail: color-mix(in srgb, var(--summary-owner-row-fill) 42%, #3d5d72 58%);
+  --summary-tree-line: color-mix(in srgb, var(--summary-owner-row-fill) 40%, #37586e 60%);
+}
+
+.task-row[data-is-summary="true"][data-wbs-depth="4"] {
+  --summary-owner-color: var(--hier-lane-4);
+  --summary-owner-row-fill: var(--wbs-owner-row-fill-lower-1);
+  --summary-band-fill: color-mix(in srgb, var(--summary-owner-row-fill) 24%, #f8fbfd 76%);
+  --summary-band-fill-soft: color-mix(in srgb, var(--summary-owner-row-fill) 14%, #fbfcfd 86%);
+  --summary-band-edge: color-mix(in srgb, var(--summary-owner-row-fill) 38%, #3e6076 62%);
+  --summary-band-rail: color-mix(in srgb, var(--summary-owner-row-fill) 36%, #42637a 64%);
+  --summary-tree-line: color-mix(in srgb, var(--summary-owner-row-fill) 34%, #3c5e74 66%);
+}
+
+.task-row[data-is-summary="true"] .task-name-text {
+  font-weight: 750;
+  color: #142734;
+}
+
+.task-row[data-is-summary="true"] .task-name-text.is-summary {
+  letter-spacing: 0.01em;
+}
+
+/* Read-only muted text for rolled-up summary cells */
+.task-row[data-is-summary="true"] .task-cell-readonly {
+  color: #223a48;
+  font-weight: 600;
+  cursor: default;
+}
+
+.task-row[data-is-summary="true"] .task-cell-date,
+.task-row[data-is-summary="true"] .task-cell-numeric,
+.task-row[data-is-summary="true"] .task-cell-float,
+.task-row[data-is-summary="true"] .task-cell-variance {
+  color: #1f3948;
+}
+
+
+.task-row[data-is-summary="true"] .task-cell,
+.task-row[data-is-summary="true"] .task-name-cell {
+  background: var(--branch-roof-fill, var(--summary-roof-fill, color-mix(in srgb, var(--summary-owner-color) 14%, transparent 86%))) !important;
+}
+
+/* WBS column on summary rows continues the branch roof — inverted-L connection */
+.task-row[data-is-summary="true"] .task-cell-wbs-band {
+  background: var(--summary-wbs-band-fill, var(--branch-roof-fill, var(--summary-roof-fill, color-mix(in srgb, var(--summary-owner-color) 14%, transparent 86%)))) !important;
+}
+
+/* Debug-proof mode: let overlay branch bands read through summary roofs clearly. */
+body[data-hierarchy-debug="1"] .task-row[data-is-summary="true"] .task-cell,
+body[data-hierarchy-debug="1"] .task-row[data-is-summary="true"] .task-name-cell {
+  background: color-mix(in srgb, var(--summary-owner-color) 7%, transparent 93%) !important;
+}
+
+.task-tree-prefix {
+  position: relative;
+  display: inline-block;
+  flex: 0 0 auto;
+  align-self: stretch;
+  min-height: 100%;
+}
+
+.task-tree-prefix-line {
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  width: 1px;
+  border-radius: 1px;
+  background: transparent;
+}
+
+/* Channel: wide translucent band behind the crisp 2px rail */
+.task-tree-prefix-line::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: -4px;
+  background: transparent;
+  border-radius: 0 2px 2px 0;
+  pointer-events: none;
+}
+
+/* Rail closes cleanly at the last row of its scope (does not extend into next row) */
+.task-tree-prefix-line--ends {
+  bottom: 0;
+}
+
+/* Summary rows: more prominent rail + stronger channel */
+.task-row[data-is-summary="true"] .task-tree-prefix-line {
+  background: transparent;
+}
+
+.task-row[data-is-summary="true"] .task-tree-prefix-line::before {
+  background: transparent;
+}
+
+.task-activity-tree-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 0;
+}
+
+.task-cell-summary-tree {
+  position: relative;
+  overflow: visible !important;
+  padding-left: 0 !important;
+  background: inherit !important;
+  box-shadow: none;
+}
+
+.task-cell-activity-id {
+  padding-left: 0 !important;
+}
+
+/* Activity rows: keep fixed column anchor, add small divider breathing room */
+.task-row[data-is-summary="false"] .task-cell-activity-id {
+  padding-left: 6px !important;
+}
+
+.task-summary-tree-stack {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 100%;
+  width: calc(100% + var(--summary-wbs-field-width, 60px));
+  margin-left: calc(-1 * var(--summary-wbs-field-width, 60px));
+  padding-right: 10px;
+}
+
+.task-summary-tree-label-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 100%;
+  width: 100%;
+}
+
+.task-summary-tree-label-shell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  width: 100%;
+  --summary-text-start-offset: var(--summary-text-start-from-wbs-left, 26px);
+  padding-left: var(--summary-text-start-offset);
+  overflow: hidden;
+  white-space: nowrap;
+  z-index: 1;
+}
+
+.task-summary-tree-label-shell > div {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.task-summary-tree-label-shell .task-name-text.is-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Toggle relocated to WBS band column */
+.task-wbs-band-toggle {
+  left: var(--summary-toggle-left, 6px);
+  width: var(--summary-toggle-slot-width, 14px);
+  text-align: center;
+  color: color-mix(in srgb, var(--summary-owner-color, #4a6880) 72%, #132b3c 28%);
+  opacity: 0.78;
+  z-index: 3;
+}
+
+/* ── WBS depth banding ──────────────────────────────────────────────── */
+.task-row[data-wbs-depth="0"] { background: var(--row-depth-0); }
+.task-row[data-wbs-depth="1"] { background: var(--row-depth-1); }
+.task-row[data-wbs-depth="2"] { background: var(--row-depth-2); }
+.task-row[data-wbs-depth="3"] { background: var(--row-depth-3); }
+.task-row[data-wbs-depth="4"] { background: var(--row-depth-4); }
+
+.task-row[data-is-summary="true"] .task-cell,
+.task-row[data-is-summary="true"] .task-name-cell {
+  border-bottom-color: var(--branch-edge, #c9d8e8);
+}
+
+.task-cell-wbs-band {
+  border-right-color: var(--hier-id-task-divider-soft) !important;
+}
+
+.task-row[data-is-summary="true"] .task-cell-wbs-band {
+  border-right-color: color-mix(in srgb, var(--branch-roof-fill) 65%, transparent 35%) !important;
+}
+
+/* Production owner: each row paints active ancestor bands in its own WBS field */
+.task-wbs-row-paint {
+  position: absolute;
+  inset: -1px 0 -1px 0;
+  pointer-events: none;
+  z-index: 1;
+  overflow: hidden;
+}
+
+.task-wbs-band-wall,
+.task-wbs-band-roof {
+  position: absolute;
+  display: block;
+  background: transparent;
+  pointer-events: none;
+}
+
+.task-wbs-band-wall {
+  top: -1px;
+  bottom: -1px;
+  width: 8px;
+}
+
+.task-wbs-band-roof {
+  top: 0;
+  bottom: 0;
+}
+
+.task-cell-id {
+  border-right-color: var(--hier-id-task-divider-soft) !important;
+}
+
+/* Leaf rows stay calm: depth cue remains subtle and lane-local only */
+.task-row[data-is-summary="false"][data-wbs-depth="0"] .task-cell-activity-id,
+.task-row[data-is-summary="false"][data-wbs-depth="0"] .task-name-cell {
+  box-shadow: none;
+}
+
+.task-row[data-is-summary="false"][data-wbs-depth="1"] .task-cell-activity-id,
+.task-row[data-is-summary="false"][data-wbs-depth="1"] .task-name-cell {
+  box-shadow: none;
+}
+
+.task-row[data-is-summary="false"][data-wbs-depth="2"] .task-cell-activity-id,
+.task-row[data-is-summary="false"][data-wbs-depth="2"] .task-name-cell {
+  box-shadow: none;
+}
+
+.task-row[data-is-summary="false"][data-wbs-depth="3"] .task-cell-activity-id,
+.task-row[data-is-summary="false"][data-wbs-depth="3"] .task-name-cell,
+.task-row[data-is-summary="false"][data-wbs-depth="4"] .task-cell-activity-id,
+.task-row[data-is-summary="false"][data-wbs-depth="4"] .task-name-cell {
+  box-shadow: none;
+}
+
+.task-row[data-is-summary="false"] .task-cell,
+.task-row[data-is-summary="false"] .task-name-cell {
+  background-color: transparent;
+}
+
+.task-cell-id {
+  color: #8197aa;
+}
+
+.task-name-content {
+  position: relative;
+  min-width: 0;
+}
+
+.task-name-content.is-summary-row::before,
+.task-name-content.is-leaf-row::before {
+  display: none;
+}
+
+.task-row[data-wbs-depth="0"] .task-name-content::before {
+  display: none;
+}
+
+.task-name-content.is-summary-row::before {
+  background: #88a6c2;
+  opacity: 1.0;
+  box-shadow: 0 0 0 1px rgba(136, 166, 194, 0.24);
+}
+
+.task-toggle {
+  color: #4d6983;
+  border-radius: 4px;
+}
+
+.task-row[data-is-summary="false"] .task-name-text {
+  font-weight: 500;
+}
+
+.task-row[data-wbs-depth="0"] .task-name-text {
+  font-size: 12.5px;
+}
+
+.task-row[data-wbs-depth="2"] .task-name-text,
+.task-row[data-wbs-depth="3"] .task-name-text,
+.task-row[data-wbs-depth="4"] .task-name-text {
+  color: #334b61;
+}
+
+.task-critical-badge {
+  letter-spacing: 0.02em;
+}
+
+.task-constraint-select {
+  color: #2f4a62;
+}
+
+/* ── Selection & hover ──────────────────────────────────────────────── */
+.task-row[data-selected="true"] {
+  background: var(--row-selected) !important;
+}
+
+.task-row[data-selected="true"] .task-name-text {
+  color: #0a3a6b;
+}
+
+.task-row[data-selected="true"] .task-cell,
+.task-row[data-selected="true"] .task-name-cell {
+  background:
+    linear-gradient(
+      0deg,
+      rgba(25, 102, 177, 0.12),
+      rgba(25, 102, 177, 0.12)
+    ) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(14, 72, 132, 0.52),
+    inset 0 -1px 0 rgba(14, 72, 132, 0.52),
+    inset 0 0 0 2px rgba(26, 108, 186, 0.52),
+    0 0 0 1px rgba(26, 108, 186, 0.18) !important;
+}
+
+.task-row[data-selected="true"] .task-cell-wbs-band {
+  box-shadow:
+    inset 6px 0 0 #1a78c1,
+    inset 0 1px 0 rgba(14, 72, 132, 0.52),
+    inset 0 -1px 0 rgba(14, 72, 132, 0.52),
+    inset 0 0 0 2px rgba(26, 108, 186, 0.52),
+    0 0 0 1px rgba(26, 108, 186, 0.18) !important;
+}
+
+.task-row[data-selected="true"][data-is-summary="true"] .task-cell,
+.task-row[data-selected="true"][data-is-summary="true"] .task-name-cell {
+  background:
+    linear-gradient(
+      0deg,
+      color-mix(in srgb, #ffffff 24%, transparent 76%),
+      color-mix(in srgb, #ffffff 24%, transparent 76%)
+    ),
+    var(--summary-owner-color) !important;
+}
+
+.task-row[data-selected="true"][data-is-summary="true"] .task-cell-id {
+  background:
+    linear-gradient(
+      0deg,
+      color-mix(in srgb, #ffffff 24%, transparent 76%),
+      color-mix(in srgb, #ffffff 24%, transparent 76%)
+    ),
+    var(--summary-owner-color) !important;
+}
+.task-row[data-is-critical="true"][data-is-summary="false"]:not([data-selected="true"]) { background: var(--row-critical) !important; }
+
+.task-row:hover:not([data-selected="true"]) {
+  background: #edf4fc !important;
+}
+
+.task-table-header,
+.gantt-header {
+  background: linear-gradient(180deg, #f8fbff 0%, #eef4fb 100%);
+  border-bottom-color: #c7d6e6 !important;
+}
+
+.task-table-header {
+  box-shadow: inset 0 -1px 0 #cfdceb;
+}
+
+.planner-gantt-body {
+  background: #ffffff;
+}
+
+.planner-gantt-header {
+  box-shadow: inset 0 -1px 0 #cfdceb;
+}
+
+/* ── Layout drift prevention ────────────────────────────────────────── */
+.task-name-cell {
+  box-sizing: border-box;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.task-cell {
+  box-sizing: border-box;
+  min-width: 0;
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Toolbar ─────────────────────────────────────────────────────────── */
+.toolbar {
+  padding: 4px 10px;
+  border-bottom: 1px solid #ccd8e5;
+  background: linear-gradient(180deg, #ffffff 0%, #f6f9fc 100%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  flex-shrink: 0;
+}
+.toolbar::-webkit-scrollbar { display: none; }
+
+.toolbar-zone {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  position: relative;
+  padding-left: 4px;
+}
+
+.planner-toolbar .toolbar-zone[data-group]::before {
+  content: attr(data-group);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #7c8ea1;
+  margin-right: 6px;
+}
+
+.toolbar-sep {
+  display: inline-block;
+  width: 1px;
+  height: 20px;
+  background: #d0dae4;
+  flex-shrink: 0;
+  margin: 0 2px;
+}
+
+.toolbar-btn {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+  white-space: nowrap;
+  border: 1px solid #c9d5e2;
+  border-radius: 6px;
+  background: #fff;
+  color: #2f4a62;
+  cursor: pointer;
+  line-height: 26px;
+  font-family: inherit;
+}
+.toolbar-btn:hover:not(:disabled) {
+  background: #eef5fd;
+  border-color: #a7bdd4;
+}
+.toolbar-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.toolbar-btn-icon {
+  min-width: 28px;
+  width: 28px;
+  padding: 0;
+  text-align: center;
+  font-weight: 700;
+}
+
+.toolbar-btn-quiet {
+  background: #f8fbff;
+}
+
+.toolbar-btn-danger {
+  border-color: #e5b5bc;
+  color: #8a2434;
+  background: #fff7f8;
+}
+
+.toolbar-btn-danger:hover:not(:disabled) {
+  border-color: #d48b95;
+  background: #ffeef1;
+}
+
+.toolbar-btn-primary {
+  background: #226fb8;
+  color: #fff;
+  border-color: #1d5f9d;
+}
+.toolbar-btn-primary:hover:not(:disabled) {
+  background: #1d5f9d;
+  border-color: #174c7e;
+}
+
+.toolbar-input {
+  height: 28px;
+  padding: 0 6px;
+  box-sizing: border-box;
+  font-size: 12px;
+  border: 1px solid #c9d5e2;
+  border-radius: 6px;
+  font-family: inherit;
+  outline: none;
+}
+.toolbar-input:focus {
+  border-color: #226fb8;
+}
+
+.toolbar-select {
+  height: 28px;
+  font-size: 12px;
+  border: 1px solid #c9d5e2;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.toolbar-select-parent {
+  max-width: 180px;
+}
+
+@media (max-width: 1100px) {
+  .planner-toolbar .toolbar-zone[data-group]::before {
+    display: none;
+  }
+}
+
+/* ── WBS + ID identity columns ─────────────────────────────────────── */
+.task-cell-id {
+  border-right: 1px solid #e8eaed;
 }
 
 /* Hide scrollbar on histogram chart viewport — Gantt owns the visible scrollbar */
