@@ -18,14 +18,19 @@
 
 import type {
     Assignment,
+    BaseCalendarDefinition,
+    CalendarId,
     Dependency,
     ImportDiagnostic,
     ImportDiagnosticsSummary,
     ImportFormat,
     ImportSummary,
     Resource,
+    SourceImportFidelityState,
+    SourceProjectSettings,
+    SourceTaskDates,
     Task,
-} from "protocol";
+} from "@planner/protocol";
 import type { MspData } from "./types/mspTypes.js";
 import type { XerData } from "./types/xerTypes.js";
 
@@ -37,6 +42,7 @@ import type { XerData } from "./types/xerTypes.js";
  */
 export type ImportCandidate = {
   readonly format: ImportFormat;
+  readonly sourceFileName?: string;
   readonly projectName: string;
   readonly projectStartDate: string;
   readonly summary: ImportSummary;
@@ -58,6 +64,14 @@ export type ImportCandidate = {
   readonly mappedDependencies?: readonly Dependency[];
   readonly mappedResources?: readonly Resource[];
   readonly mappedAssignments?: readonly Assignment[];
+  readonly sourceImportFidelityState?: SourceImportFidelityState;
+  readonly sourceDatesByTaskId?: Readonly<Record<string, SourceTaskDates>>;
+  /** W3A: Rich calendar definitions preserved from import (not yet active in scheduling). */
+  readonly calendarDefinitions?: Readonly<Record<CalendarId, BaseCalendarDefinition>>;
+  /** W3C: Resolved (flattened) calendar definitions after inheritance resolution. */
+  readonly resolvedCalendarDefinitions?: Readonly<Record<CalendarId, BaseCalendarDefinition>>;
+  /** W4.3: Project-level default settings preserved from the source file (informational). */
+  readonly sourceProjectSettings?: SourceProjectSettings;
 };
 
 // ─── Held Preview State ─────────────────────────────────────────────

@@ -1,6 +1,7 @@
-import type { Dependency, ScheduleResultMap, Task } from "protocol";
+import type { Dependency, ScheduleResultMap, VisibleRow } from "@planner/protocol";
 import { DAY_WIDTH, getDensityConstants } from "./ganttConstants";
 import type { TaskGeometry } from "./ganttGeometry";
+import type { TimescaleModel } from "./timescaleModel";
 
 const EDGE_THRESHOLD = 5;
 const LINK_NODE_RADIUS = 6;
@@ -28,10 +29,13 @@ const BACKGROUND_HIT: HitResult = { zone: "background", taskId: null, rowIndex: 
 export function hitTestBar(
   worldX: number,
   worldY: number,
-  tasks: Task[],
+  tasks: VisibleRow[],
   scheduleResults: ScheduleResultMap,
+  timescaleModel?: TimescaleModel,
 ): HitResult {
   const { rowHeight: ROW_HEIGHT, barHeight: BAR_HEIGHT, barVerticalPadding: BAR_VERTICAL_PADDING } = getDensityConstants();
+  // Compatibility fallback for legacy/tests that call hitTestBar without a model.
+  const dayWidth = timescaleModel?.unitWidth ?? DAY_WIDTH;
   // O(1) row lookup
   const rowIndex = Math.floor(worldY / ROW_HEIGHT);
   if (rowIndex < 0 || rowIndex >= tasks.length) return BACKGROUND_HIT;
@@ -51,8 +55,15 @@ export function hitTestBar(
   }
 
   // Horizontal bar range check
-  const barLeft = schedule.earlyStart * DAY_WIDTH;
-  const barRight = barLeft + (schedule.earlyFinish - schedule.earlyStart) * DAY_WIDTH;
+  const span = timescaleModel?.spanToX
+    ? timescaleModel.spanToX(schedule.earlyStartMinutes, schedule.earlyFinishMinutes)
+    : {
+        // Compatibility fallback: preserve pre-model math when no model is supplied.
+        x: schedule.earlyStartMinutes * dayWidth,
+        width: (schedule.earlyFinishMinutes - schedule.earlyStartMinutes) * dayWidth,
+      };
+  const barLeft = span.x;
+  const barRight = span.x + span.width;
   if (worldX < barLeft || worldX > barRight) {
     return { zone: "background", taskId: null, rowIndex };
   }

@@ -1,4 +1,5 @@
-import type { ConstraintType, Task } from "protocol";
+import type { ConstraintType, Task, WorkMinutes } from "@planner/protocol";
+import { MINUTES_PER_DAY } from "@planner/protocol";
 import { describe, expect, it } from "vitest";
 import { buildAllDiags, highestSeverity, mapCodeToUiDiag } from "./TaskDetailsPanel";
 import { constraintBadgeStyle } from "./TaskTable";
@@ -14,18 +15,18 @@ const DATED_TYPES: ReadonlySet<ConstraintType> = new Set(["SNET", "FNLT", "MSO",
 function buildConstraintUpdate(
   _task: Task,
   next: ConstraintType,
-): { constraintType: ConstraintType; constraintDate?: number | null } {
+): { constraintType: ConstraintType; constraintDateMinutes?: WorkMinutes | null } {
   const nextDated = DATED_TYPES.has(next);
   return {
     constraintType: next,
-    ...(!nextDated ? { constraintDate: null } : {}),
+    ...(!nextDated ? { constraintDateMinutes: null } : {}),
   };
 }
 
 /** Pure check mirroring ConstraintEditor's needsDate derivation. */
-function _constraintNeedsDate(ct: ConstraintType | undefined, constraintDate: number | null | undefined): boolean {
+function constraintNeedsDate(ct: ConstraintType | undefined, constraintDateMinutes: WorkMinutes | null | undefined): boolean {
   const effective = ct ?? "ASAP";
-  return DATED_TYPES.has(effective) && (constraintDate == null);
+  return DATED_TYPES.has(effective) && (constraintDateMinutes == null);
 }
 
 const HARD_TYPES: ReadonlySet<ConstraintType> = new Set(["MSO", "MFO"]);
@@ -34,12 +35,12 @@ type DiagLevel = "error" | "info";
 type ConstraintDiag = { level: DiagLevel; message: string };
 
 /** Mirrors constraintDiagnostics from ConstraintEditor. */
-function constraintDiagnostics(ct: ConstraintType, constraintDate: number | null | undefined): ConstraintDiag[] {
+function constraintDiagnostics(ct: ConstraintType, constraintDateMinutes: WorkMinutes | null | undefined): ConstraintDiag[] {
   const diags: ConstraintDiag[] = [];
-  if (DATED_TYPES.has(ct) && constraintDate == null) {
+  if (DATED_TYPES.has(ct) && constraintDateMinutes == null) {
     diags.push({ level: "error", message: `${ct} requires a constraint date.` });
   }
-  if (ct === "ALAP" && constraintDate != null) {
+  if (ct === "ALAP" && constraintDateMinutes != null) {
     diags.push({ level: "info", message: "Date is ignored for ALAP." });
   }
   if (HARD_TYPES.has(ct)) {
@@ -48,7 +49,7 @@ function constraintDiagnostics(ct: ConstraintType, constraintDate: number | null
   return diags;
 }
 
-const baseTask: Task = { id: "A", name: "A", duration: 5, depth: 0, isSummary: false };
+const baseTask: Task = { id: "A", name: "A", durationWorkMinutes: (5 * MINUTES_PER_DAY) as WorkMinutes, siblingOrder: "V" };
 
 describe("Phase V.6 — Constraint diagnostics logic", () => {
   it("SNET with null date → error diagnostic", () => {
@@ -59,7 +60,7 @@ describe("Phase V.6 — Constraint diagnostics logic", () => {
   });
 
   it("SNET with date set → no diagnostics", () => {
-    expect(constraintDiagnostics("SNET", 10)).toHaveLength(0);
+    expect(constraintDiagnostics("SNET", 10 as WorkMinutes)).toHaveLength(0);
   });
 
   it("FNLT with null date → error diagnostic", () => {
@@ -69,7 +70,7 @@ describe("Phase V.6 — Constraint diagnostics logic", () => {
   });
 
   it("ALAP with date present → info diagnostic", () => {
-    const diags = constraintDiagnostics("ALAP", 5);
+    const diags = constraintDiagnostics("ALAP", 5 as WorkMinutes);
     expect(diags).toHaveLength(1);
     expect(diags[0].level).toBe("info");
     expect(diags[0].message).toContain("ignored");
@@ -84,7 +85,7 @@ describe("Phase V.6 — Constraint diagnostics logic", () => {
   });
 
   it("MSO with date → hard constraint info only", () => {
-    const diags = constraintDiagnostics("MSO", 10);
+    const diags = constraintDiagnostics("MSO", 10 as WorkMinutes);
     expect(diags).toHaveLength(1);
     expect(diags[0].level).toBe("info");
     expect(diags[0].message).toContain("Hard constraint");
@@ -98,7 +99,7 @@ describe("Phase V.6 — Constraint diagnostics logic", () => {
   });
 
   it("MFO with date → hard constraint info only", () => {
-    const diags = constraintDiagnostics("MFO", 20);
+    const diags = constraintDiagnostics("MFO", 20 as WorkMinutes);
     expect(diags).toHaveLength(1);
     expect(diags[0].message).toContain("Hard constraint");
   });
@@ -109,47 +110,59 @@ describe("Phase V.6 — Constraint diagnostics logic", () => {
   });
 });
 
+describe("constraintNeedsDate helper", () => {
+  it("SNET with null date → needs date", () => {
+    expect(constraintNeedsDate("SNET", null)).toBe(true);
+  });
+  it("SNET with date → does not need date", () => {
+    expect(constraintNeedsDate("SNET", 10 as WorkMinutes)).toBe(false);
+  });
+  it("ASAP → does not need date", () => {
+    expect(constraintNeedsDate("ASAP", null)).toBe(false);
+  });
+});
+
 describe("Phase V.3 — ConstraintEditor payload logic", () => {
-  it("switching to SNET does not inject constraintDate", () => {
+  it("switching to SNET does not inject constraintDateMinutes", () => {
     const updates = buildConstraintUpdate(baseTask, "SNET");
     expect(updates.constraintType).toBe("SNET");
-    expect(updates).not.toHaveProperty("constraintDate");
+    expect(updates).not.toHaveProperty("constraintDateMinutes");
   });
 
-  it("switching to FNLT preserves existing constraintDate", () => {
-    const task = { ...baseTask, constraintType: "SNET" as ConstraintType, constraintDate: 10 };
+  it("switching to FNLT preserves existing constraintDateMinutes", () => {
+    const task = { ...baseTask, constraintType: "SNET" as ConstraintType, constraintDateMinutes: (10 * MINUTES_PER_DAY) as WorkMinutes };
     const updates = buildConstraintUpdate(task, "FNLT");
     expect(updates.constraintType).toBe("FNLT");
-    // constraintDate not overwritten — no constraintDate key in update
-    expect(updates).not.toHaveProperty("constraintDate");
+    // constraintDateMinutes not overwritten — no key in update
+    expect(updates).not.toHaveProperty("constraintDateMinutes");
   });
 
-  it("switching to ASAP clears constraintDate", () => {
-    const task = { ...baseTask, constraintType: "SNET" as ConstraintType, constraintDate: 10 };
+  it("switching to ASAP clears constraintDateMinutes", () => {
+    const task = { ...baseTask, constraintType: "SNET" as ConstraintType, constraintDateMinutes: (10 * MINUTES_PER_DAY) as WorkMinutes };
     const updates = buildConstraintUpdate(task, "ASAP");
     expect(updates.constraintType).toBe("ASAP");
-    expect(updates.constraintDate).toBeNull();
+    expect(updates.constraintDateMinutes).toBeNull();
   });
 
-  it("switching to ALAP clears constraintDate", () => {
-    const task = { ...baseTask, constraintType: "MSO" as ConstraintType, constraintDate: 5 };
+  it("switching to ALAP clears constraintDateMinutes", () => {
+    const task = { ...baseTask, constraintType: "MSO" as ConstraintType, constraintDateMinutes: (5 * MINUTES_PER_DAY) as WorkMinutes };
     const updates = buildConstraintUpdate(task, "ALAP");
     expect(updates.constraintType).toBe("ALAP");
-    expect(updates.constraintDate).toBeNull();
+    expect(updates.constraintDateMinutes).toBeNull();
   });
 
-  it("switching to MSO does not inject constraintDate when date is null", () => {
-    const task = { ...baseTask, constraintType: "ASAP" as ConstraintType, constraintDate: null };
+  it("switching to MSO does not inject constraintDateMinutes when date is null", () => {
+    const task = { ...baseTask, constraintType: "ASAP" as ConstraintType, constraintDateMinutes: null };
     const updates = buildConstraintUpdate(task, "MSO");
     expect(updates.constraintType).toBe("MSO");
-    expect(updates).not.toHaveProperty("constraintDate");
+    expect(updates).not.toHaveProperty("constraintDateMinutes");
   });
 
-  it("switching to MFO keeps existing constraintDate", () => {
-    const task = { ...baseTask, constraintType: "FNLT" as ConstraintType, constraintDate: 20 };
+  it("switching to MFO keeps existing constraintDateMinutes", () => {
+    const task = { ...baseTask, constraintType: "FNLT" as ConstraintType, constraintDateMinutes: (20 * MINUTES_PER_DAY) as WorkMinutes };
     const updates = buildConstraintUpdate(task, "MFO");
     expect(updates.constraintType).toBe("MFO");
-    expect(updates).not.toHaveProperty("constraintDate");
+    expect(updates).not.toHaveProperty("constraintDateMinutes");
   });
 
   it("DATED_TYPES contains exactly SNET, FNLT, MSO, MFO", () => {

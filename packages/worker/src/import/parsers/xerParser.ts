@@ -28,6 +28,7 @@ import type {
     XerParseWarning,
     XerProject,
     XerResource,
+    XerSchedOption,
     XerTask,
     XerTaskPred,
     XerTaskRsrc,
@@ -37,7 +38,7 @@ import type {
 // ─── Table name constants ───────────────────────────────────────────
 
 const KNOWN_TABLES = new Set([
-  "PROJECT", "PROJWBS", "TASK", "TASKPRED", "RSRC", "TASKRSRC", "CALENDAR",
+  "PROJECT", "PROJWBS", "TASK", "TASKPRED", "RSRC", "TASKRSRC", "CALENDAR", "SCHEDOPTIONS",
 ]);
 
 // ─── Helpers ────────────────────────────────────────────────────────
@@ -69,13 +70,62 @@ function pickFields<T>(row: Record<string, string>, keys: readonly string[]): T 
 
 // ─── Field key lists per table ──────────────────────────────────────
 
-const PROJECT_KEYS: readonly string[] = ["proj_id", "proj_short_name", "plan_start_date", "day_hr_cnt"];
+const PROJECT_KEYS: readonly string[] = [
+  "proj_id",
+  "proj_short_name",
+  "plan_start_date",
+  "day_hr_cnt",
+  "data_date",
+  "status_date",
+  "last_recalc_date",
+  "week_hr_cnt",
+  "month_hr_cnt",
+  "scd_end_date",
+  "clndr_id",
+];
 const PROJWBS_KEYS: readonly string[] = ["wbs_id", "proj_id", "parent_wbs_id", "wbs_short_name", "wbs_name"];
-const TASK_KEYS: readonly string[] = ["task_id", "proj_id", "wbs_id", "task_name", "task_type", "target_drtn_hr_cnt", "cstr_type", "cstr_date"];
+const TASK_KEYS: readonly string[] = [
+  "task_id",
+  "task_code",
+  "proj_id",
+  "wbs_id",
+  "task_name",
+  "task_type",
+  "target_drtn_hr_cnt",
+  "cstr_type",
+  "cstr_date",
+  "clndr_id",
+  "target_start_date",
+  "target_end_date",
+  "act_start_date",
+  "act_end_date",
+  "act_drtn_hr_cnt",
+  "remain_drtn_hr_cnt",
+  "remain_start_date",
+  "remain_end_date",
+  "suspend_date",
+  "resume_date",
+  "phys_complete_pct",
+  "task_complete_pct",
+  "duration_pct_complete",
+  "units_pct_complete",
+  "complete_pct_type",
+];
 const TASKPRED_KEYS: readonly string[] = ["task_pred_id", "task_id", "pred_task_id", "pred_type", "lag_hr_cnt"];
 const RSRC_KEYS: readonly string[] = ["rsrc_id", "rsrc_name", "max_qty_per_hr"];
 const TASKRSRC_KEYS: readonly string[] = ["taskrsrc_id", "task_id", "rsrc_id", "target_qty_per_hr"];
-const CALENDAR_KEYS: readonly string[] = ["clndr_id", "clndr_name", "clndr_data"];
+const CALENDAR_KEYS: readonly string[] = [
+  "clndr_id",
+  "clndr_name",
+  "clndr_data",
+  "clndr_type",
+  "base_clndr_id",
+  "day_hr_cnt",
+  "week_hr_cnt",
+  "month_hr_cnt",
+  "year_hr_cnt",
+];
+const SCHEDOPTIONS_KEYS: readonly string[] = ["option_name", "option_value"];
 
 // ─── Main Parser ────────────────────────────────────────────────────
 
@@ -96,6 +146,7 @@ export function parseXer(raw: string): XerParseResult {
   const resources: XerResource[] = [];
   const taskRsrcs: XerTaskRsrc[] = [];
   const calendars: XerCalendar[] = [];
+  const schedoptions: XerSchedOption[] = [];
 
   const lines = raw.split(/\r?\n/);
 
@@ -182,6 +233,9 @@ export function parseXer(raw: string): XerParseResult {
         case "CALENDAR":
           calendars.push(pickFields<XerCalendar>(row, CALENDAR_KEYS));
           break;
+        case "SCHEDOPTIONS":
+          schedoptions.push(pickFields<XerSchedOption>(row, SCHEDOPTIONS_KEYS));
+          break;
       }
       continue;
     }
@@ -190,7 +244,7 @@ export function parseXer(raw: string): XerParseResult {
   }
 
   return {
-    data: { projects, wbs, tasks, taskPreds, resources, taskRsrcs, calendars },
+    data: { projects, wbs, tasks, taskPreds, resources, taskRsrcs, calendars, schedoptions },
     errors,
     warnings,
   };

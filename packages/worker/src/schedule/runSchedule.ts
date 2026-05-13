@@ -1,4 +1,4 @@
-import type { ScheduleError, ScheduleRequest, ScheduleResponse } from "protocol/kernel";
+import type { ScheduleError, ScheduleRequest, ScheduleResponse } from "@planner/protocol/kernel";
 import { getCpmWasm } from "../wasm/loadCpmWasm.js";
 
 /**

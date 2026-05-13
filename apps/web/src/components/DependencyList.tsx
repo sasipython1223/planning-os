@@ -1,4 +1,5 @@
-import type { Dependency, DependencyType, Task } from "protocol";
+import type { Dependency, DependencyType, Task } from "@planner/protocol";
+import { MINUTES_PER_DAY } from "@planner/protocol";
 import type { CSSProperties } from "react";
 import { useCallback, useState } from "react";
 import { type GridColumn, ColumnResizer, useColumnResize } from "../hooks/useColumnResize";
@@ -76,29 +77,30 @@ interface RowProps {
 }
 
 function DependencyRow({ dep, getTaskName, onUpdateType, onUpdateLag, onDelete }: RowProps) {
-  const [lagDraft, setLagDraft] = useState(String(dep.lag));
+  const lagDays = dep.lagWorkMinutes / MINUTES_PER_DAY;
+  const [lagDraft, setLagDraft] = useState(String(lagDays));
   const [editing, setEditing] = useState(false);
   const [hovered, setHovered] = useState(false);
 
   const commitLag = useCallback(() => {
     setEditing(false);
     const parsed = Number(lagDraft);
-    if (Number.isFinite(parsed) && parsed !== dep.lag) {
+    if (Number.isFinite(parsed) && parsed !== lagDays) {
       onUpdateLag(dep.id, parsed);
     } else {
-      setLagDraft(String(dep.lag));
+      setLagDraft(String(lagDays));
     }
-  }, [lagDraft, dep.id, dep.lag, onUpdateLag]);
+  }, [lagDraft, dep.id, lagDays, onUpdateLag]);
 
   const handleLagKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === "Enter") commitLag();
-      if (e.key === "Escape") { setLagDraft(String(dep.lag)); setEditing(false); }
+      if (e.key === "Escape") { setLagDraft(String(lagDays)); setEditing(false); }
     },
-    [commitLag, dep.lag],
+    [commitLag, lagDays],
   );
 
-  const displayLag = editing ? lagDraft : String(dep.lag);
+  const displayLag = editing ? lagDraft : String(lagDays);
   const predName = getTaskName(dep.predId);
   const succName = getTaskName(dep.succId);
 
@@ -262,6 +264,9 @@ type Props = {
   onUpdateLag: (depId: string, lag: number) => void;
   onDelete: (depId: string) => void;
   onAdd: (predId: string, succId: string, type: DependencyType, lag: number) => void;
+  title?: string;
+  emptyMessage?: string;
+  showAddFooter?: boolean;
 };
 
 export function DependencyList({
@@ -272,6 +277,9 @@ export function DependencyList({
   onUpdateLag,
   onDelete,
   onAdd,
+  title = "Dependencies",
+  emptyMessage = "No dependencies",
+  showAddFooter = true,
 }: Props) {
   const { containerRef, startResize } = useColumnResize(DEP_COLUMNS);
   return (
@@ -291,7 +299,7 @@ export function DependencyList({
           color: "#333",
         }}
       >
-        Dependencies
+        {title}
         <span style={{ marginLeft: 4, fontWeight: 400, color: "#888", fontSize: 10 }}>
           ({dependencies.length})
         </span>
@@ -331,7 +339,7 @@ export function DependencyList({
         {dependencies.length === 0 && (
           <div style={{ display: "grid", gridTemplateColumns: GRID_COLS }}>
             <div style={{ ...cell, gridColumn: "1 / -1", color: "#999", fontStyle: "italic", borderRight: "none" }}>
-              No dependencies
+              {emptyMessage}
             </div>
           </div>
         )}
@@ -348,7 +356,7 @@ export function DependencyList({
       </div>
 
       {/* ── Bottom footer action bar ─────────────────────────── */}
-      <AddFooter tasks={tasks} onAdd={onAdd} />
+      {showAddFooter && <AddFooter tasks={tasks} onAdd={onAdd} />}
     </div>
   );
 }

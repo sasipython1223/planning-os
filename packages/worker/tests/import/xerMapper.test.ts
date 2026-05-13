@@ -5,7 +5,9 @@
  * Mapper is tested in isolation from the parser and orchestrator.
  */
 
+import { MINUTES_PER_DAY } from "@planner/protocol";
 import { describe, expect, it } from "vitest";
+import { buildFullProjection } from "../../src/hierarchy.js";
 import { mapXerToCanonical } from "../../src/import/mappers/xerMapper.js";
 import type { XerData } from "../../src/import/types/xerTypes.js";
 
@@ -63,10 +65,9 @@ describe("XER Mapper (W.3)", () => {
         ],
       }));
       expect(result.tasks).toHaveLength(1);
-      expect(result.tasks[0].isSummary).toBe(true);
       expect(result.tasks[0].name).toBe("Project Root");
-      expect(result.tasks[0].duration).toBe(0);
-      expect(result.tasks[0].depth).toBe(0);
+      expect(result.tasks[0].durationWorkMinutes).toBe(0);
+      expect(result.tasks[0].isStructuralSummary).toBe(true);
     });
 
     it("should build hierarchy with correct depth and parentId", () => {
@@ -79,18 +80,62 @@ describe("XER Mapper (W.3)", () => {
       }));
       expect(result.tasks).toHaveLength(3);
       // Root
-      expect(result.tasks[0].depth).toBe(0);
       expect(result.tasks[0].parentId).toBeUndefined();
       // Phase 1
-      expect(result.tasks[1].depth).toBe(1);
       expect(result.tasks[1].parentId).toBe(result.tasks[0].id);
       // Sub Phase
-      expect(result.tasks[2].depth).toBe(2);
       expect(result.tasks[2].parentId).toBe(result.tasks[1].id);
     });
   });
 
+  describe("WBS classification in projection", () => {
+    it("keeps a zero-activity PROJWBS node classified as summary in projection", () => {
+      const mapped = mapXerToCanonical(buildData({
+        wbs: [
+          { wbs_id: "W1", proj_id: "P1", parent_wbs_id: "", wbs_short_name: "Lonely", wbs_name: "Lonely WBS" },
+        ],
+        tasks: [],
+      }));
+
+      const rows = buildFullProjection(mapped.tasks);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].isSummary).toBe(true);
+      expect(rows[0].sourceActivityId).toBeUndefined();
+    });
+
+    it("keeps normal WBS-with-activities summary semantics and preserves activity IDs", () => {
+      const mapped = mapXerToCanonical(buildData({
+        wbs: [
+          { wbs_id: "W1", proj_id: "P1", parent_wbs_id: "", wbs_short_name: "Phase", wbs_name: "Phase" },
+        ],
+        tasks: [
+          { task_id: "T1", task_code: "A100", proj_id: "P1", wbs_id: "W1", task_name: "Activity A", task_type: "TT_TASK", target_drtn_hr_cnt: "8", cstr_type: "", cstr_date: "" },
+        ],
+      }));
+
+      const rows = buildFullProjection(mapped.tasks);
+      const summaryRow = rows.find((r) => r.isStructuralSummary === true);
+      const activityRow = rows.find((r) => r.sourceActivityId === "A100");
+
+      expect(summaryRow).toBeDefined();
+      expect(summaryRow!.isSummary).toBe(true);
+      expect(activityRow).toBeDefined();
+      expect(activityRow!.isSummary).toBe(false);
+      expect(activityRow!.sourceActivityId).toBe("A100");
+    });
+  });
+
   describe("task mapping", () => {
+    it("should preserve source task_code as sourceActivityId", () => {
+      const result = mapXerToCanonical(buildData({
+        tasks: [
+          { task_id: "T100", task_code: "A100", proj_id: "P1", wbs_id: "", task_name: "Design", task_type: "TT_TASK", target_drtn_hr_cnt: "40", cstr_type: "CS_ASAP", cstr_date: "" },
+        ],
+      }));
+      expect(result.tasks[0].sourceActivityId).toBe("A100");
+      expect(result.tasks[0].id).not.toBe("T100");
+    });
+
     it("should map a simple task with correct fields", () => {
       const result = mapXerToCanonical(buildData({
         tasks: [
@@ -99,8 +144,7 @@ describe("XER Mapper (W.3)", () => {
       }));
       const mapped = result.tasks[0];
       expect(mapped.name).toBe("Design");
-      expect(mapped.duration).toBe(5); // 40hrs / 8hrs = 5 days
-      expect(mapped.isSummary).toBe(false);
+      expect(mapped.durationWorkMinutes).toBe(5 * MINUTES_PER_DAY); // 40hrs / 8hrs = 5 days
       expect(mapped.id).toMatch(/^[0-9a-f-]{36}$/); // UUID format
     });
 
@@ -125,10 +169,9 @@ describe("XER Mapper (W.3)", () => {
           { task_id: "T1", proj_id: "P1", wbs_id: "W1", task_name: "Task A", task_type: "TT_TASK", target_drtn_hr_cnt: "8", cstr_type: "", cstr_date: "" },
         ],
       }));
-      const wbsTask = result.tasks.find(t => t.isSummary);
-      const leafTask = result.tasks.find(t => !t.isSummary);
+      const wbsTask = result.tasks.find(t => t.durationWorkMinutes === 0);
+      const leafTask = result.tasks.find(t => t.durationWorkMinutes > 0);
       expect(leafTask!.parentId).toBe(wbsTask!.id);
-      expect(leafTask!.depth).toBe(1);
     });
 
     it("should enforce minimum duration of 1 day", () => {
@@ -137,7 +180,7 @@ describe("XER Mapper (W.3)", () => {
           { task_id: "T1", proj_id: "P1", wbs_id: "", task_name: "Zero", task_type: "TT_TASK", target_drtn_hr_cnt: "0", cstr_type: "", cstr_date: "" },
         ],
       }));
-      expect(result.tasks[0].duration).toBe(1);
+      expect(result.tasks[0].durationWorkMinutes).toBe(1 * MINUTES_PER_DAY);
     });
 
     it("should use custom hoursPerDay from project settings", () => {
@@ -147,7 +190,7 @@ describe("XER Mapper (W.3)", () => {
           { task_id: "T1", proj_id: "P1", wbs_id: "", task_name: "Task", task_type: "TT_TASK", target_drtn_hr_cnt: "50", cstr_type: "", cstr_date: "" },
         ],
       }));
-      expect(result.tasks[0].duration).toBe(5); // 50/10 = 5
+      expect(result.tasks[0].durationWorkMinutes).toBe(5 * MINUTES_PER_DAY); // 50/10 = 5
     });
   });
 
@@ -159,7 +202,7 @@ describe("XER Mapper (W.3)", () => {
         ],
       }));
       // 12/8 = 1.5 → rounds to 2
-      expect(result.tasks[0].duration).toBe(2);
+      expect(result.tasks[0].durationWorkMinutes).toBe(2 * MINUTES_PER_DAY);
       const diag = result.diagnostics.find(d => d.code === "DURATION_FRACTIONAL_ROUNDED");
       expect(diag).toBeDefined();
       expect(diag!.sourceEntityId).toBe("T1");
@@ -239,7 +282,7 @@ describe("XER Mapper (W.3)", () => {
           { task_id: "T1", proj_id: "P1", wbs_id: "", task_name: "A", task_type: "TT_TASK", target_drtn_hr_cnt: "8", cstr_type: "CS_SNET", cstr_date: "2026-01-11" },
         ],
       }));
-      expect(result.tasks[0].constraintDate).toBe(10); // 10 days after start
+      expect(result.tasks[0].constraintDateMinutes).toBe(10 * MINUTES_PER_DAY); // 10 days after start
     });
   });
 
@@ -256,7 +299,7 @@ describe("XER Mapper (W.3)", () => {
       }));
       expect(result.dependencies).toHaveLength(1);
       expect(result.dependencies[0].type).toBe("FS");
-      expect(result.dependencies[0].lag).toBe(0);
+      expect(result.dependencies[0].lagWorkMinutes).toBe(0);
     });
 
     it("should default unknown dep type to FS with warning", () => {
@@ -285,7 +328,7 @@ describe("XER Mapper (W.3)", () => {
         ],
       }));
       // 12/8 = 1.5 → rounds to 2
-      expect(result.dependencies[0].lag).toBe(2);
+      expect(result.dependencies[0].lagWorkMinutes).toBe(2 * MINUTES_PER_DAY);
       const diag = result.diagnostics.find(d => d.code === "LAG_FRACTIONAL_ROUNDED");
       expect(diag).toBeDefined();
     });
@@ -343,7 +386,7 @@ describe("XER Mapper (W.3)", () => {
       expect(result.assignments).toHaveLength(1);
       expect(result.assignments[0].unitsPerDay).toBe(4); // 0.5 * 8
       // Verify ID resolution
-      const task = result.tasks.find(t => !t.isSummary)!;
+      const task = result.tasks.find(t => t.durationWorkMinutes > 0)!;
       expect(result.assignments[0].taskId).toBe(task.id);
       expect(result.assignments[0].resourceId).toBe(result.resources[0].id);
     });
@@ -364,14 +407,19 @@ describe("XER Mapper (W.3)", () => {
   });
 
   describe("calendar diagnostics", () => {
-    it("should emit CALENDAR_SIMPLIFIED when calendars present", () => {
+    it("should emit CALENDAR_SIMPLIFIED_FOR_ENGINE or CALENDAR_IMPORTED_RICH when calendars present", () => {
       const result = mapXerToCanonical(buildData({
         calendars: [
           { clndr_id: "C1", clndr_name: "Standard", clndr_data: "..." },
         ],
       }));
-      const diag = result.diagnostics.find(d => d.code === "CALENDAR_SIMPLIFIED");
-      expect(diag).toBeDefined();
+      const hasCalendarDiag = result.diagnostics.some(
+        d => d.code === "CALENDAR_SIMPLIFIED_FOR_ENGINE" || d.code === "CALENDAR_IMPORTED_RICH"
+      );
+      expect(hasCalendarDiag).toBe(true);
+      const diag = result.diagnostics.find(
+        d => d.code === "CALENDAR_SIMPLIFIED_FOR_ENGINE" || d.code === "CALENDAR_IMPORTED_RICH"
+      );
       expect(diag!.severity).toBe("info");
     });
 
@@ -379,6 +427,34 @@ describe("XER Mapper (W.3)", () => {
       const result = mapXerToCanonical(buildData({ calendars: [] }));
       const diag = result.diagnostics.find(d => d.code === "CALENDAR_SIMPLIFIED");
       expect(diag).toBeUndefined();
+    });
+
+    it("preserves XER calendar period-hour metadata and infers weekly pattern when clndr_data is unparseable", () => {
+      const result = mapXerToCanonical(buildData({
+        calendars: [
+          {
+            clndr_id: "C1",
+            clndr_name: "Project 5 Day",
+            clndr_data: "not-parseable",
+            clndr_type: "2",
+            day_hr_cnt: "8",
+            week_hr_cnt: "40",
+            month_hr_cnt: "160",
+            year_hr_cnt: "2080",
+          },
+        ],
+      }));
+
+      const cal = Object.values(result.calendarDefinitions ?? {}).find((c) => c.id === "C1");
+      expect(cal).toBeDefined();
+      expect(cal?.sourceCalendarType).toBe("project");
+      expect(cal?.sourceHoursPerDay).toBe(8);
+      expect(cal?.sourceHoursPerWeek).toBe(40);
+      expect(cal?.sourceHoursPerMonth).toBe(160);
+      expect(cal?.sourceHoursPerYear).toBe(2080);
+      expect(cal?.workingPatternSource).toBe("inferred-hours");
+      expect(cal?.weeklyPattern[1]?.[0]?.endMinute).toBe(480);
+      expect(cal?.weeklyPattern[6]).toBeUndefined();
     });
   });
 
@@ -424,8 +500,8 @@ describe("XER Mapper (W.3)", () => {
 
       // 2 WBS summaries + 2 leaf tasks
       expect(result.tasks).toHaveLength(4);
-      expect(result.tasks.filter(t => t.isSummary)).toHaveLength(2);
-      expect(result.tasks.filter(t => !t.isSummary)).toHaveLength(2);
+      expect(result.tasks.filter(t => t.durationWorkMinutes === 0)).toHaveLength(2);
+      expect(result.tasks.filter(t => t.durationWorkMinutes > 0)).toHaveLength(2);
 
       expect(result.dependencies).toHaveLength(1);
       expect(result.resources).toHaveLength(1);
@@ -433,11 +509,11 @@ describe("XER Mapper (W.3)", () => {
 
       // Design task: 40hrs/8 = 5 days
       const design = result.tasks.find(t => t.name === "Design")!;
-      expect(design.duration).toBe(5);
+      expect(design.durationWorkMinutes).toBe(5 * MINUTES_PER_DAY);
 
       // Build task: 80hrs/8 = 10 days, SNET constraint
       const build = result.tasks.find(t => t.name === "Build")!;
-      expect(build.duration).toBe(10);
+      expect(build.durationWorkMinutes).toBe(10 * MINUTES_PER_DAY);
       expect(build.constraintType).toBe("SNET");
 
       // No warnings other than info-level (no fractional, no lossy constraint)

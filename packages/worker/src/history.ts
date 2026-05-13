@@ -1,4 +1,4 @@
-import type { Assignment, BaselineMap, Command, Dependency, Task } from "protocol";
+import type { Assignment, BaselineMap, Command, Dependency, Task } from "@planner/protocol";
 import * as State from "./state.js";
 
 /** A transaction is an ordered list of commands to replay atomically. */
@@ -62,8 +62,8 @@ export function buildHistoryEntry(cmd: Command): HistoryEntry | null {
       for (const key of Object.keys(cmd.updates) as (keyof typeof cmd.updates)[]) {
         if (key === "parentId") {
           prevUpdates[key] = task.parentId ?? null;
-        } else if (key === "constraintDate") {
-          prevUpdates[key] = task.constraintDate ?? null;
+        } else if (key === "constraintDateMinutes") {
+          prevUpdates[key] = task.constraintDateMinutes ?? null;
         } else {
           prevUpdates[key] = task[key];
         }

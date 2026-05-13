@@ -1,16 +1,17 @@
-import type { Resource, ResourceHistogram } from "protocol";
+import type { Resource, ResourceHistogram } from "@planner/protocol";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { HEADER_METRICS } from "../ui/config/themeConfig";
 import { projectDateShort } from "../utils/dateProjection";
 import {
-  computeYScale,
-  drawHistogram,
-  HIST_COLOR_NORMAL,
-  HIST_COLOR_OVER,
+    computeYScale,
+    drawHistogram,
+    HIST_COLOR_NORMAL,
+    HIST_COLOR_OVER,
 } from "../utils/drawHistogram";
 import type { TimelineGeometry } from "../utils/timelineGeometry";
 import { TimescaleCanvas } from "./gantt/TimescaleCanvas";
+import { createTimescaleModel } from "./gantt/timescaleModel";
 
 const HISTOGRAM_HEIGHT = 120;
 const SPLITTER_WIDTH = 4;
@@ -146,7 +147,6 @@ export function HistogramPane({
       if (!selectedResource || !histogram) { setTooltip(null); return; }
       const rect = e.currentTarget.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
-      const mouseY = e.clientY - rect.top;
       const day = Math.floor((mouseX + scrollLeft) / timeline.pixelsPerDay);
       const units = histogram[day] || 0;
       if (units === 0) { setTooltip(null); return; }
@@ -157,6 +157,17 @@ export function HistogramPane({
   const handleCanvasMouseLeave = useCallback(() => setTooltip(null), []);
 
   const capacity = selectedResource?.maxUnitsPerDay ?? 0;
+  const timescaleModel = useMemo(
+    () => createTimescaleModel({
+      projectStartDate: timeline.projectStartDate,
+      maxDay: timeline.maxDay,
+      scrollLeft,
+      viewportWidth: chartWidth,
+      totalTimelineWidth: timeline.totalTimelineWidth,
+      pixelsPerDay: timeline.pixelsPerDay,
+    }),
+    [timeline.projectStartDate, timeline.maxDay, timeline.totalTimelineWidth, timeline.pixelsPerDay, scrollLeft, chartWidth],
+  );
 
   return (
     <div style={{ display: "flex", height: "100%", overflow: "hidden" }}>
@@ -217,14 +228,7 @@ export function HistogramPane({
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden", marginRight: SCROLL_TRACK_WIDTH }} onWheel={handleHistogramWheel}>
         {/* Shared timescale header — identical to Gantt, height from TS metrics */}
         <div style={{ flexShrink: 0, height: HEADER_METRICS.totalHeight }}>
-          <TimescaleCanvas
-            viewportWidth={chartWidth}
-            scrollLeft={scrollLeft}
-            maxDay={timeline.maxDay}
-            projectStartDate={timeline.projectStartDate}
-            nonWorkingDays={nonWorkingDays}
-            pixelsPerDay={timeline.pixelsPerDay}
-          />
+          <TimescaleCanvas model={timescaleModel} nonWorkingDays={nonWorkingDays} />
         </div>
 
         {/* Chart viewport — scrollbar visually hidden via CSS class,

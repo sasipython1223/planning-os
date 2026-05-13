@@ -5,6 +5,7 @@
  * Mapper is isolated from parser — MspData is constructed inline.
  */
 
+import { MINUTES_PER_DAY } from "@planner/protocol";
 import { describe, expect, it } from "vitest";
 import { mapMspToCanonical } from "../../src/import/mappers/mspMapper.js";
 import type { MspData } from "../../src/import/types/mspTypes.js";
@@ -17,6 +18,7 @@ function baseMspData(overrides: Partial<MspData> = {}): MspData {
     tasks: [],
     resources: [],
     assignments: [],
+    calendars: [],
     ...overrides,
   };
 }
@@ -41,6 +43,17 @@ describe("MSP XML Mapper (W.6)", () => {
   });
 
   describe("task mapping", () => {
+    it("should map sourceActivityId from MSP <ID> (display-only), not UID", () => {
+      const data = baseMspData({
+        tasks: [
+          { uid: "42", id: "7", name: "Task A", duration: "PT40H0M0S", summary: "0", outlineLevel: "1", constraintType: "0", constraintDate: "", predecessorLinks: [] },
+        ],
+      });
+      const result = mapMspToCanonical(data);
+      expect(result.tasks[0].sourceActivityId).toBe("7");
+      expect(result.tasks[0].id).not.toBe("42");
+    });
+
     it("should map basic tasks with canonical IDs", () => {
       const data = baseMspData({
         tasks: [
@@ -51,8 +64,8 @@ describe("MSP XML Mapper (W.6)", () => {
       const result = mapMspToCanonical(data);
       expect(result.tasks).toHaveLength(2);
       expect(result.tasks[0].name).toBe("Task A");
-      expect(result.tasks[0].duration).toBe(5); // 40h / 8h = 5 days
-      expect(result.tasks[1].duration).toBe(10); // 80h / 8h = 10 days
+      expect(result.tasks[0].durationWorkMinutes).toBe(5 * MINUTES_PER_DAY); // 40h / 8h = 5 days
+      expect(result.tasks[1].durationWorkMinutes).toBe(10 * MINUTES_PER_DAY); // 80h / 8h = 10 days
       // Canonical IDs are UUIDs, not MSP UIDs
       expect(result.tasks[0].id).not.toBe("1");
       expect(result.tasks[0].id).toMatch(/^[0-9a-f-]{36}$/);
@@ -77,11 +90,10 @@ describe("MSP XML Mapper (W.6)", () => {
         ],
       });
       const result = mapMspToCanonical(data);
-      expect(result.tasks[0].isSummary).toBe(true);
-      expect(result.tasks[0].duration).toBe(0);
+      expect(result.tasks[0].durationWorkMinutes).toBe(0);
     });
 
-    it("should compute depth from outlineLevel (1-based → 0-based)", () => {
+    it("should build parent-child hierarchy from outlineLevel", () => {
       const data = baseMspData({
         tasks: [
           { uid: "1", name: "Level 1", duration: "PT8H0M0S", summary: "1", outlineLevel: "1", constraintType: "0", constraintDate: "", predecessorLinks: [] },
@@ -89,8 +101,8 @@ describe("MSP XML Mapper (W.6)", () => {
         ],
       });
       const result = mapMspToCanonical(data);
-      expect(result.tasks[0].depth).toBe(0);
-      expect(result.tasks[1].depth).toBe(1);
+      expect(result.tasks[0].parentId).toBeUndefined();
+      expect(result.tasks[1].parentId).toBe(result.tasks[0].id);
     });
 
     it("should set parentId from outline hierarchy", () => {
@@ -112,7 +124,7 @@ describe("MSP XML Mapper (W.6)", () => {
       });
       const result = mapMspToCanonical(data);
       // 12h / 8h = 1.5 → rounds to 2
-      expect(result.tasks[0].duration).toBe(2);
+      expect(result.tasks[0].durationWorkMinutes).toBe(2 * MINUTES_PER_DAY);
       const codes = result.diagnostics.map(d => d.code);
       expect(codes).toContain("DURATION_FRACTIONAL_ROUNDED");
     });
@@ -124,7 +136,7 @@ describe("MSP XML Mapper (W.6)", () => {
         ],
       });
       const result = mapMspToCanonical(data);
-      expect(result.tasks[0].duration).toBe(1);
+      expect(result.tasks[0].durationWorkMinutes).toBe(1 * MINUTES_PER_DAY);
       const codes = result.diagnostics.map(d => d.code);
       expect(codes).toContain("DURATION_FRACTIONAL_ROUNDED");
     });
@@ -176,7 +188,7 @@ describe("MSP XML Mapper (W.6)", () => {
         ],
       });
       const result = mapMspToCanonical(data);
-      expect(result.tasks[0].constraintDate).toBe(5); // 5 days offset
+      expect(result.tasks[0].constraintDateMinutes).toBe(5 * MINUTES_PER_DAY); // 5 days offset
     });
   });
 
@@ -191,7 +203,7 @@ describe("MSP XML Mapper (W.6)", () => {
       const result = mapMspToCanonical(data);
       expect(result.dependencies).toHaveLength(1);
       expect(result.dependencies[0].type).toBe("FS"); // type 1 = FS
-      expect(result.dependencies[0].lag).toBe(0);
+      expect(result.dependencies[0].lagWorkMinutes).toBe(0);
     });
 
     it("should map all dependency types correctly", () => {
@@ -244,7 +256,7 @@ describe("MSP XML Mapper (W.6)", () => {
       });
       const result = mapMspToCanonical(data);
       // 4800 tenths of minutes = 480 minutes = 8 hours = 1 working day
-      expect(result.dependencies[0].lag).toBe(1);
+      expect(result.dependencies[0].lagWorkMinutes).toBe(1 * MINUTES_PER_DAY);
     });
 
     it("should emit diagnostic for fractional lag", () => {
@@ -256,7 +268,7 @@ describe("MSP XML Mapper (W.6)", () => {
       });
       const result = mapMspToCanonical(data);
       // 7200 tenths of minutes = 720 minutes = 12 hours = 1.5 days → rounds to 2
-      expect(result.dependencies[0].lag).toBe(2);
+      expect(result.dependencies[0].lagWorkMinutes).toBe(2 * MINUTES_PER_DAY);
       const codes = result.diagnostics.map(d => d.code);
       expect(codes).toContain("LAG_FRACTIONAL_ROUNDED");
     });
@@ -347,7 +359,9 @@ describe("MSP XML Mapper (W.6)", () => {
       const infoCodes = result.diagnostics.filter(d => d.severity === "info").map(d => d.code);
       expect(infoCodes).toContain("UNSUPPORTED_ACTUALS");
       expect(infoCodes).toContain("UNSUPPORTED_COST");
-      expect(infoCodes).toContain("CALENDAR_SIMPLIFIED");
+      // W3B: CALENDAR_SIMPLIFIED replaced by CALENDAR_SIMPLIFIED_FOR_ENGINE / CALENDAR_IMPORTED_RICH
+      // When no calendars, no calendar diagnostic is emitted
+      expect(infoCodes).not.toContain("CALENDAR_SIMPLIFIED");
     });
   });
 });

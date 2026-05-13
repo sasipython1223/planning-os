@@ -5,24 +5,24 @@ fn test_simple_chain() {
     let tasks = vec![
         RawTask {
             id: "A".to_string(),
-            duration: 3,
-            min_early_start: 0,
+            duration_work_minutes: 3,
+            min_early_start_minutes: 0,
             parent_id: None,
-            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None,
+            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None,
         },
         RawTask {
             id: "B".to_string(),
-            duration: 5,
-            min_early_start: 0,
+            duration_work_minutes: 5,
+            min_early_start_minutes: 0,
             parent_id: None,
-            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None,
+            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None,
         },
         RawTask {
             id: "C".to_string(),
-            duration: 2,
-            min_early_start: 0,
+            duration_work_minutes: 2,
+            min_early_start_minutes: 0,
             parent_id: None,
-            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None,
+            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None,
         },
     ];
 
@@ -31,29 +31,29 @@ fn test_simple_chain() {
             pred_id: "A".to_string(),
             succ_id: "B".to_string(),
             dep_type: DepType::FS,
-            lag: 0,
+            lag_work_minutes: 0,
             },
         RawDependency {
             pred_id: "B".to_string(),
             succ_id: "C".to_string(),
             dep_type: DepType::FS,
-            lag: 0,
+            lag_work_minutes: 0,
             },
     ];
 
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
 
     assert_eq!(result[0].task_id, "A");
-    assert_eq!(result[0].early_start, 0);
-    assert_eq!(result[0].early_finish, 3);
+    assert_eq!(result[0].early_start_minutes, 0);
+    assert_eq!(result[0].early_finish_minutes, 3);
 
     assert_eq!(result[1].task_id, "B");
-    assert_eq!(result[1].early_start, 3);
-    assert_eq!(result[1].early_finish, 8);
+    assert_eq!(result[1].early_start_minutes, 3);
+    assert_eq!(result[1].early_finish_minutes, 8);
 
     assert_eq!(result[2].task_id, "C");
-    assert_eq!(result[2].early_start, 8);
-    assert_eq!(result[2].early_finish, 10);
+    assert_eq!(result[2].early_start_minutes, 8);
+    assert_eq!(result[2].early_finish_minutes, 10);
 }
 
 #[test]
@@ -61,24 +61,24 @@ fn test_parallel_tasks() {
     let tasks = vec![
         RawTask {
             id: "A".to_string(),
-            duration: 5,
-            min_early_start: 0,
+            duration_work_minutes: 5,
+            min_early_start_minutes: 0,
             parent_id: None,
-            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None,
+            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None,
         },
         RawTask {
             id: "B".to_string(),
-            duration: 3,
-            min_early_start: 0,
+            duration_work_minutes: 3,
+            min_early_start_minutes: 0,
             parent_id: None,
-            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None,
+            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None,
         },
         RawTask {
             id: "C".to_string(),
-            duration: 4,
-            min_early_start: 0,
+            duration_work_minutes: 4,
+            min_early_start_minutes: 0,
             parent_id: None,
-            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None,
+            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None,
         },
     ];
 
@@ -87,14 +87,14 @@ fn test_parallel_tasks() {
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
 
     // All tasks can start at time 0
-    assert_eq!(result[0].early_start, 0);
-    assert_eq!(result[0].early_finish, 5);
+    assert_eq!(result[0].early_start_minutes, 0);
+    assert_eq!(result[0].early_finish_minutes, 5);
 
-    assert_eq!(result[1].early_start, 0);
-    assert_eq!(result[1].early_finish, 3);
+    assert_eq!(result[1].early_start_minutes, 0);
+    assert_eq!(result[1].early_finish_minutes, 3);
 
-    assert_eq!(result[2].early_start, 0);
-    assert_eq!(result[2].early_finish, 4);
+    assert_eq!(result[2].early_start_minutes, 0);
+    assert_eq!(result[2].early_finish_minutes, 4);
 }
 
 #[test]
@@ -102,24 +102,24 @@ fn test_merge_bottleneck() {
     let tasks = vec![
         RawTask {
             id: "A".to_string(),
-            duration: 3,
-            min_early_start: 0,
+            duration_work_minutes: 3,
+            min_early_start_minutes: 0,
             parent_id: None,
-            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None,
+            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None,
         },
         RawTask {
             id: "B".to_string(),
-            duration: 5,
-            min_early_start: 0,
+            duration_work_minutes: 5,
+            min_early_start_minutes: 0,
             parent_id: None,
-            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None,
+            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None,
         },
         RawTask {
             id: "C".to_string(),
-            duration: 2,
-            min_early_start: 0,
+            duration_work_minutes: 2,
+            min_early_start_minutes: 0,
             parent_id: None,
-            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None,
+            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None,
         },
     ];
 
@@ -128,27 +128,27 @@ fn test_merge_bottleneck() {
             pred_id: "A".to_string(),
             succ_id: "C".to_string(),
             dep_type: DepType::FS,
-            lag: 0,
+            lag_work_minutes: 0,
             },
         RawDependency {
             pred_id: "B".to_string(),
             succ_id: "C".to_string(),
             dep_type: DepType::FS,
-            lag: 0,
+            lag_work_minutes: 0,
             },
     ];
 
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
 
-    assert_eq!(result[0].early_start, 0);
-    assert_eq!(result[0].early_finish, 3);
+    assert_eq!(result[0].early_start_minutes, 0);
+    assert_eq!(result[0].early_finish_minutes, 3);
 
-    assert_eq!(result[1].early_start, 0);
-    assert_eq!(result[1].early_finish, 5);
+    assert_eq!(result[1].early_start_minutes, 0);
+    assert_eq!(result[1].early_finish_minutes, 5);
 
     // C must wait for both A and B; B finishes later
-    assert_eq!(result[2].early_start, 5);
-    assert_eq!(result[2].early_finish, 7);
+    assert_eq!(result[2].early_start_minutes, 5);
+    assert_eq!(result[2].early_finish_minutes, 7);
 }
 
 #[test]
@@ -156,24 +156,24 @@ fn test_cycle_detection() {
     let tasks = vec![
         RawTask {
             id: "A".to_string(),
-            duration: 1,
-            min_early_start: 0,
+            duration_work_minutes: 1,
+            min_early_start_minutes: 0,
             parent_id: None,
-            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None,
+            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None,
         },
         RawTask {
             id: "B".to_string(),
-            duration: 1,
-            min_early_start: 0,
+            duration_work_minutes: 1,
+            min_early_start_minutes: 0,
             parent_id: None,
-            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None,
+            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None,
         },
         RawTask {
             id: "C".to_string(),
-            duration: 1,
-            min_early_start: 0,
+            duration_work_minutes: 1,
+            min_early_start_minutes: 0,
             parent_id: None,
-            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None,
+            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None,
         },
     ];
 
@@ -182,19 +182,19 @@ fn test_cycle_detection() {
             pred_id: "A".to_string(),
             succ_id: "B".to_string(),
             dep_type: DepType::FS,
-            lag: 0,
+            lag_work_minutes: 0,
             },
         RawDependency {
             pred_id: "B".to_string(),
             succ_id: "C".to_string(),
             dep_type: DepType::FS,
-            lag: 0,
+            lag_work_minutes: 0,
             },
         RawDependency {
             pred_id: "C".to_string(),
             succ_id: "A".to_string(),
             dep_type: DepType::FS,
-            lag: 0,
+            lag_work_minutes: 0,
             },
     ];
 
@@ -208,17 +208,17 @@ fn test_cycle_detection() {
 fn test_missing_task() {
     let tasks = vec![RawTask {
         id: "A".to_string(),
-        duration: 3,
-        min_early_start: 0,
+        duration_work_minutes: 3,
+        min_early_start_minutes: 0,
             parent_id: None,
-            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None,
+            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None,
     }];
 
     let deps = vec![RawDependency {
         pred_id: "A".to_string(),
         succ_id: "B".to_string(),
         dep_type: DepType::FS,
-        lag: 0,
+        lag_work_minutes: 0,
         }];
 
     let result = calculate_schedule(&tasks, &deps, &[]);
@@ -232,24 +232,24 @@ fn test_duplicate_task_id() {
     let tasks = vec![
         RawTask {
             id: "A".to_string(),
-            duration: 3,
-            min_early_start: 0,
+            duration_work_minutes: 3,
+            min_early_start_minutes: 0,
             parent_id: None,
-            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None,
+            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None,
         },
         RawTask {
             id: "B".to_string(),
-            duration: 5,
-            min_early_start: 0,
+            duration_work_minutes: 5,
+            min_early_start_minutes: 0,
             parent_id: None,
-            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None,
+            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None,
         },
         RawTask {
             id: "A".to_string(),
-            duration: 2,
-            min_early_start: 0,
+            duration_work_minutes: 2,
+            min_early_start_minutes: 0,
             parent_id: None,
-            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None,
+            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None,
         },
     ];
 
@@ -269,17 +269,17 @@ fn test_self_dependency() {
     let tasks = vec![
         RawTask {
             id: "A".to_string(),
-            duration: 3,
-            min_early_start: 0,
+            duration_work_minutes: 3,
+            min_early_start_minutes: 0,
             parent_id: None,
-            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None,
+            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None,
         },
         RawTask {
             id: "B".to_string(),
-            duration: 5,
-            min_early_start: 0,
+            duration_work_minutes: 5,
+            min_early_start_minutes: 0,
             parent_id: None,
-            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None,
+            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None,
         },
     ];
 
@@ -287,7 +287,7 @@ fn test_self_dependency() {
         pred_id: "A".to_string(),
         succ_id: "A".to_string(),
         dep_type: DepType::FS,
-        lag: 0,
+        lag_work_minutes: 0,
         }];
 
     let result = calculate_schedule(&tasks, &deps, &[]);
@@ -313,10 +313,10 @@ fn test_empty_tasks() {
 fn test_single_task() {
     let tasks = vec![RawTask {
         id: "A".to_string(),
-        duration: 5,
-        min_early_start: 0,
+        duration_work_minutes: 5,
+        min_early_start_minutes: 0,
             parent_id: None,
-            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None,
+            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None,
     }];
 
     let deps = vec![];
@@ -325,8 +325,8 @@ fn test_single_task() {
 
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].task_id, "A");
-    assert_eq!(result[0].early_start, 0);
-    assert_eq!(result[0].early_finish, 5);
+    assert_eq!(result[0].early_start_minutes, 0);
+    assert_eq!(result[0].early_finish_minutes, 5);
 }
 
 // Backward pass and critical path tests
@@ -337,24 +337,24 @@ fn test_critical_chain() {
     let tasks = vec![
         RawTask {
             id: "A".to_string(),
-            duration: 3,
-            min_early_start: 0,
+            duration_work_minutes: 3,
+            min_early_start_minutes: 0,
             parent_id: None,
-            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None,
+            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None,
         },
         RawTask {
             id: "B".to_string(),
-            duration: 5,
-            min_early_start: 0,
+            duration_work_minutes: 5,
+            min_early_start_minutes: 0,
             parent_id: None,
-            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None,
+            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None,
         },
         RawTask {
             id: "C".to_string(),
-            duration: 2,
-            min_early_start: 0,
+            duration_work_minutes: 2,
+            min_early_start_minutes: 0,
             parent_id: None,
-            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None,
+            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None,
         },
     ];
 
@@ -363,40 +363,40 @@ fn test_critical_chain() {
             pred_id: "A".to_string(),
             succ_id: "B".to_string(),
             dep_type: DepType::FS,
-            lag: 0,
+            lag_work_minutes: 0,
             },
         RawDependency {
             pred_id: "B".to_string(),
             succ_id: "C".to_string(),
             dep_type: DepType::FS,
-            lag: 0,
+            lag_work_minutes: 0,
             },
     ];
 
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
 
     // Task A
-    assert_eq!(result[0].early_start, 0);
-    assert_eq!(result[0].early_finish, 3);
-    assert_eq!(result[0].late_start, 0);
-    assert_eq!(result[0].late_finish, 3);
-    assert_eq!(result[0].total_float, 0);
+    assert_eq!(result[0].early_start_minutes, 0);
+    assert_eq!(result[0].early_finish_minutes, 3);
+    assert_eq!(result[0].late_start_minutes, 0);
+    assert_eq!(result[0].late_finish_minutes, 3);
+    assert_eq!(result[0].total_float_minutes, 0);
     assert!(result[0].is_critical);
 
     // Task B
-    assert_eq!(result[1].early_start, 3);
-    assert_eq!(result[1].early_finish, 8);
-    assert_eq!(result[1].late_start, 3);
-    assert_eq!(result[1].late_finish, 8);
-    assert_eq!(result[1].total_float, 0);
+    assert_eq!(result[1].early_start_minutes, 3);
+    assert_eq!(result[1].early_finish_minutes, 8);
+    assert_eq!(result[1].late_start_minutes, 3);
+    assert_eq!(result[1].late_finish_minutes, 8);
+    assert_eq!(result[1].total_float_minutes, 0);
     assert!(result[1].is_critical);
 
     // Task C
-    assert_eq!(result[2].early_start, 8);
-    assert_eq!(result[2].early_finish, 10);
-    assert_eq!(result[2].late_start, 8);
-    assert_eq!(result[2].late_finish, 10);
-    assert_eq!(result[2].total_float, 0);
+    assert_eq!(result[2].early_start_minutes, 8);
+    assert_eq!(result[2].early_finish_minutes, 10);
+    assert_eq!(result[2].late_start_minutes, 8);
+    assert_eq!(result[2].late_finish_minutes, 10);
+    assert_eq!(result[2].total_float_minutes, 0);
     assert!(result[2].is_critical);
 }
 
@@ -412,24 +412,24 @@ fn test_parallel_path_float() {
     let tasks = vec![
         RawTask {
             id: "A".to_string(),
-            duration: 3,
-            min_early_start: 0,
+            duration_work_minutes: 3,
+            min_early_start_minutes: 0,
             parent_id: None,
-            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None,
+            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None,
         },
         RawTask {
             id: "B".to_string(),
-            duration: 7,
-            min_early_start: 0,
+            duration_work_minutes: 7,
+            min_early_start_minutes: 0,
             parent_id: None,
-            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None,
+            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None,
         },
         RawTask {
             id: "C".to_string(),
-            duration: 2,
-            min_early_start: 0,
+            duration_work_minutes: 2,
+            min_early_start_minutes: 0,
             parent_id: None,
-            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None,
+            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None,
         },
     ];
 
@@ -437,7 +437,7 @@ fn test_parallel_path_float() {
         pred_id: "A".to_string(),
         succ_id: "C".to_string(),
         dep_type: DepType::FS,
-        lag: 0,
+        lag_work_minutes: 0,
         }];
 
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
@@ -448,23 +448,23 @@ fn test_parallel_path_float() {
     let task_c = result.iter().find(|r| r.task_id == "C").unwrap();
 
     // Task B is critical (longest path)
-    assert_eq!(task_b.early_start, 0);
-    assert_eq!(task_b.early_finish, 7);
-    assert_eq!(task_b.late_start, 0);
-    assert_eq!(task_b.late_finish, 7);
-    assert_eq!(task_b.total_float, 0);
+    assert_eq!(task_b.early_start_minutes, 0);
+    assert_eq!(task_b.early_finish_minutes, 7);
+    assert_eq!(task_b.late_start_minutes, 0);
+    assert_eq!(task_b.late_finish_minutes, 7);
+    assert_eq!(task_b.total_float_minutes, 0);
     assert!(task_b.is_critical);
 
     // Task A has float (can delay without extending project)
-    assert_eq!(task_a.early_start, 0);
-    assert_eq!(task_a.early_finish, 3);
-    assert_eq!(task_a.total_float, 2); // Can start as late as 2
+    assert_eq!(task_a.early_start_minutes, 0);
+    assert_eq!(task_a.early_finish_minutes, 3);
+    assert_eq!(task_a.total_float_minutes, 2); // Can start as late as 2
     assert!(!task_a.is_critical);
 
     // Task C also has float
-    assert_eq!(task_c.early_start, 3);
-    assert_eq!(task_c.early_finish, 5);
-    assert_eq!(task_c.total_float, 2);
+    assert_eq!(task_c.early_start_minutes, 3);
+    assert_eq!(task_c.early_finish_minutes, 5);
+    assert_eq!(task_c.total_float_minutes, 2);
     assert!(!task_c.is_critical);
 }
 
@@ -478,24 +478,24 @@ fn test_merge_bottleneck_critical_path() {
     let tasks = vec![
         RawTask {
             id: "A".to_string(),
-            duration: 3,
-            min_early_start: 0,
+            duration_work_minutes: 3,
+            min_early_start_minutes: 0,
             parent_id: None,
-            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None,
+            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None,
         },
         RawTask {
             id: "B".to_string(),
-            duration: 5,
-            min_early_start: 0,
+            duration_work_minutes: 5,
+            min_early_start_minutes: 0,
             parent_id: None,
-            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None,
+            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None,
         },
         RawTask {
             id: "C".to_string(),
-            duration: 2,
-            min_early_start: 0,
+            duration_work_minutes: 2,
+            min_early_start_minutes: 0,
             parent_id: None,
-            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None,
+            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None,
         },
     ];
 
@@ -504,13 +504,13 @@ fn test_merge_bottleneck_critical_path() {
             pred_id: "A".to_string(),
             succ_id: "C".to_string(),
             dep_type: DepType::FS,
-            lag: 0,
+            lag_work_minutes: 0,
             },
         RawDependency {
             pred_id: "B".to_string(),
             succ_id: "C".to_string(),
             dep_type: DepType::FS,
-            lag: 0,
+            lag_work_minutes: 0,
             },
     ];
 
@@ -521,27 +521,27 @@ fn test_merge_bottleneck_critical_path() {
     let task_c = result.iter().find(|r| r.task_id == "C").unwrap();
 
     // Task B is critical
-    assert_eq!(task_b.early_start, 0);
-    assert_eq!(task_b.early_finish, 5);
-    assert_eq!(task_b.late_start, 0);
-    assert_eq!(task_b.late_finish, 5);
-    assert_eq!(task_b.total_float, 0);
+    assert_eq!(task_b.early_start_minutes, 0);
+    assert_eq!(task_b.early_finish_minutes, 5);
+    assert_eq!(task_b.late_start_minutes, 0);
+    assert_eq!(task_b.late_finish_minutes, 5);
+    assert_eq!(task_b.total_float_minutes, 0);
     assert!(task_b.is_critical);
 
     // Task C is critical
-    assert_eq!(task_c.early_start, 5);
-    assert_eq!(task_c.early_finish, 7);
-    assert_eq!(task_c.late_start, 5);
-    assert_eq!(task_c.late_finish, 7);
-    assert_eq!(task_c.total_float, 0);
+    assert_eq!(task_c.early_start_minutes, 5);
+    assert_eq!(task_c.early_finish_minutes, 7);
+    assert_eq!(task_c.late_start_minutes, 5);
+    assert_eq!(task_c.late_finish_minutes, 7);
+    assert_eq!(task_c.total_float_minutes, 0);
     assert!(task_c.is_critical);
 
     // Task A has float (can delay 2 units)
-    assert_eq!(task_a.early_start, 0);
-    assert_eq!(task_a.early_finish, 3);
-    assert_eq!(task_a.late_start, 2);
-    assert_eq!(task_a.late_finish, 5);
-    assert_eq!(task_a.total_float, 2);
+    assert_eq!(task_a.early_start_minutes, 0);
+    assert_eq!(task_a.early_finish_minutes, 3);
+    assert_eq!(task_a.late_start_minutes, 2);
+    assert_eq!(task_a.late_finish_minutes, 5);
+    assert_eq!(task_a.total_float_minutes, 2);
     assert!(!task_a.is_critical);
 }
 
@@ -550,21 +550,21 @@ fn test_single_task_critical() {
     // Single task is always critical
     let tasks = vec![RawTask {
         id: "A".to_string(),
-        duration: 5,
-        min_early_start: 0,
+        duration_work_minutes: 5,
+        min_early_start_minutes: 0,
             parent_id: None,
-            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None,
+            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None,
     }];
 
     let deps = vec![];
 
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
 
-    assert_eq!(result[0].early_start, 0);
-    assert_eq!(result[0].early_finish, 5);
-    assert_eq!(result[0].late_start, 0);
-    assert_eq!(result[0].late_finish, 5);
-    assert_eq!(result[0].total_float, 0);
+    assert_eq!(result[0].early_start_minutes, 0);
+    assert_eq!(result[0].early_finish_minutes, 5);
+    assert_eq!(result[0].late_start_minutes, 0);
+    assert_eq!(result[0].late_finish_minutes, 5);
+    assert_eq!(result[0].total_float_minutes, 0);
     assert!(result[0].is_critical);
 }
 
@@ -575,24 +575,24 @@ fn test_independent_parallel_tasks_critical() {
     let tasks = vec![
         RawTask {
             id: "A".to_string(),
-            duration: 5,
-            min_early_start: 0,
+            duration_work_minutes: 5,
+            min_early_start_minutes: 0,
             parent_id: None,
-            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None,
+            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None,
         },
         RawTask {
             id: "B".to_string(),
-            duration: 3,
-            min_early_start: 0,
+            duration_work_minutes: 3,
+            min_early_start_minutes: 0,
             parent_id: None,
-            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None,
+            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None,
         },
         RawTask {
             id: "C".to_string(),
-            duration: 7,
-            min_early_start: 0,
+            duration_work_minutes: 7,
+            min_early_start_minutes: 0,
             parent_id: None,
-            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None,
+            is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None,
         },
     ];
 
@@ -609,21 +609,21 @@ fn test_independent_parallel_tasks_critical() {
     let task_c = result.iter().find(|r| r.task_id == "C").unwrap();
 
     // Task C is critical (longest duration)
-    assert_eq!(task_c.early_start, 0);
-    assert_eq!(task_c.early_finish, 7);
-    assert_eq!(task_c.total_float, 0);
+    assert_eq!(task_c.early_start_minutes, 0);
+    assert_eq!(task_c.early_finish_minutes, 7);
+    assert_eq!(task_c.total_float_minutes, 0);
     assert!(task_c.is_critical);
 
     // Task A has float
-    assert_eq!(task_a.early_start, 0);
-    assert_eq!(task_a.early_finish, 5);
-    assert_eq!(task_a.total_float, 2);
+    assert_eq!(task_a.early_start_minutes, 0);
+    assert_eq!(task_a.early_finish_minutes, 5);
+    assert_eq!(task_a.total_float_minutes, 2);
     assert!(!task_a.is_critical);
 
     // Task B has float
-    assert_eq!(task_b.early_start, 0);
-    assert_eq!(task_b.early_finish, 3);
-    assert_eq!(task_b.total_float, 4);
+    assert_eq!(task_b.early_start_minutes, 0);
+    assert_eq!(task_b.early_finish_minutes, 3);
+    assert_eq!(task_b.total_float_minutes, 4);
     assert!(!task_b.is_critical);
 }
 
@@ -633,72 +633,72 @@ fn test_independent_parallel_tasks_critical() {
 fn test_snet_unconstrained_unchanged() {
     // min_early_start = 0 for all tasks — same results as before
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 5, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 5, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
-    let deps = vec![RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag: 0 }];
+    let deps = vec![RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag_work_minutes: 0 }];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
-    assert_eq!(result[0].early_start, 0);
-    assert_eq!(result[0].early_finish, 3);
-    assert_eq!(result[1].early_start, 3);
-    assert_eq!(result[1].early_finish, 8);
+    assert_eq!(result[0].early_start_minutes, 0);
+    assert_eq!(result[0].early_finish_minutes, 3);
+    assert_eq!(result[1].early_start_minutes, 3);
+    assert_eq!(result[1].early_finish_minutes, 8);
 }
 
 #[test]
 fn test_snet_no_predecessor_starts_at_constraint() {
     // Task with no predecessors and minEarlyStart = 4 should start at day 4
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 4, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 4, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
-    assert_eq!(result[0].early_start, 4);
-    assert_eq!(result[0].early_finish, 7);
+    assert_eq!(result[0].early_start_minutes, 4);
+    assert_eq!(result[0].early_finish_minutes, 7);
 }
 
 #[test]
 fn test_snet_predecessor_later_than_constraint() {
     // Predecessor finishes at day 5, constraint is day 2 → predecessor wins (day 5)
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 5, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 3, min_early_start: 2, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 5, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 3, min_early_start_minutes: 2, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
-    let deps = vec![RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag: 0 }];
+    let deps = vec![RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag_work_minutes: 0 }];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let task_b = result.iter().find(|r| r.task_id == "B").unwrap();
-    assert_eq!(task_b.early_start, 5); // pred EF=5 > constraint 2
-    assert_eq!(task_b.early_finish, 8);
+    assert_eq!(task_b.early_start_minutes, 5); // pred EF=5 > constraint 2
+    assert_eq!(task_b.early_finish_minutes, 8);
 }
 
 #[test]
 fn test_snet_constraint_later_than_predecessor() {
     // Predecessor finishes at day 3, constraint is day 10 → constraint wins (day 10)
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 2, min_early_start: 10, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 2, min_early_start_minutes: 10, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
-    let deps = vec![RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag: 0 }];
+    let deps = vec![RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag_work_minutes: 0 }];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let task_b = result.iter().find(|r| r.task_id == "B").unwrap();
-    assert_eq!(task_b.early_start, 10); // constraint 10 > pred EF=3
-    assert_eq!(task_b.early_finish, 12);
+    assert_eq!(task_b.early_start_minutes, 10); // constraint 10 > pred EF=3
+    assert_eq!(task_b.early_finish_minutes, 12);
 }
 
 #[test]
 fn test_snet_successors_shift() {
     // A has SNET=5 → A starts at 5, B (successor) shifts accordingly
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 5, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 2, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 5, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 2, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
-    let deps = vec![RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag: 0 }];
+    let deps = vec![RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag_work_minutes: 0 }];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let task_a = result.iter().find(|r| r.task_id == "A").unwrap();
     let task_b = result.iter().find(|r| r.task_id == "B").unwrap();
-    assert_eq!(task_a.early_start, 5);
-    assert_eq!(task_a.early_finish, 8);
-    assert_eq!(task_b.early_start, 8);
-    assert_eq!(task_b.early_finish, 10);
+    assert_eq!(task_a.early_start_minutes, 5);
+    assert_eq!(task_a.early_finish_minutes, 8);
+    assert_eq!(task_b.early_start_minutes, 8);
+    assert_eq!(task_b.early_finish_minutes, 10);
 }
 
 // ===== Summary rollup tests =====
@@ -708,15 +708,15 @@ fn test_summary_rollup_single_level() {
     // Summary S has two children A(3) and B(5) chained: A → B
     // S should rollup: ES = min(A.ES, B.ES) = 0, EF = max(A.EF, B.EF) = 8
     let tasks = vec![
-        RawTask { id: "S".to_string(), duration: 0, min_early_start: 0, parent_id: None, is_summary: true, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 0, parent_id: Some("S".to_string()), is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 5, min_early_start: 0, parent_id: Some("S".to_string()), is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "S".to_string(), duration_work_minutes: 0, min_early_start_minutes: 0, parent_id: None, is_summary: true, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: Some("S".to_string()), is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 5, min_early_start_minutes: 0, parent_id: Some("S".to_string()), is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
-    let deps = vec![RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag: 0 }];
+    let deps = vec![RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag_work_minutes: 0 }];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let summary = result.iter().find(|r| r.task_id == "S").unwrap();
-    assert_eq!(summary.early_start, 0);
-    assert_eq!(summary.early_finish, 8);
+    assert_eq!(summary.early_start_minutes, 0);
+    assert_eq!(summary.early_finish_minutes, 8);
 }
 
 #[test]
@@ -725,18 +725,18 @@ fn test_summary_rollup_nested() {
     // IS should rollup from A: ES=0, EF=4
     // OS should rollup from IS: ES=0, EF=4
     let tasks = vec![
-        RawTask { id: "OS".to_string(), duration: 0, min_early_start: 0, parent_id: None, is_summary: true, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "IS".to_string(), duration: 0, min_early_start: 0, parent_id: Some("OS".to_string()), is_summary: true, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "A".to_string(), duration: 4, min_early_start: 0, parent_id: Some("IS".to_string()), is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "OS".to_string(), duration_work_minutes: 0, min_early_start_minutes: 0, parent_id: None, is_summary: true, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "IS".to_string(), duration_work_minutes: 0, min_early_start_minutes: 0, parent_id: Some("OS".to_string()), is_summary: true, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 4, min_early_start_minutes: 0, parent_id: Some("IS".to_string()), is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let inner = result.iter().find(|r| r.task_id == "IS").unwrap();
     let outer = result.iter().find(|r| r.task_id == "OS").unwrap();
-    assert_eq!(inner.early_start, 0);
-    assert_eq!(inner.early_finish, 4);
-    assert_eq!(outer.early_start, 0);
-    assert_eq!(outer.early_finish, 4);
+    assert_eq!(inner.early_start_minutes, 0);
+    assert_eq!(inner.early_finish_minutes, 4);
+    assert_eq!(outer.early_start_minutes, 0);
+    assert_eq!(outer.early_finish_minutes, 4);
 }
 
 #[test]
@@ -744,14 +744,14 @@ fn test_summary_with_snet_child() {
     // Summary S has child A with minEarlyStart=5, duration=3
     // A.ES=5, A.EF=8 → S.ES=5, S.EF=8
     let tasks = vec![
-        RawTask { id: "S".to_string(), duration: 0, min_early_start: 0, parent_id: None, is_summary: true, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 5, parent_id: Some("S".to_string()), is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "S".to_string(), duration_work_minutes: 0, min_early_start_minutes: 0, parent_id: None, is_summary: true, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 5, parent_id: Some("S".to_string()), is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let summary = result.iter().find(|r| r.task_id == "S").unwrap();
-    assert_eq!(summary.early_start, 5);
-    assert_eq!(summary.early_finish, 8);
+    assert_eq!(summary.early_start_minutes, 5);
+    assert_eq!(summary.early_finish_minutes, 8);
 }
 
 // ─── Calendar-aware scheduling tests ────────────────────────────────
@@ -762,14 +762,14 @@ fn test_calendar_single_task_skips_blocked_days() {
     // Working days: 0,1, (skip 2,3), 4,5,6...
     // ES=0, works days 0,1,4 → EF=5
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![];
     let blocked = vec![2, 3];
     let result = calculate_schedule(&tasks, &deps, &blocked).unwrap();
     let a = &result[0];
-    assert_eq!(a.early_start, 0);
-    assert_eq!(a.early_finish, 5); // day 0, 1, 4 → finish after day 4 = 5
+    assert_eq!(a.early_start_minutes, 0);
+    assert_eq!(a.early_finish_minutes, 5); // day 0, 1, 4 → finish after day 4 = 5
 }
 
 #[test]
@@ -777,14 +777,14 @@ fn test_calendar_es_snaps_forward_on_blocked_day() {
     // Task A has minEarlyStart=2 but day 2 is blocked
     // Should snap to day 3 as first working day
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 2, min_early_start: 2, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 2, min_early_start_minutes: 2, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![];
     let blocked = vec![2];
     let result = calculate_schedule(&tasks, &deps, &blocked).unwrap();
     let a = &result[0];
-    assert_eq!(a.early_start, 3); // snapped forward
-    assert_eq!(a.early_finish, 5); // works days 3, 4 → finish = 5
+    assert_eq!(a.early_start_minutes, 3); // snapped forward
+    assert_eq!(a.early_finish_minutes, 5); // works days 3, 4 → finish = 5
 }
 
 #[test]
@@ -793,20 +793,20 @@ fn test_calendar_chain_weekend_crossing() {
     // A: duration=3, ES=0 → works 0,1,2 → EF=3
     // B: duration=3, depends on A → ES=3 → works 3,4, (skip 5,6), 7 → EF=8
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag: 0 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag_work_minutes: 0 },
     ];
     let blocked = vec![5, 6];
     let result = calculate_schedule(&tasks, &deps, &blocked).unwrap();
     let a = result.iter().find(|r| r.task_id == "A").unwrap();
     let b = result.iter().find(|r| r.task_id == "B").unwrap();
-    assert_eq!(a.early_start, 0);
-    assert_eq!(a.early_finish, 3);
-    assert_eq!(b.early_start, 3);
-    assert_eq!(b.early_finish, 8); // days 3,4,7
+    assert_eq!(a.early_start_minutes, 0);
+    assert_eq!(a.early_finish_minutes, 3);
+    assert_eq!(b.early_start_minutes, 3);
+    assert_eq!(b.early_finish_minutes, 8); // days 3,4,7
 }
 
 #[test]
@@ -817,25 +817,25 @@ fn test_calendar_backward_pass_skips_blocked() {
     // Backward: B: LF=8, LS=retreat(8,3)= works 7,4,3 → LS=3
     // A: LF=LS_B=3, LS=retreat(3,3)= works 2,1,0 → LS=0
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag: 0 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag_work_minutes: 0 },
     ];
     let blocked = vec![5, 6];
     let result = calculate_schedule(&tasks, &deps, &blocked).unwrap();
     let a = result.iter().find(|r| r.task_id == "A").unwrap();
     let b = result.iter().find(|r| r.task_id == "B").unwrap();
     // Both should be critical (0 float)
-    assert_eq!(a.total_float, 0);
+    assert_eq!(a.total_float_minutes, 0);
     assert!(a.is_critical);
-    assert_eq!(a.late_start, 0);
-    assert_eq!(a.late_finish, 3);
-    assert_eq!(b.total_float, 0);
+    assert_eq!(a.late_start_minutes, 0);
+    assert_eq!(a.late_finish_minutes, 3);
+    assert_eq!(b.total_float_minutes, 0);
     assert!(b.is_critical);
-    assert_eq!(b.late_start, 3);
-    assert_eq!(b.late_finish, 8);
+    assert_eq!(b.late_start_minutes, 3);
+    assert_eq!(b.late_finish_minutes, 8);
 }
 
 #[test]
@@ -853,25 +853,25 @@ fn test_calendar_parallel_paths_float_with_blocked() {
     // B: LF=3, retreat(3,1,{3}) → d=2 not blocked, remaining=0 → LS=2.
     // B float = LF-EF = 3-1 = 2.
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 2, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 1, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "C".to_string(), duration: 1, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 2, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 1, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "C".to_string(), duration_work_minutes: 1, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "C".to_string(), dep_type: DepType::FS, lag: 0 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "C".to_string(), dep_type: DepType::FS, lag_work_minutes: 0 },
     ];
     let blocked = vec![3];
     let result = calculate_schedule(&tasks, &deps, &blocked).unwrap();
     let a = result.iter().find(|r| r.task_id == "A").unwrap();
     let b = result.iter().find(|r| r.task_id == "B").unwrap();
     let c = result.iter().find(|r| r.task_id == "C").unwrap();
-    assert_eq!(a.early_start, 0);
-    assert_eq!(a.early_finish, 2);
-    assert_eq!(c.early_start, 2);
-    assert_eq!(c.early_finish, 3);
+    assert_eq!(a.early_start_minutes, 0);
+    assert_eq!(a.early_finish_minutes, 2);
+    assert_eq!(c.early_start_minutes, 2);
+    assert_eq!(c.early_finish_minutes, 3);
     assert!(a.is_critical);
     assert!(c.is_critical);
-    assert_eq!(b.total_float, 2);
+    assert_eq!(b.total_float_minutes, 2);
     assert!(!b.is_critical);
 }
 
@@ -879,33 +879,33 @@ fn test_calendar_parallel_paths_float_with_blocked() {
 fn test_calendar_zero_duration_milestone() {
     // Milestone (duration=0) on a blocked day should snap forward
     let tasks = vec![
-        RawTask { id: "M".to_string(), duration: 0, min_early_start: 5, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "M".to_string(), duration_work_minutes: 0, min_early_start_minutes: 5, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![];
     let blocked = vec![5, 6]; // day 5,6 blocked
     let result = calculate_schedule(&tasks, &deps, &blocked).unwrap();
     let m = &result[0];
-    assert_eq!(m.early_start, 7); // snapped past 5,6 to 7
-    assert_eq!(m.early_finish, 7); // zero-duration: ES == EF
+    assert_eq!(m.early_start_minutes, 7); // snapped past 5,6 to 7
+    assert_eq!(m.early_finish_minutes, 7); // zero-duration_work_minutes: ES == EF
 }
 
 #[test]
 fn test_calendar_no_blocked_days_unchanged() {
     // With empty blocked set, behaves identically to original
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 5, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 5, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag: 0 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag_work_minutes: 0 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let a = result.iter().find(|r| r.task_id == "A").unwrap();
     let b = result.iter().find(|r| r.task_id == "B").unwrap();
-    assert_eq!(a.early_start, 0);
-    assert_eq!(a.early_finish, 3);
-    assert_eq!(b.early_start, 3);
-    assert_eq!(b.early_finish, 8);
+    assert_eq!(a.early_start_minutes, 0);
+    assert_eq!(a.early_finish_minutes, 3);
+    assert_eq!(b.early_start_minutes, 3);
+    assert_eq!(b.early_finish_minutes, 8);
 }
 
 // ─── Calendar-aware float stabilization tests ───────────────────────
@@ -916,13 +916,13 @@ fn test_calendar_chain_spanning_weekend_all_critical() {
     // Forward: A: ES=0, EF=5 (days 0-4); B: ES=7, EF=12 (days 7-11); C: ES=14, EF=19 (days 14-18)
     // All tasks should be critical with TF=0 — weekend gaps must not create artificial float
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 5, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 5, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "C".to_string(), duration: 5, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 5, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 5, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "C".to_string(), duration_work_minutes: 5, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag: 0 },
-        RawDependency { pred_id: "B".to_string(), succ_id: "C".to_string(), dep_type: DepType::FS, lag: 0 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag_work_minutes: 0 },
+        RawDependency { pred_id: "B".to_string(), succ_id: "C".to_string(), dep_type: DepType::FS, lag_work_minutes: 0 },
     ];
     let blocked = vec![5, 6, 12, 13];
     let result = calculate_schedule(&tasks, &deps, &blocked).unwrap();
@@ -931,19 +931,19 @@ fn test_calendar_chain_spanning_weekend_all_critical() {
     let c = result.iter().find(|r| r.task_id == "C").unwrap();
 
     // Forward pass
-    assert_eq!(a.early_start, 0);
-    assert_eq!(a.early_finish, 5);
-    assert_eq!(b.early_start, 7);
-    assert_eq!(b.early_finish, 12);
-    assert_eq!(c.early_start, 14);
-    assert_eq!(c.early_finish, 19);
+    assert_eq!(a.early_start_minutes, 0);
+    assert_eq!(a.early_finish_minutes, 5);
+    assert_eq!(b.early_start_minutes, 7);
+    assert_eq!(b.early_finish_minutes, 12);
+    assert_eq!(c.early_start_minutes, 14);
+    assert_eq!(c.early_finish_minutes, 19);
 
     // ALL tasks must be critical — zero working-day float
-    assert_eq!(a.total_float, 0);
+    assert_eq!(a.total_float_minutes, 0);
     assert!(a.is_critical);
-    assert_eq!(b.total_float, 0);
+    assert_eq!(b.total_float_minutes, 0);
     assert!(b.is_critical);
-    assert_eq!(c.total_float, 0);
+    assert_eq!(c.total_float_minutes, 0);
     assert!(c.is_critical);
 }
 
@@ -953,19 +953,19 @@ fn test_calendar_parallel_non_driving_has_float() {
     // A: dur=3, ES=0, EF=3; C: dur=3, ES=3, EF=8 (days 3,4,7)
     // B: dur=1, ES=0, EF=1; LF=8, TF = working days in [1,8) = 5 (days 1,2,3,4,7)
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 1, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "C".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 1, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "C".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "C".to_string(), dep_type: DepType::FS, lag: 0 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "C".to_string(), dep_type: DepType::FS, lag_work_minutes: 0 },
     ];
     let blocked = vec![5, 6];
     let result = calculate_schedule(&tasks, &deps, &blocked).unwrap();
     let b = result.iter().find(|r| r.task_id == "B").unwrap();
 
     assert!(!b.is_critical);
-    assert!(b.total_float > 0);
+    assert!(b.total_float_minutes > 0);
 }
 
 #[test]
@@ -976,25 +976,25 @@ fn test_calendar_backward_snaps_late_dates_over_weekends() {
     // Actually with only A→B: project_duration = max(EF) = 12
     // Backward: B: LF=12, LS=retreat(12,5)=7; A: LF=LS_B=7, LS=retreat(7,5)=0
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 5, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 5, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 5, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 5, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag: 0 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag_work_minutes: 0 },
     ];
     let blocked = vec![5, 6, 12, 13];
     let result = calculate_schedule(&tasks, &deps, &blocked).unwrap();
     let a = result.iter().find(|r| r.task_id == "A").unwrap();
     let b = result.iter().find(|r| r.task_id == "B").unwrap();
 
-    assert_eq!(a.late_start, 0);
-    assert_eq!(a.late_finish, 7); // LF = LS_B, not 5
-    assert_eq!(b.late_start, 7);
-    assert_eq!(b.late_finish, 12);
+    assert_eq!(a.late_start_minutes, 0);
+    assert_eq!(a.late_finish_minutes, 7); // LF = LS_B, not 5
+    assert_eq!(b.late_start_minutes, 7);
+    assert_eq!(b.late_finish_minutes, 12);
     // Both critical
-    assert_eq!(a.total_float, 0);
+    assert_eq!(a.total_float_minutes, 0);
     assert!(a.is_critical);
-    assert_eq!(b.total_float, 0);
+    assert_eq!(b.total_float_minutes, 0);
     assert!(b.is_critical);
 }
 
@@ -1010,8 +1010,8 @@ fn test_calendar_float_counts_working_days_not_elapsed() {
     // B.TF = working days in [2,5) = days 2,3,4 = 3
     // A.TF = working days in [5,5) = 0
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 5, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 2, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 5, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 2, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![];
     let blocked = vec![5, 6];
@@ -1020,9 +1020,9 @@ fn test_calendar_float_counts_working_days_not_elapsed() {
     let b = result.iter().find(|r| r.task_id == "B").unwrap();
 
     assert!(a.is_critical);
-    assert_eq!(a.total_float, 0);
+    assert_eq!(a.total_float_minutes, 0);
     // B's float should count WORKING days only, not elapsed (which would be 5-2=3, same here)
-    assert_eq!(b.total_float, 3);
+    assert_eq!(b.total_float_minutes, 3);
     assert!(!b.is_critical);
 }
 
@@ -1031,12 +1031,12 @@ fn test_calendar_summary_with_critical_child_is_critical() {
     // Summary S with children A→B chain, weekends at 5,6
     // Both A and B should be critical → S should also be critical via rollup
     let tasks = vec![
-        RawTask { id: "S".to_string(), duration: 0, min_early_start: 0, parent_id: None, is_summary: true, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 0, parent_id: Some("S".to_string()), is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 3, min_early_start: 0, parent_id: Some("S".to_string()), is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "S".to_string(), duration_work_minutes: 0, min_early_start_minutes: 0, parent_id: None, is_summary: true, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: Some("S".to_string()), is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: Some("S".to_string()), is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag: 0 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag_work_minutes: 0 },
     ];
     let blocked = vec![5, 6];
     let result = calculate_schedule(&tasks, &deps, &blocked).unwrap();
@@ -1059,20 +1059,20 @@ fn test_ss_zero_lag() {
     // A(dur=3) SS→ B(dur=4), no blocked days
     // B.ES = A.ES = 0, both start on day 0
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 4, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 4, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::SS, lag: 0 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::SS, lag_work_minutes: 0 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let a = result.iter().find(|r| r.task_id == "A").unwrap();
     let b = result.iter().find(|r| r.task_id == "B").unwrap();
 
-    assert_eq!(a.early_start, 0);
-    assert_eq!(a.early_finish, 3);
-    assert_eq!(b.early_start, 0);
-    assert_eq!(b.early_finish, 4);
+    assert_eq!(a.early_start_minutes, 0);
+    assert_eq!(a.early_finish_minutes, 3);
+    assert_eq!(b.early_start_minutes, 0);
+    assert_eq!(b.early_finish_minutes, 4);
 }
 
 #[test]
@@ -1080,18 +1080,18 @@ fn test_ss_positive_lag() {
     // A(dur=3) SS+2→ B(dur=4), no blocked days
     // B.ES = A.ES + 2 working days = 2
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 4, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 4, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::SS, lag: 2 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::SS, lag_work_minutes: 2 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let b = result.iter().find(|r| r.task_id == "B").unwrap();
 
     // step_forward_lag(0, 2, {}) → day 0 is working → remaining=1 → day 1 is working → remaining=0 → return 2
-    assert_eq!(b.early_start, 2);
-    assert_eq!(b.early_finish, 6);
+    assert_eq!(b.early_start_minutes, 2);
+    assert_eq!(b.early_finish_minutes, 6);
 }
 
 #[test]
@@ -1100,17 +1100,17 @@ fn test_ss_negative_lag() {
     // anchor = A.ES = 3, step_forward_lag(3, -1, {}) → retreat 1 working day = 2
     // B.ES = max(2, 0) = 2
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 5, min_early_start: 3, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 5, min_early_start_minutes: 3, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::SS, lag: -1 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::SS, lag_work_minutes: -1 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let b = result.iter().find(|r| r.task_id == "B").unwrap();
 
-    assert_eq!(b.early_start, 2);
-    assert_eq!(b.early_finish, 5);
+    assert_eq!(b.early_start_minutes, 2);
+    assert_eq!(b.early_finish_minutes, 5);
 }
 
 // ── FF (Finish-to-Finish) ───────────────────────────────────────
@@ -1121,20 +1121,20 @@ fn test_ff_zero_lag() {
     // B must finish no earlier than A finishes: B.EF >= A.EF = 5
     // B.EF = max(B_own_ef, constrained_ef=5) → B.ES derived from EF: retreat(5,3)=2
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 5, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 5, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FF, lag: 0 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FF, lag_work_minutes: 0 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let a = result.iter().find(|r| r.task_id == "A").unwrap();
     let b = result.iter().find(|r| r.task_id == "B").unwrap();
 
-    assert_eq!(a.early_start, 0);
-    assert_eq!(a.early_finish, 5);
-    assert_eq!(b.early_start, 2);
-    assert_eq!(b.early_finish, 5);
+    assert_eq!(a.early_start_minutes, 0);
+    assert_eq!(a.early_finish_minutes, 5);
+    assert_eq!(b.early_start_minutes, 2);
+    assert_eq!(b.early_finish_minutes, 5);
 }
 
 #[test]
@@ -1143,17 +1143,17 @@ fn test_ff_positive_lag() {
     // A.EF = 4, constrained_ef = step_forward_lag(4, 2, {}) = 6
     // B.ES = retreat(6, 3) = 3, B.EF = 6
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 4, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 4, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FF, lag: 2 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FF, lag_work_minutes: 2 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let b = result.iter().find(|r| r.task_id == "B").unwrap();
 
-    assert_eq!(b.early_start, 3);
-    assert_eq!(b.early_finish, 6);
+    assert_eq!(b.early_start_minutes, 3);
+    assert_eq!(b.early_finish_minutes, 6);
 }
 
 #[test]
@@ -1162,17 +1162,17 @@ fn test_ff_negative_lag() {
     // A.EF = 6, constrained_ef = step_forward_lag(6, -2, {}) = 4
     // B.ES = retreat(4, 3) = 1, B.EF = 4
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 6, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 6, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FF, lag: -2 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FF, lag_work_minutes: -2 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let b = result.iter().find(|r| r.task_id == "B").unwrap();
 
-    assert_eq!(b.early_start, 1);
-    assert_eq!(b.early_finish, 4);
+    assert_eq!(b.early_start_minutes, 1);
+    assert_eq!(b.early_finish_minutes, 4);
 }
 
 // ── SF (Start-to-Finish) ────────────────────────────────────────
@@ -1184,18 +1184,18 @@ fn test_sf_zero_lag() {
     // Since B has no other predecessors, B starts at 0, finishes at 3
     // EF constraint = step_forward_lag(0, 0) = 0, which is ≤ B's own EF
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 4, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 4, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::SF, lag: 0 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::SF, lag_work_minutes: 0 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let b = result.iter().find(|r| r.task_id == "B").unwrap();
 
     // SF+0 from A.ES=0 means constrained_ef=0, which doesn't push B
-    assert_eq!(b.early_start, 0);
-    assert_eq!(b.early_finish, 3);
+    assert_eq!(b.early_start_minutes, 0);
+    assert_eq!(b.early_finish_minutes, 3);
 }
 
 #[test]
@@ -1204,17 +1204,17 @@ fn test_sf_positive_lag() {
     // A.ES = 3, constrained_ef = step_forward_lag(3, 5, {}) = 8
     // B.ES = retreat(8, 2) = 6, B.EF = 8
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 4, min_early_start: 3, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 2, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 4, min_early_start_minutes: 3, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 2, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::SF, lag: 5 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::SF, lag_work_minutes: 5 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let b = result.iter().find(|r| r.task_id == "B").unwrap();
 
-    assert_eq!(b.early_start, 6);
-    assert_eq!(b.early_finish, 8);
+    assert_eq!(b.early_start_minutes, 6);
+    assert_eq!(b.early_finish_minutes, 8);
 }
 
 // ── FS with lag ──────────────────────────────────────────────────
@@ -1224,17 +1224,17 @@ fn test_fs_positive_lag() {
     // A(dur=3) FS+2→ B(dur=4)
     // A.EF = 3, B.ES = step_forward_lag(3, 2, {}) = 5
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 4, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 4, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag: 2 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag_work_minutes: 2 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let b = result.iter().find(|r| r.task_id == "B").unwrap();
 
-    assert_eq!(b.early_start, 5);
-    assert_eq!(b.early_finish, 9);
+    assert_eq!(b.early_start_minutes, 5);
+    assert_eq!(b.early_finish_minutes, 9);
 }
 
 #[test]
@@ -1242,17 +1242,17 @@ fn test_fs_negative_lag_lead() {
     // A(dur=5) FS-2→ B(dur=3)
     // A.EF = 5, B.ES = step_forward_lag(5, -2, {}) = 3 (retreat 2 working days)
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 5, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 5, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag: -2 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag_work_minutes: -2 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let b = result.iter().find(|r| r.task_id == "B").unwrap();
 
-    assert_eq!(b.early_start, 3);
-    assert_eq!(b.early_finish, 6);
+    assert_eq!(b.early_start_minutes, 3);
+    assert_eq!(b.early_finish_minutes, 6);
 }
 
 // ── Lag crossing non-working days (forward pass) ─────────────────
@@ -1265,18 +1265,18 @@ fn test_fs_lag_crossing_weekend() {
     // snap_forward(5, {5,6}): 5 blocked, 6 blocked → 7
     // B.ES=7, B.EF=advance_working(7, 2, {5,6})=9
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 2, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 2, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag: 2 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag_work_minutes: 2 },
     ];
     let blocked = vec![5, 6];
     let result = calculate_schedule(&tasks, &deps, &blocked).unwrap();
     let b = result.iter().find(|r| r.task_id == "B").unwrap();
 
-    assert_eq!(b.early_start, 7);
-    assert_eq!(b.early_finish, 9);
+    assert_eq!(b.early_start_minutes, 7);
+    assert_eq!(b.early_finish_minutes, 9);
 }
 
 #[test]
@@ -1286,19 +1286,19 @@ fn test_ss_lag_crossing_weekend() {
     // step_forward_lag(0, 4, {5,6}): day0→rem=3, day1→rem=2, day2→rem=1, day3→rem=0→return 4
     // B.ES = snap_forward(4, {5,6}) = 4
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 2, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 2, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::SS, lag: 4 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::SS, lag_work_minutes: 4 },
     ];
     let blocked = vec![5, 6];
     let result = calculate_schedule(&tasks, &deps, &blocked).unwrap();
     let b = result.iter().find(|r| r.task_id == "B").unwrap();
 
-    assert_eq!(b.early_start, 4);
+    assert_eq!(b.early_start_minutes, 4);
     // advance_working(4, 3, {5,6}): day4→rem=2, day5 blocked, day6 blocked, day7→rem=1, day8→rem=0→return 9
-    assert_eq!(b.early_finish, 9);
+    assert_eq!(b.early_finish_minutes, 9);
 }
 
 // ── Lag crossing non-working days (backward pass) ────────────────
@@ -1318,25 +1318,25 @@ fn test_backward_pass_fs_lag_with_weekend() {
     //   lag>0, retreat from 4: d=3 not blocked→rem=1, d=2 not blocked→rem=0→return 2
     //   LF[A]=2, LS[A]=retreat(2,2,{})=0 → A is critical too
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 2, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 2, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 2, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 2, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag: 2 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag_work_minutes: 2 },
     ];
     let blocked = vec![5, 6];
     let result = calculate_schedule(&tasks, &deps, &blocked).unwrap();
     let a = result.iter().find(|r| r.task_id == "A").unwrap();
     let b = result.iter().find(|r| r.task_id == "B").unwrap();
 
-    assert_eq!(a.early_start, 0);
-    assert_eq!(a.early_finish, 2);
-    assert_eq!(b.early_start, 4);
-    assert_eq!(b.early_finish, 8);
+    assert_eq!(a.early_start_minutes, 0);
+    assert_eq!(a.early_finish_minutes, 2);
+    assert_eq!(b.early_start_minutes, 4);
+    assert_eq!(b.early_finish_minutes, 8);
     assert!(a.is_critical);
     assert!(b.is_critical);
-    assert_eq!(a.total_float, 0);
-    assert_eq!(b.total_float, 0);
+    assert_eq!(a.total_float_minutes, 0);
+    assert_eq!(b.total_float_minutes, 0);
 }
 
 // ── Mixed network ────────────────────────────────────────────────
@@ -1348,16 +1348,16 @@ fn test_mixed_fs_ss_ff_network() {
     // A(dur=5) FF→ D(dur=2)
     // C(dur=3) FS→ D(dur=2)
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 5, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 4, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "C".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "D".to_string(), duration: 2, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 5, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 4, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "C".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "D".to_string(), duration_work_minutes: 2, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "C".to_string(), dep_type: DepType::FS, lag: 0 },
-        RawDependency { pred_id: "B".to_string(), succ_id: "C".to_string(), dep_type: DepType::SS, lag: 1 },
-        RawDependency { pred_id: "A".to_string(), succ_id: "D".to_string(), dep_type: DepType::FF, lag: 0 },
-        RawDependency { pred_id: "C".to_string(), succ_id: "D".to_string(), dep_type: DepType::FS, lag: 0 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "C".to_string(), dep_type: DepType::FS, lag_work_minutes: 0 },
+        RawDependency { pred_id: "B".to_string(), succ_id: "C".to_string(), dep_type: DepType::SS, lag_work_minutes: 1 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "D".to_string(), dep_type: DepType::FF, lag_work_minutes: 0 },
+        RawDependency { pred_id: "C".to_string(), succ_id: "D".to_string(), dep_type: DepType::FS, lag_work_minutes: 0 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let a = result.iter().find(|r| r.task_id == "A").unwrap();
@@ -1369,21 +1369,21 @@ fn test_mixed_fs_ss_ff_network() {
     // C: FS from A → constrained_es = step_forward_lag(5,0)=5
     //    SS+1 from B → anchor = B.ES=0, step_forward_lag(0,1)=1 → constrained_es = max(5,1) = 5
     //    C.ES=5, C.EF=8
-    assert_eq!(a.early_start, 0);
-    assert_eq!(a.early_finish, 5);
-    assert_eq!(c.early_start, 5);
-    assert_eq!(c.early_finish, 8);
+    assert_eq!(a.early_start_minutes, 0);
+    assert_eq!(a.early_finish_minutes, 5);
+    assert_eq!(c.early_start_minutes, 5);
+    assert_eq!(c.early_finish_minutes, 8);
 
     // D: FF from A → constrained_ef = step_forward_lag(5,0)=5
     //    FS from C → constrained_es = step_forward_lag(8,0)=8
     //    ef_derived_es = retreat(5,2)=3, es = max(8,3)=8
     //    D.ES=8, D.EF = max(advance(8,2)=10, 5)=10
-    assert_eq!(d.early_start, 8);
-    assert_eq!(d.early_finish, 10);
+    assert_eq!(d.early_start_minutes, 8);
+    assert_eq!(d.early_finish_minutes, 10);
 
     // B has no predecessors: ES=0, EF=4
-    assert_eq!(b.early_start, 0);
-    assert_eq!(b.early_finish, 4);
+    assert_eq!(b.early_start_minutes, 0);
+    assert_eq!(b.early_finish_minutes, 4);
 }
 
 // ── Cycle detection with non-FS types ────────────────────────────
@@ -1391,12 +1391,12 @@ fn test_mixed_fs_ss_ff_network() {
 #[test]
 fn test_cycle_ss_detected() {
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::SS, lag: 0 },
-        RawDependency { pred_id: "B".to_string(), succ_id: "A".to_string(), dep_type: DepType::SS, lag: 0 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::SS, lag_work_minutes: 0 },
+        RawDependency { pred_id: "B".to_string(), succ_id: "A".to_string(), dep_type: DepType::SS, lag_work_minutes: 0 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]);
     assert_eq!(result, Err(CpmError::CycleDetected));
@@ -1405,12 +1405,12 @@ fn test_cycle_ss_detected() {
 #[test]
 fn test_cycle_ff_detected() {
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FF, lag: 0 },
-        RawDependency { pred_id: "B".to_string(), succ_id: "A".to_string(), dep_type: DepType::FF, lag: 0 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FF, lag_work_minutes: 0 },
+        RawDependency { pred_id: "B".to_string(), succ_id: "A".to_string(), dep_type: DepType::FF, lag_work_minutes: 0 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]);
     assert_eq!(result, Err(CpmError::CycleDetected));
@@ -1419,12 +1419,12 @@ fn test_cycle_ff_detected() {
 #[test]
 fn test_cycle_mixed_types_detected() {
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag: 0 },
-        RawDependency { pred_id: "B".to_string(), succ_id: "A".to_string(), dep_type: DepType::SF, lag: 0 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag_work_minutes: 0 },
+        RawDependency { pred_id: "B".to_string(), succ_id: "A".to_string(), dep_type: DepType::SF, lag_work_minutes: 0 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]);
     assert_eq!(result, Err(CpmError::CycleDetected));
@@ -1443,20 +1443,20 @@ fn test_negative_float_with_constraint() {
     // But A.ES was forced to 5 => float = LS(7) - ES(5) = 2 working days
     // This test verifies the float calculation is correct with minES constraints
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 5, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 2, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "C".to_string(), duration: 10, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 5, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 2, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "C".to_string(), duration_work_minutes: 10, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag: 0 },
-        RawDependency { pred_id: "C".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag: 0 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag_work_minutes: 0 },
+        RawDependency { pred_id: "C".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag_work_minutes: 0 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let a = result.iter().find(|r| r.task_id == "A").unwrap();
 
-    assert_eq!(a.early_start, 5);
-    assert_eq!(a.late_start, 7);
-    assert_eq!(a.total_float, 2);
+    assert_eq!(a.early_start_minutes, 5);
+    assert_eq!(a.late_start_minutes, 7);
+    assert_eq!(a.total_float_minutes, 2);
     assert!(!a.is_critical);
 }
 
@@ -1482,13 +1482,13 @@ fn test_float_counts_working_days_with_ss() {
     //
     // Actually let's just verify the test runs and check float
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "C".to_string(), duration: 2, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "C".to_string(), duration_work_minutes: 2, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::SS, lag: 0 },
-        RawDependency { pred_id: "B".to_string(), succ_id: "C".to_string(), dep_type: DepType::FS, lag: 0 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::SS, lag_work_minutes: 0 },
+        RawDependency { pred_id: "B".to_string(), succ_id: "C".to_string(), dep_type: DepType::FS, lag_work_minutes: 0 },
     ];
     let blocked = vec![5, 6];
     let result = calculate_schedule(&tasks, &deps, &blocked).unwrap();
@@ -1496,14 +1496,14 @@ fn test_float_counts_working_days_with_ss() {
     let b = result.iter().find(|r| r.task_id == "B").unwrap();
     let c = result.iter().find(|r| r.task_id == "C").unwrap();
 
-    assert_eq!(b.early_start, 0);
-    assert_eq!(b.early_finish, 3);
-    assert_eq!(c.early_start, 3);
+    assert_eq!(b.early_start_minutes, 0);
+    assert_eq!(b.early_finish_minutes, 3);
+    assert_eq!(c.early_start_minutes, 3);
     // B→C chain is critical
     assert!(b.is_critical);
     assert!(c.is_critical);
     // A has same ES as B but may have slack since it only has SS dep
-    assert_eq!(a.early_start, 0);
+    assert_eq!(a.early_start_minutes, 0);
 }
 
 // ── Backward pass with SS ────────────────────────────────────────
@@ -1522,23 +1522,23 @@ fn test_backward_pass_ss() {
     //     So A.LS=0, A.LF=6
     //     float = LS - ES = 0 - 0 = 0 → A is critical
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 5, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 5, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::SS, lag: 1 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::SS, lag_work_minutes: 1 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let a = result.iter().find(|r| r.task_id == "A").unwrap();
     let b = result.iter().find(|r| r.task_id == "B").unwrap();
 
-    assert_eq!(a.early_start, 0);
-    assert_eq!(b.early_start, 1);
-    assert_eq!(b.early_finish, 6);
+    assert_eq!(a.early_start_minutes, 0);
+    assert_eq!(b.early_start_minutes, 1);
+    assert_eq!(b.early_finish_minutes, 6);
     assert!(b.is_critical);
     // A.LS = 0 (constrained by SS)
-    assert_eq!(a.late_start, 0);
-    assert_eq!(a.total_float, 0);
+    assert_eq!(a.late_start_minutes, 0);
+    assert_eq!(a.total_float_minutes, 0);
 }
 
 // ── Backward pass with FF ────────────────────────────────────────
@@ -1552,22 +1552,22 @@ fn test_backward_pass_ff() {
     //   A: FF on B → step_backward_lag(5, 0) = 5 → min_constrained_lf = 5
     //     LF=5, LS=retreat(5,5)=0 → critical
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 5, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 5, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FF, lag: 0 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FF, lag_work_minutes: 0 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let a = result.iter().find(|r| r.task_id == "A").unwrap();
     let b = result.iter().find(|r| r.task_id == "B").unwrap();
 
-    assert_eq!(a.late_start, 0);
-    assert_eq!(a.late_finish, 5);
+    assert_eq!(a.late_start_minutes, 0);
+    assert_eq!(a.late_finish_minutes, 5);
     assert!(a.is_critical);
     // B finishes with A
-    assert_eq!(b.late_start, 2);
-    assert_eq!(b.late_finish, 5);
+    assert_eq!(b.late_start_minutes, 2);
+    assert_eq!(b.late_finish_minutes, 5);
     assert!(b.is_critical);
 }
 
@@ -1576,10 +1576,10 @@ fn test_backward_pass_ff() {
 #[test]
 fn test_self_dependency_ss_rejected() {
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "A".to_string(), dep_type: DepType::SS, lag: 0 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "A".to_string(), dep_type: DepType::SS, lag_work_minutes: 0 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]);
     assert_eq!(result, Err(CpmError::SelfDependency("A".to_string())));
@@ -1598,21 +1598,21 @@ fn test_p1_ss_backward_pass_preserves_duration() {
     //   Apply LS constraint: 0 < 3 → LS=0 → LF recomputed = advance(0,3)=3
     //   Duration invariant: LF-LS = 3 = EF-ES ✓
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 5, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 5, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::SS, lag: 1 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::SS, lag_work_minutes: 1 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let a = result.iter().find(|r| r.task_id == "A").unwrap();
 
-    assert_eq!(a.early_start, 0);
-    assert_eq!(a.early_finish, 3);
-    assert_eq!(a.late_start, 0);
-    assert_eq!(a.late_finish, 3);
+    assert_eq!(a.early_start_minutes, 0);
+    assert_eq!(a.early_finish_minutes, 3);
+    assert_eq!(a.late_start_minutes, 0);
+    assert_eq!(a.late_finish_minutes, 3);
     // Duration invariant: late dates span must equal early dates span
-    assert_eq!(a.late_finish - a.late_start, a.early_finish - a.early_start);
+    assert_eq!(a.late_finish_minutes - a.late_start_minutes, a.early_finish_minutes - a.early_start_minutes);
 }
 
 #[test]
@@ -1623,18 +1623,18 @@ fn test_p1_sf_backward_pass_preserves_duration() {
     //   A: SF→B → step_backward_lag(5,5)=0; has_ls_constraint, min_constrained_ls=0
     //   LF=5, LS=retreat(5,4)=1; Apply LS: 0 < 1 → LS=0, LF=advance(0,4)=4
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 4, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 2, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 4, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 2, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::SF, lag: 5 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::SF, lag_work_minutes: 5 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let a = result.iter().find(|r| r.task_id == "A").unwrap();
 
-    assert_eq!(a.late_start, 0);
-    assert_eq!(a.late_finish, 4);
-    assert_eq!(a.late_finish - a.late_start, a.early_finish - a.early_start);
+    assert_eq!(a.late_start_minutes, 0);
+    assert_eq!(a.late_finish_minutes, 4);
+    assert_eq!(a.late_finish_minutes - a.late_start_minutes, a.early_finish_minutes - a.early_start_minutes);
 }
 
 #[test]
@@ -1653,38 +1653,38 @@ fn test_p1_ss_backward_with_calendar_preserves_duration() {
     //     advance(0,3,{5,6}): d=0→2, d=1→1, d=2→0→return 3
     //   Duration preserved across weekend.
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 5, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 5, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::SS, lag: 1 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::SS, lag_work_minutes: 1 },
     ];
     let blocked = vec![5, 6];
     let result = calculate_schedule(&tasks, &deps, &blocked).unwrap();
     let a = result.iter().find(|r| r.task_id == "A").unwrap();
 
-    assert_eq!(a.late_start, 0);
-    assert_eq!(a.late_finish, 3);
-    assert_eq!(a.late_finish - a.late_start, a.early_finish - a.early_start);
+    assert_eq!(a.late_start_minutes, 0);
+    assert_eq!(a.late_finish_minutes, 3);
+    assert_eq!(a.late_finish_minutes - a.late_start_minutes, a.early_finish_minutes - a.early_start_minutes);
 }
 
 #[test]
 fn test_p1_zero_float_is_critical() {
     // Guard: zero float → critical (regression baseline for <= 0 check)
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 5, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 5, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag: 0 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag_work_minutes: 0 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let a = result.iter().find(|r| r.task_id == "A").unwrap();
     let b = result.iter().find(|r| r.task_id == "B").unwrap();
 
-    assert_eq!(a.total_float, 0);
+    assert_eq!(a.total_float_minutes, 0);
     assert!(a.is_critical); // total_float <= 0 → critical
-    assert_eq!(b.total_float, 0);
+    assert_eq!(b.total_float_minutes, 0);
     assert!(b.is_critical);
 }
 
@@ -1696,18 +1696,18 @@ fn test_p1_fs_lag_crossing_weekend_forward() {
     //   snap_forward(5, {5,6}): 5 blocked→6 blocked→7
     //   B.ES=7, B.EF=advance(7,2,{5,6}): d=7→rem=1, d=8→rem=0→return 9
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 2, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 2, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag: 2 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag_work_minutes: 2 },
     ];
     let blocked = vec![5, 6];
     let result = calculate_schedule(&tasks, &deps, &blocked).unwrap();
     let b = result.iter().find(|r| r.task_id == "B").unwrap();
 
-    assert_eq!(b.early_start, 7);
-    assert_eq!(b.early_finish, 9);
+    assert_eq!(b.early_start_minutes, 7);
+    assert_eq!(b.early_finish_minutes, 9);
 }
 
 // ── Phase V — Constraint tests ───────────────────────────────
@@ -1715,160 +1715,160 @@ fn test_p1_fs_lag_crossing_weekend_forward() {
 #[test]
 fn test_constraint_snet_pushes_early_start_later() {
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 5, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::SNET, constraint_date: Some(3) },
+        RawTask { id: "A".to_string(), duration_work_minutes: 5, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::SNET, constraint_date_minutes: Some(3) },
     ];
     let result = calculate_schedule(&tasks, &[], &[]).unwrap();
     let a = &result[0];
-    assert_eq!(a.early_start, 3);
-    assert_eq!(a.early_finish, 8);
+    assert_eq!(a.early_start_minutes, 3);
+    assert_eq!(a.early_finish_minutes, 8);
 }
 
 #[test]
 fn test_constraint_snet_no_effect_when_dep_later() {
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 5, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::SNET, constraint_date: Some(2) },
+        RawTask { id: "A".to_string(), duration_work_minutes: 5, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::SNET, constraint_date_minutes: Some(2) },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag: 0 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag_work_minutes: 0 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let b = result.iter().find(|r| r.task_id == "B").unwrap();
-    assert_eq!(b.early_start, 5);
-    assert_eq!(b.early_finish, 8);
+    assert_eq!(b.early_start_minutes, 5);
+    assert_eq!(b.early_finish_minutes, 8);
 }
 
 #[test]
 fn test_constraint_fnlt_negative_float() {
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 5, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::FNLT, constraint_date: Some(3) },
+        RawTask { id: "A".to_string(), duration_work_minutes: 5, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::FNLT, constraint_date_minutes: Some(3) },
     ];
     let result = calculate_schedule(&tasks, &[], &[]).unwrap();
     let a = &result[0];
-    assert_eq!(a.early_start, 0);
-    assert_eq!(a.early_finish, 5);
-    assert!(a.total_float < 0, "FNLT before EF should produce negative float");
+    assert_eq!(a.early_start_minutes, 0);
+    assert_eq!(a.early_finish_minutes, 5);
+    assert!(a.total_float_minutes < 0, "FNLT before EF should produce negative float");
 }
 
 #[test]
 fn test_constraint_mso_pins_start() {
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::MSO, constraint_date: Some(5) },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::MSO, constraint_date_minutes: Some(5) },
     ];
     let result = calculate_schedule(&tasks, &[], &[]).unwrap();
     let a = &result[0];
-    assert_eq!(a.early_start, 5);
-    assert_eq!(a.early_finish, 8);
-    assert_eq!(a.late_start, 5);
+    assert_eq!(a.early_start_minutes, 5);
+    assert_eq!(a.early_finish_minutes, 8);
+    assert_eq!(a.late_start_minutes, 5);
 }
 
 #[test]
 fn test_constraint_mfo_pins_finish() {
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::MFO, constraint_date: Some(10) },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::MFO, constraint_date_minutes: Some(10) },
     ];
     let result = calculate_schedule(&tasks, &[], &[]).unwrap();
     let a = &result[0];
-    assert_eq!(a.early_finish, 10);
-    assert_eq!(a.early_start, 7);
-    assert_eq!(a.late_finish, 10);
+    assert_eq!(a.early_finish_minutes, 10);
+    assert_eq!(a.early_start_minutes, 7);
+    assert_eq!(a.late_finish_minutes, 10);
 }
 
 #[test]
 fn test_constraint_alap_shifts_to_late() {
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 2, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ALAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 2, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ALAP, constraint_date_minutes: None },
     ];
     let result = calculate_schedule(&tasks, &[], &[]).unwrap();
     let b = result.iter().find(|r| r.task_id == "B").unwrap();
-    assert_eq!(b.early_start, 1);
-    assert_eq!(b.early_finish, 3);
-    assert_eq!(b.late_start, 1);
-    assert_eq!(b.late_finish, 3);
-    assert_eq!(b.total_float, 0);
+    assert_eq!(b.early_start_minutes, 1);
+    assert_eq!(b.early_finish_minutes, 3);
+    assert_eq!(b.late_start_minutes, 1);
+    assert_eq!(b.late_finish_minutes, 3);
+    assert_eq!(b.total_float_minutes, 0);
 }
 
 #[test]
 fn test_constraint_asap_unchanged() {
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 5, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 5, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag: 0 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag_work_minutes: 0 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let a = result.iter().find(|r| r.task_id == "A").unwrap();
     let b = result.iter().find(|r| r.task_id == "B").unwrap();
-    assert_eq!(a.early_start, 0);
-    assert_eq!(a.early_finish, 3);
-    assert_eq!(b.early_start, 3);
-    assert_eq!(b.early_finish, 8);
+    assert_eq!(a.early_start_minutes, 0);
+    assert_eq!(a.early_finish_minutes, 3);
+    assert_eq!(b.early_start_minutes, 3);
+    assert_eq!(b.early_finish_minutes, 8);
 }
 
 #[test]
 fn test_constraint_mso_backward_pins_late() {
     // MSO pins both early and late start
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::MSO, constraint_date: Some(5) },
-        RawTask { id: "B".to_string(), duration: 2, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::MSO, constraint_date_minutes: Some(5) },
+        RawTask { id: "B".to_string(), duration_work_minutes: 2, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag: 0 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag_work_minutes: 0 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let a = result.iter().find(|r| r.task_id == "A").unwrap();
-    assert_eq!(a.early_start, 5);
-    assert_eq!(a.late_start, 5);
-    assert_eq!(a.late_finish, 8);
+    assert_eq!(a.early_start_minutes, 5);
+    assert_eq!(a.late_start_minutes, 5);
+    assert_eq!(a.late_finish_minutes, 8);
 }
 
 #[test]
 fn test_constraint_snet_equal_to_dep_driven_es_no_change() {
     // SNET == dependency-driven ES ⇒ no change
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 5, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::SNET, constraint_date: Some(5) },
+        RawTask { id: "A".to_string(), duration_work_minutes: 5, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::SNET, constraint_date_minutes: Some(5) },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag: 0 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag_work_minutes: 0 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let b = result.iter().find(|r| r.task_id == "B").unwrap();
-    assert_eq!(b.early_start, 5);
-    assert_eq!(b.early_finish, 8);
+    assert_eq!(b.early_start_minutes, 5);
+    assert_eq!(b.early_finish_minutes, 8);
 }
 
 #[test]
 fn test_constraint_snet_missing_date_acts_unconstrained() {
     // SNET with no constraint_date ⇒ behaves like ASAP
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 4, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::SNET, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 4, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::SNET, constraint_date_minutes: None },
     ];
     let result = calculate_schedule(&tasks, &[], &[]).unwrap();
     let a = &result[0];
-    assert_eq!(a.early_start, 0);
-    assert_eq!(a.early_finish, 4);
+    assert_eq!(a.early_start_minutes, 0);
+    assert_eq!(a.early_finish_minutes, 4);
 }
 
 #[test]
 fn test_constraint_snet_successor_reflects_delayed_predecessor() {
     // SNET on predecessor delays its finish, successor must start after
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::SNET, constraint_date: Some(10) },
-        RawTask { id: "B".to_string(), duration: 2, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::SNET, constraint_date_minutes: Some(10) },
+        RawTask { id: "B".to_string(), duration_work_minutes: 2, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag: 0 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag_work_minutes: 0 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let a = result.iter().find(|r| r.task_id == "A").unwrap();
     let b = result.iter().find(|r| r.task_id == "B").unwrap();
-    assert_eq!(a.early_start, 10);
-    assert_eq!(a.early_finish, 13);
-    assert_eq!(b.early_start, 13);
-    assert_eq!(b.early_finish, 15);
+    assert_eq!(a.early_start_minutes, 10);
+    assert_eq!(a.early_finish_minutes, 13);
+    assert_eq!(b.early_start_minutes, 13);
+    assert_eq!(b.early_finish_minutes, 15);
 }
 
 // ── FNLT constraint tests ────────────────────────────────────────
@@ -1878,16 +1878,16 @@ fn test_constraint_fnlt_clamps_late_finish() {
     // A(dur=2) parallel to C(dur=6) → project duration = 6
     // A has FNLT=3: LF clamped from 6→3, LS from 4→1, float from 4→1
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 2, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::FNLT, constraint_date: Some(3) },
-        RawTask { id: "C".to_string(), duration: 6, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 2, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::FNLT, constraint_date_minutes: Some(3) },
+        RawTask { id: "C".to_string(), duration_work_minutes: 6, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let result = calculate_schedule(&tasks, &[], &[]).unwrap();
     let a = result.iter().find(|r| r.task_id == "A").unwrap();
-    assert_eq!(a.early_start, 0);
-    assert_eq!(a.early_finish, 2);
-    assert_eq!(a.late_finish, 3);
-    assert_eq!(a.late_start, 1);
-    assert_eq!(a.total_float, 1);
+    assert_eq!(a.early_start_minutes, 0);
+    assert_eq!(a.early_finish_minutes, 2);
+    assert_eq!(a.late_finish_minutes, 3);
+    assert_eq!(a.late_start_minutes, 1);
+    assert_eq!(a.total_float_minutes, 1);
 }
 
 #[test]
@@ -1895,19 +1895,19 @@ fn test_constraint_fnlt_equal_to_late_finish_no_change() {
     // A(dur=3)→B(dur=2): backward LF(A) = LS(B) = 3
     // A has FNLT=3: cd == LF, no change
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::FNLT, constraint_date: Some(3) },
-        RawTask { id: "B".to_string(), duration: 2, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::FNLT, constraint_date_minutes: Some(3) },
+        RawTask { id: "B".to_string(), duration_work_minutes: 2, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag: 0 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag_work_minutes: 0 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let a = result.iter().find(|r| r.task_id == "A").unwrap();
-    assert_eq!(a.early_start, 0);
-    assert_eq!(a.early_finish, 3);
-    assert_eq!(a.late_finish, 3);
-    assert_eq!(a.late_start, 0);
-    assert_eq!(a.total_float, 0);
+    assert_eq!(a.early_start_minutes, 0);
+    assert_eq!(a.early_finish_minutes, 3);
+    assert_eq!(a.late_finish_minutes, 3);
+    assert_eq!(a.late_start_minutes, 0);
+    assert_eq!(a.total_float_minutes, 0);
     assert!(a.is_critical);
 }
 
@@ -1916,34 +1916,34 @@ fn test_constraint_fnlt_later_than_late_finish_no_change() {
     // A(dur=3)→B(dur=2): backward LF(A) = 3
     // A has FNLT=10: cd > LF, no change
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::FNLT, constraint_date: Some(10) },
-        RawTask { id: "B".to_string(), duration: 2, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::FNLT, constraint_date_minutes: Some(10) },
+        RawTask { id: "B".to_string(), duration_work_minutes: 2, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag: 0 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag_work_minutes: 0 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let a = result.iter().find(|r| r.task_id == "A").unwrap();
-    assert_eq!(a.early_start, 0);
-    assert_eq!(a.early_finish, 3);
-    assert_eq!(a.late_finish, 3);
-    assert_eq!(a.late_start, 0);
-    assert_eq!(a.total_float, 0);
+    assert_eq!(a.early_start_minutes, 0);
+    assert_eq!(a.early_finish_minutes, 3);
+    assert_eq!(a.late_finish_minutes, 3);
+    assert_eq!(a.late_start_minutes, 0);
+    assert_eq!(a.total_float_minutes, 0);
 }
 
 #[test]
 fn test_constraint_fnlt_missing_date_acts_unconstrained() {
     // FNLT with None date → behaves like ASAP
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 4, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::FNLT, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 4, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::FNLT, constraint_date_minutes: None },
     ];
     let result = calculate_schedule(&tasks, &[], &[]).unwrap();
     let a = &result[0];
-    assert_eq!(a.early_start, 0);
-    assert_eq!(a.early_finish, 4);
-    assert_eq!(a.late_finish, 4);
-    assert_eq!(a.late_start, 0);
-    assert_eq!(a.total_float, 0);
+    assert_eq!(a.early_start_minutes, 0);
+    assert_eq!(a.early_finish_minutes, 4);
+    assert_eq!(a.late_finish_minutes, 4);
+    assert_eq!(a.late_start_minutes, 0);
+    assert_eq!(a.total_float_minutes, 0);
 }
 
 #[test]
@@ -1951,28 +1951,28 @@ fn test_constraint_fnlt_propagates_to_predecessor() {
     // A(dur=2)→B(dur=2), C(dur=6) independent
     // B has FNLT=5: LF(B)=5, LS(B)=3, predecessor A gets LF=3, LS=1
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 2, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 2, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::FNLT, constraint_date: Some(5) },
-        RawTask { id: "C".to_string(), duration: 6, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 2, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 2, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::FNLT, constraint_date_minutes: Some(5) },
+        RawTask { id: "C".to_string(), duration_work_minutes: 6, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag: 0 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag_work_minutes: 0 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let a = result.iter().find(|r| r.task_id == "A").unwrap();
     let b = result.iter().find(|r| r.task_id == "B").unwrap();
     // B: FNLT=5 clamps LF from 6→5
-    assert_eq!(b.early_start, 2);
-    assert_eq!(b.early_finish, 4);
-    assert_eq!(b.late_finish, 5);
-    assert_eq!(b.late_start, 3);
-    assert_eq!(b.total_float, 1);
+    assert_eq!(b.early_start_minutes, 2);
+    assert_eq!(b.early_finish_minutes, 4);
+    assert_eq!(b.late_finish_minutes, 5);
+    assert_eq!(b.late_start_minutes, 3);
+    assert_eq!(b.total_float_minutes, 1);
     // A: predecessor reflects B's tightened LS
-    assert_eq!(a.early_start, 0);
-    assert_eq!(a.early_finish, 2);
-    assert_eq!(a.late_finish, 3);
-    assert_eq!(a.late_start, 1);
-    assert_eq!(a.total_float, 1);
+    assert_eq!(a.early_start_minutes, 0);
+    assert_eq!(a.early_finish_minutes, 2);
+    assert_eq!(a.late_finish_minutes, 3);
+    assert_eq!(a.late_start_minutes, 1);
+    assert_eq!(a.total_float_minutes, 1);
 }
 
 // ── MSO constraint tests ─────────────────────────────────────────
@@ -1981,73 +1981,73 @@ fn test_constraint_fnlt_propagates_to_predecessor() {
 fn test_constraint_mso_equal_to_computed_start_no_change() {
     // A(dur=3)→B(dur=2, MSO=3): dep-driven ES for B is 3, MSO=3 ⇒ pinned at 3
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 2, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::MSO, constraint_date: Some(3) },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 2, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::MSO, constraint_date_minutes: Some(3) },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag: 0 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag_work_minutes: 0 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let b = result.iter().find(|r| r.task_id == "B").unwrap();
-    assert_eq!(b.early_start, 3);
-    assert_eq!(b.early_finish, 5);
-    assert_eq!(b.late_start, 3);
-    assert_eq!(b.late_finish, 5);
-    assert_eq!(b.total_float, 0);
+    assert_eq!(b.early_start_minutes, 3);
+    assert_eq!(b.early_finish_minutes, 5);
+    assert_eq!(b.late_start_minutes, 3);
+    assert_eq!(b.late_finish_minutes, 5);
+    assert_eq!(b.total_float_minutes, 0);
 }
 
 #[test]
 fn test_constraint_mso_missing_date_acts_unconstrained() {
     // MSO with None date → behaves like ASAP
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 4, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::MSO, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 4, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::MSO, constraint_date_minutes: None },
     ];
     let result = calculate_schedule(&tasks, &[], &[]).unwrap();
     let a = &result[0];
-    assert_eq!(a.early_start, 0);
-    assert_eq!(a.early_finish, 4);
-    assert_eq!(a.late_finish, 4);
-    assert_eq!(a.late_start, 0);
-    assert_eq!(a.total_float, 0);
+    assert_eq!(a.early_start_minutes, 0);
+    assert_eq!(a.early_finish_minutes, 4);
+    assert_eq!(a.late_finish_minutes, 4);
+    assert_eq!(a.late_start_minutes, 0);
+    assert_eq!(a.total_float_minutes, 0);
 }
 
 #[test]
 fn test_constraint_mso_successor_reflects_pinned_predecessor() {
     // A(dur=3, MSO=10)→B(dur=2): B must start after A finishes at 13
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::MSO, constraint_date: Some(10) },
-        RawTask { id: "B".to_string(), duration: 2, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::MSO, constraint_date_minutes: Some(10) },
+        RawTask { id: "B".to_string(), duration_work_minutes: 2, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag: 0 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag_work_minutes: 0 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let a = result.iter().find(|r| r.task_id == "A").unwrap();
     let b = result.iter().find(|r| r.task_id == "B").unwrap();
-    assert_eq!(a.early_start, 10);
-    assert_eq!(a.early_finish, 13);
-    assert_eq!(b.early_start, 13);
-    assert_eq!(b.early_finish, 15);
+    assert_eq!(a.early_start_minutes, 10);
+    assert_eq!(a.early_finish_minutes, 13);
+    assert_eq!(b.early_start_minutes, 13);
+    assert_eq!(b.early_finish_minutes, 15);
 }
 
 #[test]
 fn test_constraint_mso_overrides_earlier_dependency() {
     // A(dur=2)→B(dur=3, MSO=10): dep-driven ES for B is 2, MSO=10 wins
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 2, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::MSO, constraint_date: Some(10) },
+        RawTask { id: "A".to_string(), duration_work_minutes: 2, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::MSO, constraint_date_minutes: Some(10) },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag: 0 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag_work_minutes: 0 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let b = result.iter().find(|r| r.task_id == "B").unwrap();
     // MSO unconditionally pins start to 10 regardless of dep
-    assert_eq!(b.early_start, 10);
-    assert_eq!(b.early_finish, 13);
-    assert_eq!(b.late_start, 10);
-    assert_eq!(b.late_finish, 13);
-    assert_eq!(b.total_float, 0);
+    assert_eq!(b.early_start_minutes, 10);
+    assert_eq!(b.early_finish_minutes, 13);
+    assert_eq!(b.late_start_minutes, 10);
+    assert_eq!(b.late_finish_minutes, 13);
+    assert_eq!(b.total_float_minutes, 0);
 }
 
 // ── MFO constraint tests ─────────────────────────────────────────
@@ -2057,73 +2057,73 @@ fn test_constraint_mfo_equal_to_computed_finish_no_change() {
     // A(dur=3)→B(dur=2): EF(B)=5, project duration=5, backward LF(B)=5
     // B has MFO=5: cd == LF, no visible change
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 2, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::MFO, constraint_date: Some(5) },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 2, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::MFO, constraint_date_minutes: Some(5) },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag: 0 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag_work_minutes: 0 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let b = result.iter().find(|r| r.task_id == "B").unwrap();
-    assert_eq!(b.early_start, 3);
-    assert_eq!(b.early_finish, 5);
-    assert_eq!(b.late_start, 3);
-    assert_eq!(b.late_finish, 5);
-    assert_eq!(b.total_float, 0);
+    assert_eq!(b.early_start_minutes, 3);
+    assert_eq!(b.early_finish_minutes, 5);
+    assert_eq!(b.late_start_minutes, 3);
+    assert_eq!(b.late_finish_minutes, 5);
+    assert_eq!(b.total_float_minutes, 0);
 }
 
 #[test]
 fn test_constraint_mfo_missing_date_acts_unconstrained() {
     // MFO with None date → behaves like ASAP
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 4, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::MFO, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 4, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::MFO, constraint_date_minutes: None },
     ];
     let result = calculate_schedule(&tasks, &[], &[]).unwrap();
     let a = &result[0];
-    assert_eq!(a.early_start, 0);
-    assert_eq!(a.early_finish, 4);
-    assert_eq!(a.late_finish, 4);
-    assert_eq!(a.late_start, 0);
-    assert_eq!(a.total_float, 0);
+    assert_eq!(a.early_start_minutes, 0);
+    assert_eq!(a.early_finish_minutes, 4);
+    assert_eq!(a.late_finish_minutes, 4);
+    assert_eq!(a.late_start_minutes, 0);
+    assert_eq!(a.total_float_minutes, 0);
 }
 
 #[test]
 fn test_constraint_mfo_successor_reflects_pinned_predecessor() {
     // A(dur=3, MFO=10)→B(dur=2): A pinned EF=10, ES=7; B starts at 10
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::MFO, constraint_date: Some(10) },
-        RawTask { id: "B".to_string(), duration: 2, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::MFO, constraint_date_minutes: Some(10) },
+        RawTask { id: "B".to_string(), duration_work_minutes: 2, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag: 0 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag_work_minutes: 0 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let a = result.iter().find(|r| r.task_id == "A").unwrap();
     let b = result.iter().find(|r| r.task_id == "B").unwrap();
-    assert_eq!(a.early_start, 7);
-    assert_eq!(a.early_finish, 10);
-    assert_eq!(b.early_start, 10);
-    assert_eq!(b.early_finish, 12);
+    assert_eq!(a.early_start_minutes, 7);
+    assert_eq!(a.early_finish_minutes, 10);
+    assert_eq!(b.early_start_minutes, 10);
+    assert_eq!(b.early_finish_minutes, 12);
 }
 
 #[test]
 fn test_constraint_mfo_overrides_earlier_dependency() {
     // A(dur=2)→B(dur=3, MFO=20): dep-driven EF for B is 5, MFO=20 wins
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 2, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::MFO, constraint_date: Some(20) },
+        RawTask { id: "A".to_string(), duration_work_minutes: 2, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::MFO, constraint_date_minutes: Some(20) },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag: 0 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag_work_minutes: 0 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let b = result.iter().find(|r| r.task_id == "B").unwrap();
     // MFO unconditionally pins finish to 20 regardless of dep
-    assert_eq!(b.early_finish, 20);
-    assert_eq!(b.early_start, 17);
-    assert_eq!(b.late_finish, 20);
-    assert_eq!(b.late_start, 17);
-    assert_eq!(b.total_float, 0);
+    assert_eq!(b.early_finish_minutes, 20);
+    assert_eq!(b.early_start_minutes, 17);
+    assert_eq!(b.late_finish_minutes, 20);
+    assert_eq!(b.late_start_minutes, 17);
+    assert_eq!(b.total_float_minutes, 0);
 }
 
 // ── ALAP constraint tests ────────────────────────────────────────
@@ -2134,39 +2134,39 @@ fn test_constraint_alap_consumes_float() {
     // Without ALAP: A has ES=0,EF=3,LS=3,LF=6 (float=3)
     // With ALAP: A shifts early dates to late dates → ES=3,EF=6, float=0
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ALAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 2, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "C".to_string(), duration: 8, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ALAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 2, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "C".to_string(), duration_work_minutes: 8, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag: 0 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag_work_minutes: 0 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let a = result.iter().find(|r| r.task_id == "A").unwrap();
-    assert_eq!(a.early_start, 3);
-    assert_eq!(a.early_finish, 6);
-    assert_eq!(a.late_start, 3);
-    assert_eq!(a.late_finish, 6);
-    assert_eq!(a.total_float, 0);
+    assert_eq!(a.early_start_minutes, 3);
+    assert_eq!(a.early_finish_minutes, 6);
+    assert_eq!(a.late_start_minutes, 3);
+    assert_eq!(a.late_finish_minutes, 6);
+    assert_eq!(a.total_float_minutes, 0);
 }
 
 #[test]
 fn test_constraint_alap_on_critical_path_no_change() {
     // A(dur=3)→B(dur=5): A is critical, ALAP has no effect (LS==ES already)
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ALAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 5, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ALAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 5, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag: 0 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag_work_minutes: 0 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let a = result.iter().find(|r| r.task_id == "A").unwrap();
-    assert_eq!(a.early_start, 0);
-    assert_eq!(a.early_finish, 3);
-    assert_eq!(a.late_start, 0);
-    assert_eq!(a.late_finish, 3);
-    assert_eq!(a.total_float, 0);
+    assert_eq!(a.early_start_minutes, 0);
+    assert_eq!(a.early_finish_minutes, 3);
+    assert_eq!(a.late_start_minutes, 0);
+    assert_eq!(a.late_finish_minutes, 3);
+    assert_eq!(a.total_float_minutes, 0);
     assert!(a.is_critical);
 }
 
@@ -2179,38 +2179,38 @@ fn test_constraint_alap_predecessor_delays_successor() {
     // so B retains its original forward-pass ES. ALAP on predecessors does
     // NOT cascade to successors in the current engine model.
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 2, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ALAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 3, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
-        RawTask { id: "C".to_string(), duration: 10, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 2, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ALAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 3, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
+        RawTask { id: "C".to_string(), duration_work_minutes: 10, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let deps = vec![
-        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag: 0 },
+        RawDependency { pred_id: "A".to_string(), succ_id: "B".to_string(), dep_type: DepType::FS, lag_work_minutes: 0 },
     ];
     let result = calculate_schedule(&tasks, &deps, &[]).unwrap();
     let a = result.iter().find(|r| r.task_id == "A").unwrap();
     let b = result.iter().find(|r| r.task_id == "B").unwrap();
     // A shifted to late dates
-    assert_eq!(a.early_start, 5);
-    assert_eq!(a.early_finish, 7);
+    assert_eq!(a.early_start_minutes, 5);
+    assert_eq!(a.early_finish_minutes, 7);
     // B retains forward-pass ES (driven by A's original EF=2)
-    assert_eq!(b.early_start, 2);
-    assert_eq!(b.early_finish, 5);
+    assert_eq!(b.early_start_minutes, 2);
+    assert_eq!(b.early_finish_minutes, 5);
 }
 
 #[test]
 fn test_constraint_alap_ignores_constraint_date() {
     // ALAP with Some(constraint_date) behaves identically to ALAP with None
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 4, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ALAP, constraint_date: Some(99) },
+        RawTask { id: "A".to_string(), duration_work_minutes: 4, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ALAP, constraint_date_minutes: Some(99) },
     ];
     let result = calculate_schedule(&tasks, &[], &[]).unwrap();
     let a = &result[0];
     // Single task: project duration = 4, LS=0, LF=4. ALAP shifts ES→LS.
-    assert_eq!(a.early_start, 0);
-    assert_eq!(a.early_finish, 4);
-    assert_eq!(a.late_start, 0);
-    assert_eq!(a.late_finish, 4);
-    assert_eq!(a.total_float, 0);
+    assert_eq!(a.early_start_minutes, 0);
+    assert_eq!(a.early_finish_minutes, 4);
+    assert_eq!(a.late_start_minutes, 0);
+    assert_eq!(a.late_finish_minutes, 4);
+    assert_eq!(a.total_float_minutes, 0);
 }
 
 #[test]
@@ -2219,14 +2219,14 @@ fn test_constraint_alap_anchored_to_project_finish() {
     // Project finish = 6. A's backward pass: LF=6, LS=4.
     // ALAP shifts: ES=4, EF=6. Float = 0.
     let tasks = vec![
-        RawTask { id: "A".to_string(), duration: 2, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ALAP, constraint_date: None },
-        RawTask { id: "B".to_string(), duration: 6, min_early_start: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date: None },
+        RawTask { id: "A".to_string(), duration_work_minutes: 2, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ALAP, constraint_date_minutes: None },
+        RawTask { id: "B".to_string(), duration_work_minutes: 6, min_early_start_minutes: 0, parent_id: None, is_summary: false, constraint_type: ConstraintType::ASAP, constraint_date_minutes: None },
     ];
     let result = calculate_schedule(&tasks, &[], &[]).unwrap();
     let a = result.iter().find(|r| r.task_id == "A").unwrap();
-    assert_eq!(a.early_start, 4);
-    assert_eq!(a.early_finish, 6);
-    assert_eq!(a.late_start, 4);
-    assert_eq!(a.late_finish, 6);
-    assert_eq!(a.total_float, 0);
+    assert_eq!(a.early_start_minutes, 4);
+    assert_eq!(a.early_finish_minutes, 6);
+    assert_eq!(a.late_start_minutes, 4);
+    assert_eq!(a.late_finish_minutes, 6);
+    assert_eq!(a.total_float_minutes, 0);
 }

@@ -16,6 +16,12 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
+    /* Workspace path aliases */
+    "paths": {
+      "@planner/protocol": ["../../packages/protocol/src/index.ts"],
+      "@planner/protocol/*": ["../../packages/protocol/src/*.ts"]
+    },
+
     /* Linting */
     "strict": true,
     "noUnusedLocals": true,

@@ -39,12 +39,12 @@ function parseUTCMs(isoDate: string): number {
  * Called once in App, consumed by all timeline-aware components.
  */
 export function computeTimelineGeometry(
-  scheduleResults: Record<string, { earlyFinish: number }>,
+  scheduleResults: Record<string, { earlyFinishMinutes: number }>,
   projectStartDate: string,
 ): TimelineGeometry {
   let maxFinish = 20;
   for (const s of Object.values(scheduleResults)) {
-    if (s.earlyFinish > maxFinish) maxFinish = s.earlyFinish;
+    if (s.earlyFinishMinutes > maxFinish) maxFinish = s.earlyFinishMinutes;
   }
   const maxDay = Math.ceil(maxFinish * 1.2);
 

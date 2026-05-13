@@ -18,6 +18,9 @@
 
 import type {
     Assignment,
+    BaseCalendarDefinition,
+    CalendarFidelitySummary,
+    CalendarId,
     Dependency,
     ImportDiagnostic,
     ImportDiagnosticsSummary,
@@ -25,8 +28,10 @@ import type {
     ImportPreviewMessage,
     ImportSummary,
     Resource,
+    SourceImportFidelityState,
+    SourceProjectSettings,
     Task,
-} from "protocol";
+} from "@planner/protocol";
 import type { ImportCandidate } from "./importCandidate.js";
 import { setPendingCandidate } from "./importCandidate.js";
 import { mapMspToCanonical } from "./mappers/mspMapper.js";
@@ -45,6 +50,27 @@ export type PreviewResult =
   | { ok: true; message: ImportPreviewMessage }
   | { ok: false; error: string };
 
+function buildFidelitySummaryFields(state: SourceImportFidelityState): Pick<ImportSummary,
+  | "activitiesWithActuals"
+  | "activitiesWithProgress"
+  | "activitiesWithRemainingDuration"
+  | "hasProjectDataDate"
+  | "hasProjectStatusDate"
+  | "sourceDataDate"
+  | "sourceStatusDate"
+> {
+  return {
+    activitiesWithActuals: Object.keys(state.actualsByTaskId).length,
+    activitiesWithProgress: Object.keys(state.progressByTaskId).length,
+    activitiesWithRemainingDuration: Object.values(state.actualsByTaskId)
+      .filter(actuals => actuals.remainingDurationWorkMinutes !== undefined).length,
+    hasProjectDataDate: Boolean(state.projectStatus?.dataDate),
+    hasProjectStatusDate: Boolean(state.projectStatus?.statusDate),
+    sourceDataDate: state.projectStatus?.dataDate,
+    sourceStatusDate: state.projectStatus?.statusDate,
+  };
+}
+
 // ─── Orchestrator ───────────────────────────────────────────────────
 
 /**
@@ -59,6 +85,7 @@ export function runImportPreview(
   reqId: string,
   format: ImportFormat,
   content: string,
+  sourceFileName?: string,
 ): PreviewResult {
   // ── Size gate ─────────────────────────────────────────────────
   if (content.length > MAX_CONTENT_LENGTH) {
@@ -67,7 +94,7 @@ export function runImportPreview(
 
   // ── Format dispatch ───────────────────────────────────────────
   if (format === "msp-xml") {
-    return runMspXmlPreview(reqId, format, content);
+    return runMspXmlPreview(reqId, format, content, sourceFileName);
   }
 
   // ── XER parse ─────────────────────────────────────────────────
@@ -103,6 +130,11 @@ export function runImportPreview(
   let mappedDependencies: readonly Dependency[] | undefined;
   let mappedResources: readonly Resource[] | undefined;
   let mappedAssignments: readonly Assignment[] | undefined;
+  let sourceImportFidelityState: SourceImportFidelityState | undefined;
+  let mappedCalendarDefinitions: Readonly<Record<CalendarId, BaseCalendarDefinition>> | undefined;
+  let mappedResolvedCalendarDefinitions: Readonly<Record<CalendarId, BaseCalendarDefinition>> | undefined;
+  let mappedCalendarFidelity: CalendarFidelitySummary | undefined;
+  let mappedSourceProjectSettings: SourceProjectSettings | undefined;
 
   if (!hasFatalErrors) {
     // Run mapper — produces canonical entities + mapping diagnostics
@@ -115,6 +147,11 @@ export function runImportPreview(
     mappedDependencies = mapResult.dependencies;
     mappedResources = mapResult.resources;
     mappedAssignments = mapResult.assignments;
+    sourceImportFidelityState = mapResult.sourceImportFidelityState;
+    mappedCalendarDefinitions = mapResult.calendarDefinitions;
+    mappedResolvedCalendarDefinitions = mapResult.resolvedCalendarDefinitions;
+    mappedCalendarFidelity = mapResult.calendarFidelity;
+    mappedSourceProjectSettings = mapResult.sourceProjectSettings;
 
     // Summary from mapped counts (may differ from raw due to WBS→summary tasks, TT_WBS skipping)
     summary = {
@@ -123,8 +160,10 @@ export function runImportPreview(
       resourceCount: mapResult.resources.length,
       assignmentCount: mapResult.assignments.length,
       calendarInfo: data.calendars.length > 0
-        ? `${data.calendars.length} calendar(s) found`
+        ? `${data.calendars.length} calendar(s) preserved`
         : "No calendar data",
+      calendarFidelity: mapResult.calendarFidelity,
+      ...buildFidelitySummaryFields(mapResult.sourceImportFidelityState),
     };
   } else {
     // Fallback to raw counts when parsing had fatal errors
@@ -154,6 +193,7 @@ export function runImportPreview(
   // ── Store candidate (staleness guard: replaces any previous) ──
   const candidate: ImportCandidate = {
     format,
+    sourceFileName,
     projectName,
     projectStartDate,
     summary,
@@ -165,6 +205,11 @@ export function runImportPreview(
     mappedDependencies,
     mappedResources,
     mappedAssignments,
+    sourceImportFidelityState,
+    sourceDatesByTaskId: sourceImportFidelityState?.sourceDatesByTaskId,
+    calendarDefinitions: mappedCalendarDefinitions,
+    resolvedCalendarDefinitions: mappedResolvedCalendarDefinitions,
+    sourceProjectSettings: mappedSourceProjectSettings,
   };
   setPendingCandidate(candidate);
 
@@ -177,10 +222,12 @@ export function runImportPreview(
       projectName,
       projectStartDate,
       format,
+      sourceFileName,
       summary,
       diagnostics,
       diagnosticsSummary,
       canCommit,
+      sourceProjectSettings: mappedSourceProjectSettings,
     },
   };
 
@@ -193,9 +240,22 @@ function runMspXmlPreview(
   reqId: string,
   format: ImportFormat,
   content: string,
+  sourceFileName?: string,
 ): PreviewResult {
   // ── Parse XML ─────────────────────────────────────────────────
-  const parseResult = parseMspXml(content);
+  let parseResult: ReturnType<typeof parseMspXml>;
+  try {
+    parseResult = parseMspXml(content);
+  } catch (error) {
+    // Defensive: parser should return Result, not throw. Log for debugging.
+    console.error("[import] MSP XML parser threw unexpectedly:", error);
+    const detail = error instanceof Error ? error.message : String(error);
+    parseResult = {
+      data: { project: { name: "", startDate: "", minutesPerDay: "" }, tasks: [], resources: [], assignments: [], calendars: [] },
+      errors: [{ message: `Failed to parse XML document: ${detail}` }],
+      warnings: [],
+    };
+  }
 
   const diagnostics: ImportDiagnostic[] = [];
 
@@ -225,6 +285,11 @@ function runMspXmlPreview(
   let mappedDependencies: readonly Dependency[] | undefined;
   let mappedResources: readonly Resource[] | undefined;
   let mappedAssignments: readonly Assignment[] | undefined;
+  let sourceImportFidelityState: SourceImportFidelityState | undefined;
+  let mappedCalendarDefinitions: Readonly<Record<CalendarId, BaseCalendarDefinition>> | undefined;
+  let mappedResolvedCalendarDefinitions: Readonly<Record<CalendarId, BaseCalendarDefinition>> | undefined;
+  let mappedCalendarFidelity: CalendarFidelitySummary | undefined;
+  let mappedSourceProjectSettings: SourceProjectSettings | undefined;
 
   if (!hasFatalErrors) {
     const mapResult = mapMspToCanonical(data);
@@ -236,13 +301,22 @@ function runMspXmlPreview(
     mappedDependencies = mapResult.dependencies;
     mappedResources = mapResult.resources;
     mappedAssignments = mapResult.assignments;
+    sourceImportFidelityState = mapResult.sourceImportFidelityState;
+    mappedCalendarDefinitions = mapResult.calendarDefinitions;
+    mappedResolvedCalendarDefinitions = mapResult.resolvedCalendarDefinitions;
+    mappedCalendarFidelity = mapResult.calendarFidelity;
+    mappedSourceProjectSettings = mapResult.sourceProjectSettings;
 
     summary = {
       taskCount: mapResult.tasks.length,
       dependencyCount: mapResult.dependencies.length,
       resourceCount: mapResult.resources.length,
       assignmentCount: mapResult.assignments.length,
-      calendarInfo: "Project-level calendar (simplified)",
+      calendarInfo: data.calendars.length > 0
+        ? `${data.calendars.length} calendar(s) preserved`
+        : "Project-level calendar (simplified)",
+      calendarFidelity: mapResult.calendarFidelity,
+      ...buildFidelitySummaryFields(mapResult.sourceImportFidelityState),
     };
   } else {
     projectName = data.project.name?.trim() || "(unknown)";
@@ -252,7 +326,9 @@ function runMspXmlPreview(
       dependencyCount: 0,
       resourceCount: data.resources.length,
       assignmentCount: data.assignments.length,
-      calendarInfo: "Project-level calendar (simplified)",
+      calendarInfo: data.calendars.length > 0
+        ? `${data.calendars.length} calendar(s) found`
+        : "Project-level calendar (simplified)",
     };
   }
 
@@ -268,6 +344,7 @@ function runMspXmlPreview(
   // ── Store candidate ───────────────────────────────────────────
   const candidate: ImportCandidate = {
     format,
+    sourceFileName,
     projectName,
     projectStartDate,
     summary,
@@ -279,6 +356,11 @@ function runMspXmlPreview(
     mappedDependencies,
     mappedResources,
     mappedAssignments,
+    sourceImportFidelityState,
+    sourceDatesByTaskId: sourceImportFidelityState?.sourceDatesByTaskId,
+    calendarDefinitions: mappedCalendarDefinitions,
+    resolvedCalendarDefinitions: mappedResolvedCalendarDefinitions,
+    sourceProjectSettings: mappedSourceProjectSettings,
   };
   setPendingCandidate(candidate);
 
@@ -291,10 +373,12 @@ function runMspXmlPreview(
       projectName,
       projectStartDate,
       format,
+      sourceFileName,
       summary,
       diagnostics,
       diagnosticsSummary,
       canCommit,
+      sourceProjectSettings: mappedSourceProjectSettings,
     },
   };
 

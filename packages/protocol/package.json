@@ -1,5 +1,5 @@
 {
-  "name": "protocol",
+  "name": "@planner/protocol",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -13,6 +13,8 @@
     "./compiler": "./src/compiler.ts"
   },
   "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "pnpm run typecheck",
     "test": "vitest run"
   },
   "devDependencies": {

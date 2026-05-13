@@ -19,7 +19,7 @@
  * only the envelope type, factory, and a minimal audit log seam.
  */
 
-import type { Command } from "protocol";
+import type { Command } from "@planner/protocol";
 
 // ─── Issuer Type ────────────────────────────────────────────────────
 
@@ -87,6 +87,23 @@ export const createEnvelope = (command: Command, issuerType: IssuerType): Comman
 export type DispatchOutcome = "ack" | "nack" | "error";
 
 /**
+ * Structured dispatch result — outcome + optional reason.
+ * Allows the audit seam to log the NACK reason for diagnostics.
+ */
+export type DispatchResult = {
+  readonly outcome: DispatchOutcome;
+  /** Human-readable reason for nack/error. Absent for ack. */
+  readonly reason?: string;
+  /** Categorizes the rejection for structured diagnostics. */
+  readonly category?: "unknown-command" | "not-ready" | "validation" | "not-found" | "logical";
+};
+
+/** Convenience helpers to build DispatchResult values. */
+export const ack = (): DispatchResult => ({ outcome: "ack" });
+export const nack = (reason: string, category: DispatchResult["category"] = "logical"): DispatchResult => ({ outcome: "nack", reason, category });
+export const dispatchError = (reason: string): DispatchResult => ({ outcome: "error", reason });
+
+/**
  * Minimal audit log seam. Called after every dispatch cycle completes.
  *
  * Currently logs to console. This is the single attachment point where
@@ -96,15 +113,22 @@ export type DispatchOutcome = "ack" | "nack" | "error";
  * @param envelope - The envelope that was dispatched
  * @param outcome  - Result of the dispatch
  */
-export const auditLog = (envelope: CommandEnvelope, outcome: DispatchOutcome): void => {
-  console.log(
+export const auditLog = (envelope: CommandEnvelope, result: DispatchResult): void => {
+  const parts: unknown[] = [
     "[AUDIT]",
     envelope.commandId,
     envelope.command.type,
-    outcome,
+    result.outcome,
     envelope.issuerType,
     `corr=${envelope.correlationId}`,
-  );
+  ];
+  if (result.reason) {
+    parts.push(`reason=${result.reason}`);
+  }
+  if (result.category) {
+    parts.push(`category=${result.category}`);
+  }
+  console.log(...parts);
 };
 
 /**

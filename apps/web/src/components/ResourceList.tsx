@@ -1,4 +1,4 @@
-import type { Assignment, Resource, Task } from "protocol";
+import type { Assignment, Resource, Task } from "@planner/protocol";
 import type { CSSProperties } from "react";
 import { useCallback, useState } from "react";
 import { type GridColumn, ColumnResizer, useColumnResize } from "../hooks/useColumnResize";

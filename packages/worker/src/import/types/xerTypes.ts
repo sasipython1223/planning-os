@@ -24,6 +24,17 @@ export type XerProject = {
   readonly proj_short_name: string;
   readonly plan_start_date: string;
   readonly day_hr_cnt: string;
+  readonly data_date?: string;
+  readonly status_date?: string;
+  readonly last_recalc_date?: string;
+  /** W4.3: Hours per working week from P6 PROJECT table. */
+  readonly week_hr_cnt?: string;
+  /** W4.3: Hours per working month from P6 PROJECT table. */
+  readonly month_hr_cnt?: string;
+  /** W4.3: Project must-finish-by date. */
+  readonly scd_end_date?: string;
+  /** W4.3: Default calendar ID assigned to this project in P6. */
+  readonly clndr_id?: string;
 };
 
 // ─── WBS Table ──────────────────────────────────────────────────────
@@ -40,6 +51,7 @@ export type XerWbs = {
 
 export type XerTask = {
   readonly task_id: string;
+  readonly task_code?: string;
   readonly proj_id: string;
   readonly wbs_id: string;
   readonly task_name: string;
@@ -47,6 +59,23 @@ export type XerTask = {
   readonly target_drtn_hr_cnt: string;
   readonly cstr_type: string;
   readonly cstr_date: string;
+  /** Calendar ID assigned to this task (references XerCalendar.clndr_id). */
+  readonly clndr_id?: string;
+  readonly target_start_date?: string;
+  readonly target_end_date?: string;
+  readonly act_start_date?: string;
+  readonly act_end_date?: string;
+  readonly act_drtn_hr_cnt?: string;
+  readonly remain_drtn_hr_cnt?: string;
+  readonly remain_start_date?: string;
+  readonly remain_end_date?: string;
+  readonly suspend_date?: string;
+  readonly resume_date?: string;
+  readonly phys_complete_pct?: string;
+  readonly task_complete_pct?: string;
+  readonly duration_pct_complete?: string;
+  readonly units_pct_complete?: string;
+  readonly complete_pct_type?: string;
 };
 
 // ─── Predecessor (Dependency) Table ─────────────────────────────────
@@ -76,12 +105,36 @@ export type XerTaskRsrc = {
   readonly target_qty_per_hr: string;
 };
 
-// ─── Calendar Table (simplified) ────────────────────────────────────
+// ─── Calendar Table ────────────────────────────────────────────────
 
 export type XerCalendar = {
   readonly clndr_id: string;
   readonly clndr_name: string;
+  /** Raw calendar definition string (P6 clndr_data format). Preserved as-is. */
   readonly clndr_data: string;
+  /** Calendar type: 0=global, 1=resource, 2=project. */
+  readonly clndr_type?: string;
+  /** Base/parent calendar ID for inheritance. */
+  readonly base_clndr_id?: string;
+  /** Reported hours per day from P6. */
+  readonly day_hr_cnt?: string;
+  /** Reported hours per week from P6 CALENDAR table (if exported). */
+  readonly week_hr_cnt?: string;
+  /** Reported hours per month from P6 CALENDAR table (if exported). */
+  readonly month_hr_cnt?: string;
+  /** Reported hours per year from P6 CALENDAR table (if exported). */
+  readonly year_hr_cnt?: string;
+};
+
+// ─── SCHEDOPTIONS Table ────────────────────────────────────────────
+
+/**
+ * W4.3: A single row from the P6 SCHEDOPTIONS table.
+ * Each row is a key-value pair of scheduling option settings.
+ */
+export type XerSchedOption = {
+  readonly option_name: string;
+  readonly option_value: string;
 };
 
 // ─── Aggregate XER Data ─────────────────────────────────────────────
@@ -98,6 +151,8 @@ export type XerData = {
   readonly resources: readonly XerResource[];
   readonly taskRsrcs: readonly XerTaskRsrc[];
   readonly calendars: readonly XerCalendar[];
+  /** W4.3: Scheduling options preserved from SCHEDOPTIONS table. Empty array if table absent. */
+  readonly schedoptions?: readonly XerSchedOption[];
 };
 
 // ─── Parse Result ───────────────────────────────────────────────────

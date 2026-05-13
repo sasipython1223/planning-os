@@ -11,7 +11,11 @@
  * ⚠️ CONTRACT FILE — No schedule calculation logic belongs here.
  * These types are inputs to the DomainCompiler, not consumed by
  * the solver directly. The kernel boundary must remain pure.
+ *
+ * Phase Y: Duration fields are now WorkMinutes-branded.
  */
+
+import type { WorkMinutes } from "./types.js";
 
 // ─── Identifiers ────────────────────────────────────────────────────
 
@@ -96,8 +100,8 @@ export type ProductivityDrivenStrategy = {
  */
 export type FixedDurationStrategy = {
   readonly kind: "fixed";
-  /** Duration in working days. Must be >= 1. */
-  readonly durationDays: number;
+  /** Duration in work minutes. Must be >= 1. */
+  readonly durationWorkMinutes: WorkMinutes;
 };
 
 /**
@@ -107,8 +111,8 @@ export type FixedDurationStrategy = {
  */
 export type ManualOverrideStrategy = {
   readonly kind: "manual-override";
-  /** The overridden duration in working days. Must be >= 1. */
-  readonly durationDays: number;
+  /** The overridden duration in work minutes. Must be >= 1. */
+  readonly durationWorkMinutes: WorkMinutes;
   /** Structured reason code for the override. */
   readonly reasonCode:
     | "client-directive"

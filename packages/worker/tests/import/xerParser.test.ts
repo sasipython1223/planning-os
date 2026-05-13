@@ -45,6 +45,12 @@ function taskRsrcTable(rows: string[][]): string {
   return `%T\tTASKRSRC\n${fields}\n${dataRows}\n%E`;
 }
 
+function calendarTable(rows: string[][]): string {
+  const fields = "%F\tclndr_id\tclndr_name\tclndr_data\tclndr_type\tbase_clndr_id\tday_hr_cnt\tweek_hr_cnt\tmonth_hr_cnt\tyear_hr_cnt";
+  const dataRows = rows.map(r => `%R\t${r.join("\t")}`).join("\n");
+  return `%T\tCALENDAR\n${fields}\n${dataRows}\n%E`;
+}
+
 // ─── Tests ──────────────────────────────────────────────────────────
 
 describe("XER Parser (W.2)", () => {
@@ -130,6 +136,22 @@ describe("XER Parser (W.2)", () => {
       expect(result.data.resources[0].rsrc_name).toBe("Crane Crew");
       expect(result.data.taskRsrcs).toHaveLength(1);
       expect(result.data.taskRsrcs[0].target_qty_per_hr).toBe("0.5");
+    });
+  });
+
+  describe("CALENDAR table", () => {
+    it("should parse calendar period-hour fields when present", () => {
+      const xer = buildXer(calendarTable([
+        ["C1", "Standard", "(0||8|(1|8:00|17:00))", "2", "", "8", "40", "160", "2080"],
+      ]));
+      const result = parseXer(xer);
+      expect(result.errors).toHaveLength(0);
+      expect(result.data.calendars).toHaveLength(1);
+      expect(result.data.calendars[0].clndr_id).toBe("C1");
+      expect(result.data.calendars[0].day_hr_cnt).toBe("8");
+      expect(result.data.calendars[0].week_hr_cnt).toBe("40");
+      expect(result.data.calendars[0].month_hr_cnt).toBe("160");
+      expect(result.data.calendars[0].year_hr_cnt).toBe("2080");
     });
   });
 

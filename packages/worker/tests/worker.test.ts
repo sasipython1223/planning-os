@@ -3,17 +3,29 @@
  * Tests the full pipeline: state → scheduling → result application.
  */
 
-import type { Assignment, Dependency, Resource, ScheduleResultMap, Task } from "protocol";
-import type { ScheduleError, ScheduleResponse } from "protocol/kernel";
-import { isScheduleError } from "protocol/kernel";
-import { beforeEach, describe, expect, it } from "vitest";
+import type { Assignment, CalendarId, Dependency, Resource, ScheduleResultMap, Task, TimeInterval, WorkMinutes } from "@planner/protocol";
+import type { ScheduleError, ScheduleResponse } from "@planner/protocol/kernel";
+import { isScheduleError } from "@planner/protocol/kernel";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { compileCalendar } from "../src/calendarRegistry.js";
+import * as Hierarchy from "../src/hierarchy.js";
 import * as UndoHistory from "../src/history.js";
 import { computeResourceHistogram } from "../src/resourceHistogram.js";
+import type { CalendarOutputContext } from "../src/rollup.js";
 import { rollupSummarySchedules } from "../src/rollupSummaries.js";
 import { applyScheduleResult } from "../src/schedule/applyScheduleResult.js";
 import { buildScheduleRequest } from "../src/schedule/buildScheduleRequest.js";
+import { SlotCoordinateTranslator } from "../src/schedule/SlotCoordinateTranslator.js";
 import * as State from "../src/state.js";
 import { validateAssignment, validateAssignmentUpdate, validateDependency, validateResource, validateResourceUpdate, validateTask, validateTaskUpdate } from "../src/validation.js";
+import { d, wm } from "./helpers.js";
+
+/** D5: shared slot translator for tests that call buildScheduleRequest directly. */
+const slotTranslator = new SlotCoordinateTranslator({
+  projectStartDate: "2025-01-06",
+  minutesPerDay: 480,
+  nwdSet: new Set(),
+});
 
 describe("Worker State", () => {
   beforeEach(() => {
@@ -21,7 +33,7 @@ describe("Worker State", () => {
   });
 
   it("should add and retrieve tasks", () => {
-    const task: Task = { id: "task1", name: "Task 1", duration: 5, depth: 0, isSummary: false };
+    const task: Task = { id: "task1", name: "Task 1", durationWorkMinutes: wm(5), siblingOrder: "V" };
     State.addTask(task);
 
     expect(State.getTasks()).toHaveLength(1);
@@ -29,18 +41,18 @@ describe("Worker State", () => {
   });
 
   it("should update task properties", () => {
-    const task: Task = { id: "task1", name: "Task 1", duration: 5, depth: 0, isSummary: false };
+    const task: Task = { id: "task1", name: "Task 1", durationWorkMinutes: wm(5), siblingOrder: "V" };
     State.addTask(task);
 
-    State.updateTask("task1", { name: "Updated Task", duration: 10 });
+    State.updateTask("task1", { name: "Updated Task", durationWorkMinutes: wm(10) });
 
     const updated = State.findTask("task1");
     expect(updated?.name).toBe("Updated Task");
-    expect(updated?.duration).toBe(10);
+    expect(updated?.durationWorkMinutes).toBe(10);
   });
 
   it("should add and retrieve dependencies", () => {
-    const dep: Dependency = { id: "dep1", predId: "A", succId: "B", type: "FS", lag: 0 };
+    const dep: Dependency = { id: "dep1", predId: "A", succId: "B", type: "FS", lagWorkMinutes: wm(0) };
     State.addDependency(dep);
 
     expect(State.getDependencies()).toHaveLength(1);
@@ -48,9 +60,9 @@ describe("Worker State", () => {
   });
 
   it("should create snapshot with deep copies", () => {
-    const taskA: Task = { id: "A", name: "Task A", duration: 5, depth: 0, isSummary: false };
-    const taskB: Task = { id: "B", name: "Task B", duration: 3, depth: 0, isSummary: false };
-    const dep: Dependency = { id: "dep1", predId: "A", succId: "B", type: "FS", lag: 0 };
+    const taskA: Task = { id: "A", name: "Task A", durationWorkMinutes: wm(5), siblingOrder: "V" };
+    const taskB: Task = { id: "B", name: "Task B", durationWorkMinutes: wm(3), siblingOrder: "V" };
+    const dep: Dependency = { id: "dep1", predId: "A", succId: "B", type: "FS", lagWorkMinutes: wm(0) };
 
     State.addTask(taskA);
     State.addTask(taskB);
@@ -66,24 +78,93 @@ describe("Worker State", () => {
   });
 
   it("should restore state from snapshot", () => {
-    State.addTask({ id: "A", name: "Task A", duration: 5, depth: 0, isSummary: false });
-    State.addTask({ id: "B", name: "Task B", duration: 3, depth: 0, isSummary: false });
+    State.addTask({ id: "A", name: "Task A", durationWorkMinutes: wm(5), siblingOrder: "V" });
+    State.addTask({ id: "B", name: "Task B", durationWorkMinutes: wm(3), siblingOrder: "V" });
 
     const snapshot = State.createSnapshot();
 
     // Mutate state
-    State.addTask({ id: "C", name: "Task C", duration: 2, depth: 0, isSummary: false });
-    State.updateTask("A", { duration: 10 });
+    State.addTask({ id: "C", name: "Task C", durationWorkMinutes: wm(2), siblingOrder: "V" });
+    State.updateTask("A", { durationWorkMinutes: wm(10) });
 
     expect(State.getTasks()).toHaveLength(3);
-    expect(State.findTask("A")?.duration).toBe(10);
+    expect(State.findTask("A")?.durationWorkMinutes).toBe(10);
 
     // Restore
     State.restoreSnapshot(snapshot);
 
     expect(State.getTasks()).toHaveLength(2);
-    expect(State.findTask("A")?.duration).toBe(5);
+    expect(State.findTask("A")?.durationWorkMinutes).toBe(5);
     expect(State.findTask("C")).toBeUndefined();
+  });
+});
+
+describe("Manual Activity ID generation", () => {
+  let resolveAddTaskPayloadForActivityCode: ((task: Task) => Task) | null = null;
+
+  beforeAll(async () => {
+    (globalThis as unknown as { self?: unknown }).self = { postMessage: vi.fn() };
+    const workerModule = await import("../src/worker.js");
+    resolveAddTaskPayloadForActivityCode = workerModule.__test__resolveAddTaskPayloadForActivityCode as (task: Task) => Task;
+  });
+
+  beforeEach(() => {
+    State.clearState();
+  });
+
+  it("generates activityCode for new manual tasks", () => {
+    if (!resolveAddTaskPayloadForActivityCode) throw new Error("worker test helper not initialized");
+
+    const resolved = resolveAddTaskPayloadForActivityCode({
+      id: "manual-1",
+      name: "Manual",
+      durationWorkMinutes: wm(5),
+      siblingOrder: "V",
+    });
+
+    expect(resolved.activityCode).toBe("A1000");
+    expect(resolved.sourceActivityId).toBeUndefined();
+  });
+
+  it("skips collisions across existing activityCode and sourceActivityId", () => {
+    if (!resolveAddTaskPayloadForActivityCode) throw new Error("worker test helper not initialized");
+
+    State.hydrateState({
+      projectStartDate: "2026-01-01",
+      excludeWeekends: true,
+      tasks: [
+        { id: "manual-existing", name: "Manual Existing", durationWorkMinutes: wm(5), siblingOrder: "V", activityCode: "A1000" },
+        { id: "imported-existing", name: "Imported Existing", durationWorkMinutes: wm(5), siblingOrder: "W", sourceActivityId: "A1010" },
+      ],
+      dependencies: [],
+      baselines: {},
+      resources: [],
+      assignments: [],
+    });
+
+    const resolved = resolveAddTaskPayloadForActivityCode({
+      id: "manual-2",
+      name: "Manual 2",
+      durationWorkMinutes: wm(5),
+      siblingOrder: "X",
+    });
+
+    expect(resolved.activityCode).toBe("A1020");
+  });
+
+  it("preserves imported sourceActivityId without assigning manual activityCode", () => {
+    if (!resolveAddTaskPayloadForActivityCode) throw new Error("worker test helper not initialized");
+
+    const resolved = resolveAddTaskPayloadForActivityCode({
+      id: "imported-1",
+      name: "Imported",
+      durationWorkMinutes: wm(5),
+      siblingOrder: "V",
+      sourceActivityId: "P6-100",
+    });
+
+    expect(resolved.sourceActivityId).toBe("P6-100");
+    expect(resolved.activityCode).toBeUndefined();
   });
 });
 
@@ -93,30 +174,30 @@ describe("Validation", () => {
   });
 
   it("should reject empty task names", () => {
-    const task: Task = { id: "task1", name: "", duration: 5, depth: 0, isSummary: false };
+    const task: Task = { id: "task1", name: "", durationWorkMinutes: wm(5), siblingOrder: "V" };
     const error = validateTask(task);
 
     expect(error).toBe("Task name must not be empty");
   });
 
   it("should reject zero or negative duration", () => {
-    const task: Task = { id: "task1", name: "Task", duration: 0, depth: 0, isSummary: false };
+    const task: Task = { id: "task1", name: "Task", durationWorkMinutes: wm(0), siblingOrder: "V" };
     const error = validateTask(task);
 
     expect(error).toBe("Task duration must be greater than 0");
   });
 
   it("should reject self-dependencies", () => {
-    State.addTask({ id: "A", name: "Task A", duration: 5, depth: 0, isSummary: false });
-    const dep: Dependency = { id: "dep1", predId: "A", succId: "A", type: "FS", lag: 0 };
+    State.addTask({ id: "A", name: "Task A", durationWorkMinutes: wm(5), siblingOrder: "V" });
+    const dep: Dependency = { id: "dep1", predId: "A", succId: "A", type: "FS", lagWorkMinutes: wm(0) };
     const error = validateDependency(dep);
 
     expect(error).toBe("Dependency cannot point to itself");
   });
 
   it("should reject dependencies with missing tasks", () => {
-    State.addTask({ id: "A", name: "Task A", duration: 5, depth: 0, isSummary: false });
-    const dep: Dependency = { id: "dep1", predId: "A", succId: "B", type: "FS", lag: 0 };
+    State.addTask({ id: "A", name: "Task A", durationWorkMinutes: wm(5), siblingOrder: "V" });
+    const dep: Dependency = { id: "dep1", predId: "A", succId: "B", type: "FS", lagWorkMinutes: wm(0) };
     const error = validateDependency(dep);
 
     expect(error).toContain("Successor task B does not exist");
@@ -125,47 +206,47 @@ describe("Validation", () => {
 
 describe("Schedule Request Builder", () => {
   it("should build request for single task", () => {
-    const tasks: Task[] = [{ id: "A", name: "Task A", duration: 5, depth: 0, isSummary: false }];
+    const tasks: Task[] = [{ id: "A", name: "Task A", durationWorkMinutes: d(5), siblingOrder: "V" }];
     const dependencies: Dependency[] = [];
 
-    const request = buildScheduleRequest(tasks, dependencies, []);
+    const request = buildScheduleRequest(tasks, dependencies, [], slotTranslator);
 
     expect(request.tasks).toHaveLength(1);
-    expect(request.tasks[0]).toEqual({ id: "A", duration: 5, minEarlyStart: 0, parentId: undefined, isSummary: false });
+    expect(request.tasks[0]).toEqual({ id: "A", durationWorkMinutes: wm(5), minEarlyStartMinutes: wm(0), parentId: undefined, isSummary: false });
     expect(request.dependencies).toHaveLength(0);
   });
 
   it("should build request for simple chain", () => {
     const tasks: Task[] = [
-      { id: "A", name: "Task A", duration: 3, depth: 0, isSummary: false },
-      { id: "B", name: "Task B", duration: 5, depth: 0, isSummary: false },
+      { id: "A", name: "Task A", durationWorkMinutes: d(3), siblingOrder: "V" },
+      { id: "B", name: "Task B", durationWorkMinutes: d(5), siblingOrder: "V" },
     ];
     const dependencies: Dependency[] = [
-      { id: "dep1", predId: "A", succId: "B", type: "FS", lag: 0 },
+      { id: "dep1", predId: "A", succId: "B", type: "FS", lagWorkMinutes: wm(0) },
     ];
 
-    const request = buildScheduleRequest(tasks, dependencies, []);
+    const request = buildScheduleRequest(tasks, dependencies, [], slotTranslator);
 
     expect(request.tasks).toHaveLength(2);
     expect(request.dependencies).toHaveLength(1);
-    expect(request.dependencies[0]).toEqual({ predId: "A", succId: "B", depType: "FS", lag: 0 });
+    expect(request.dependencies[0]).toEqual({ predId: "A", succId: "B", depType: "FS", lagWorkMinutes: wm(0) });
   });
 
   it("should pass all dependency types through", () => {
     const tasks: Task[] = [
-      { id: "A", name: "Task A", duration: 3, depth: 0, isSummary: false },
-      { id: "B", name: "Task B", duration: 5, depth: 0, isSummary: false },
+      { id: "A", name: "Task A", durationWorkMinutes: d(3), siblingOrder: "V" },
+      { id: "B", name: "Task B", durationWorkMinutes: d(5), siblingOrder: "V" },
     ];
     const dependencies: Dependency[] = [
-      { id: "dep1", predId: "A", succId: "B", type: "FS", lag: 0 },
-      { id: "dep2", predId: "A", succId: "B", type: "SS", lag: 2 },
+      { id: "dep1", predId: "A", succId: "B", type: "FS", lagWorkMinutes: wm(0) },
+      { id: "dep2", predId: "A", succId: "B", type: "SS", lagWorkMinutes: d(2) },
     ];
 
-    const request = buildScheduleRequest(tasks, dependencies, []);
+    const request = buildScheduleRequest(tasks, dependencies, [], slotTranslator);
 
     expect(request.dependencies).toHaveLength(2);
-    expect(request.dependencies[0]).toEqual({ predId: "A", succId: "B", depType: "FS", lag: 0 });
-    expect(request.dependencies[1]).toEqual({ predId: "A", succId: "B", depType: "SS", lag: 2 });
+    expect(request.dependencies[0]).toEqual({ predId: "A", succId: "B", depType: "FS", lagWorkMinutes: wm(0) });
+    expect(request.dependencies[1]).toEqual({ predId: "A", succId: "B", depType: "SS", lagWorkMinutes: wm(2) });
   });
 });
 
@@ -174,15 +255,15 @@ describe("Schedule Result Application", () => {
     const response: ScheduleResponse = {
       scheduleVersion: 1,
       results: [
-        { taskId: "A", earlyStart: 0, earlyFinish: 5, lateStart: 0, lateFinish: 5, totalFloat: 0, isCritical: true },
-        { taskId: "B", earlyStart: 5, earlyFinish: 10, lateStart: 5, lateFinish: 10, totalFloat: 0, isCritical: true },
+        { taskId: "A", earlyStartMinutes: wm(0), earlyFinishMinutes: wm(5), lateStartMinutes: wm(0), lateFinishMinutes: wm(5), totalFloatMinutes: wm(0), isCritical: true },
+        { taskId: "B", earlyStartMinutes: wm(5), earlyFinishMinutes: wm(10), lateStartMinutes: wm(5), lateFinishMinutes: wm(10), totalFloatMinutes: wm(0), isCritical: true },
       ],
     };
 
     const resultMap = applyScheduleResult(response);
 
-    expect(resultMap["A"]).toEqual({ earlyStart: 0, earlyFinish: 5, lateStart: 0, lateFinish: 5, totalFloat: 0, isCritical: true });
-    expect(resultMap["B"]).toEqual({ earlyStart: 5, earlyFinish: 10, lateStart: 5, lateFinish: 10, totalFloat: 0, isCritical: true });
+    expect(resultMap["A"]).toEqual({ earlyStartMinutes: wm(0), earlyFinishMinutes: wm(5), lateStartMinutes: wm(0), lateFinishMinutes: wm(5), totalFloatMinutes: wm(0), isCritical: true });
+    expect(resultMap["B"]).toEqual({ earlyStartMinutes: wm(5), earlyFinishMinutes: wm(10), lateStartMinutes: wm(5), lateFinishMinutes: wm(10), totalFloatMinutes: wm(0), isCritical: true });
   });
 
   it("should handle empty results", () => {
@@ -227,18 +308,18 @@ describe("Atomic Mutation and Rollback", () => {
 
   it("should preserve valid state when dependency creates cycle", () => {
     // Setup: valid chain A → B
-    State.addTask({ id: "A", name: "Task A", duration: 5, depth: 0, isSummary: false });
-    State.addTask({ id: "B", name: "Task B", duration: 3, depth: 0, isSummary: false });
-    State.addDependency({ id: "dep1", predId: "A", succId: "B", type: "FS", lag: 0 });
+    State.addTask({ id: "A", name: "Task A", durationWorkMinutes: wm(5), siblingOrder: "V" });
+    State.addTask({ id: "B", name: "Task B", durationWorkMinutes: wm(3), siblingOrder: "V" });
+    State.addDependency({ id: "dep1", predId: "A", succId: "B", type: "FS", lagWorkMinutes: wm(0) });
 
     const validSnapshot = State.createSnapshot();
 
     // Simulate attempted mutation that would create cycle: B → A
     const cycleSnapshot = State.createSnapshot();
-    State.addDependency({ id: "dep2", predId: "B", succId: "A", type: "FS", lag: 0 });
+    State.addDependency({ id: "dep2", predId: "B", succId: "A", type: "FS", lagWorkMinutes: wm(0) });
 
     // Build request and run scheduling
-    const request = buildScheduleRequest(State.getTasks(), State.getDependencies(), []);
+    const request = buildScheduleRequest(State.getTasks(), State.getDependencies(), [], slotTranslator);
     
     // This would return CycleDetected error in real WASM
     // For this test, we simulate rollback behavior
@@ -263,19 +344,19 @@ describe("Atomic Mutation and Rollback", () => {
 
   it("should commit valid dependency mutation", () => {
     // Setup tasks
-    State.addTask({ id: "A", name: "Task A", duration: 5, depth: 0, isSummary: false });
-    State.addTask({ id: "B", name: "Task B", duration: 3, depth: 0, isSummary: false });
-    State.addTask({ id: "C", name: "Task C", duration: 2, depth: 0, isSummary: false });
+    State.addTask({ id: "A", name: "Task A", durationWorkMinutes: wm(5), siblingOrder: "V" });
+    State.addTask({ id: "B", name: "Task B", durationWorkMinutes: wm(3), siblingOrder: "V" });
+    State.addTask({ id: "C", name: "Task C", durationWorkMinutes: wm(2), siblingOrder: "V" });
 
     // Add valid chain: A → B
-    State.addDependency({ id: "dep1", predId: "A", succId: "B", type: "FS", lag: 0 });
+    State.addDependency({ id: "dep1", predId: "A", succId: "B", type: "FS", lagWorkMinutes: wm(0) });
 
     const snapshot = State.createSnapshot();
 
     // Add another valid dependency: B → C (extends chain)
-    State.addDependency({ id: "dep2", predId: "B", succId: "C", type: "FS", lag: 0 });
+    State.addDependency({ id: "dep2", predId: "B", succId: "C", type: "FS", lagWorkMinutes: wm(0) });
 
-    const request = buildScheduleRequest(State.getTasks(), State.getDependencies(), []);
+    const request = buildScheduleRequest(State.getTasks(), State.getDependencies(), [], slotTranslator);
 
     // This should succeed (no cycle)
     const deps = State.getDependencies();
@@ -298,19 +379,19 @@ describe("Atomic Mutation and Rollback", () => {
   });
 
   it("should rollback duration update that breaks scheduling", () => {
-    State.addTask({ id: "A", name: "Task A", duration: 5, depth: 0, isSummary: false });
+    State.addTask({ id: "A", name: "Task A", durationWorkMinutes: wm(5), siblingOrder: "V" });
     
     const snapshot = State.createSnapshot();
 
     // Attempt to set invalid duration (would fail validation earlier, but testing rollback)
     // In real scenario, this could be a duration that causes numeric overflow
-    State.updateTask("A", { duration: 999999 });
+    State.updateTask("A", { durationWorkMinutes: wm(999999) });
 
     const taskA = State.findTask("A");
-    expect(taskA?.duration).toBe(999999);
+    expect(taskA?.durationWorkMinutes).toBe(999999);
 
     // Simulate scheduling failure detection
-    const schedulingFailed = taskA!.duration > 100000; // Arbitrary large number
+    const schedulingFailed = taskA!.durationWorkMinutes > 100000; // Arbitrary large number
 
     if (schedulingFailed) {
       State.restoreSnapshot(snapshot);
@@ -318,19 +399,19 @@ describe("Atomic Mutation and Rollback", () => {
 
     // Verify rollback
     const restoredTask = State.findTask("A");
-    expect(restoredTask?.duration).toBe(5);
+    expect(restoredTask?.durationWorkMinutes).toBe(5);
   });
 
   it("should handle rollback of dependency to missing task", () => {
     // Edge case: dependency added before validation (shouldn't happen with current validation)
-    State.addTask({ id: "A", name: "Task A", duration: 5, depth: 0, isSummary: false });
+    State.addTask({ id: "A", name: "Task A", durationWorkMinutes: wm(5), siblingOrder: "V" });
 
     const snapshot = State.createSnapshot();
 
     // Malformed state: dependency to non-existent task
-    State.addDependency({ id: "dep1", predId: "A", succId: "NonExistent", type: "FS", lag: 0 });
+    State.addDependency({ id: "dep1", predId: "A", succId: "NonExistent", type: "FS", lagWorkMinutes: wm(0) });
 
-    const request = buildScheduleRequest(State.getTasks(), State.getDependencies(), []);
+    const request = buildScheduleRequest(State.getTasks(), State.getDependencies(), [], slotTranslator);
 
     // This would fail scheduling (TaskNotFound error from kernel)
     const hasInvalidDep = State.getDependencies().some(
@@ -353,9 +434,9 @@ describe("Delete Operations", () => {
   });
 
   it("should delete a single dependency by id", () => {
-    State.addTask({ id: "A", name: "Task A", duration: 5, depth: 0, isSummary: false });
-    State.addTask({ id: "B", name: "Task B", duration: 3, depth: 0, isSummary: false });
-    State.addDependency({ id: "dep1", predId: "A", succId: "B", type: "FS", lag: 0 });
+    State.addTask({ id: "A", name: "Task A", durationWorkMinutes: wm(5), siblingOrder: "V" });
+    State.addTask({ id: "B", name: "Task B", durationWorkMinutes: wm(3), siblingOrder: "V" });
+    State.addDependency({ id: "dep1", predId: "A", succId: "B", type: "FS", lagWorkMinutes: wm(0) });
 
     expect(State.getDependencies()).toHaveLength(1);
 
@@ -370,12 +451,12 @@ describe("Delete Operations", () => {
   });
 
   it("should delete a task and cascade-remove incident dependencies", () => {
-    State.addTask({ id: "A", name: "Task A", duration: 5, depth: 0, isSummary: false });
-    State.addTask({ id: "B", name: "Task B", duration: 3, depth: 0, isSummary: false });
-    State.addTask({ id: "C", name: "Task C", duration: 2, depth: 0, isSummary: false });
-    State.addDependency({ id: "dep1", predId: "A", succId: "B", type: "FS", lag: 0 });
-    State.addDependency({ id: "dep2", predId: "B", succId: "C", type: "FS", lag: 0 });
-    State.addDependency({ id: "dep3", predId: "A", succId: "C", type: "FS", lag: 0 });
+    State.addTask({ id: "A", name: "Task A", durationWorkMinutes: wm(5), siblingOrder: "V" });
+    State.addTask({ id: "B", name: "Task B", durationWorkMinutes: wm(3), siblingOrder: "V" });
+    State.addTask({ id: "C", name: "Task C", durationWorkMinutes: wm(2), siblingOrder: "V" });
+    State.addDependency({ id: "dep1", predId: "A", succId: "B", type: "FS", lagWorkMinutes: wm(0) });
+    State.addDependency({ id: "dep2", predId: "B", succId: "C", type: "FS", lagWorkMinutes: wm(0) });
+    State.addDependency({ id: "dep3", predId: "A", succId: "C", type: "FS", lagWorkMinutes: wm(0) });
 
     // Delete B — should cascade dep1 (A→B) and dep2 (B→C), keep dep3 (A→C)
     const result = State.deleteTask("B");
@@ -391,11 +472,11 @@ describe("Delete Operations", () => {
   });
 
   it("should leave a valid graph after cascade deletion", () => {
-    State.addTask({ id: "A", name: "Task A", duration: 5, depth: 0, isSummary: false });
-    State.addTask({ id: "B", name: "Task B", duration: 3, depth: 0, isSummary: false });
-    State.addTask({ id: "C", name: "Task C", duration: 2, depth: 0, isSummary: false });
-    State.addDependency({ id: "dep1", predId: "A", succId: "B", type: "FS", lag: 0 });
-    State.addDependency({ id: "dep2", predId: "B", succId: "C", type: "FS", lag: 0 });
+    State.addTask({ id: "A", name: "Task A", durationWorkMinutes: wm(5), siblingOrder: "V" });
+    State.addTask({ id: "B", name: "Task B", durationWorkMinutes: wm(3), siblingOrder: "V" });
+    State.addTask({ id: "C", name: "Task C", durationWorkMinutes: wm(2), siblingOrder: "V" });
+    State.addDependency({ id: "dep1", predId: "A", succId: "B", type: "FS", lagWorkMinutes: wm(0) });
+    State.addDependency({ id: "dep2", predId: "B", succId: "C", type: "FS", lagWorkMinutes: wm(0) });
 
     State.deleteTask("B");
 
@@ -408,7 +489,7 @@ describe("Delete Operations", () => {
   });
 
   it("should find dependency by id", () => {
-    State.addDependency({ id: "dep1", predId: "A", succId: "B", type: "FS", lag: 0 });
+    State.addDependency({ id: "dep1", predId: "A", succId: "B", type: "FS", lagWorkMinutes: wm(0) });
     expect(State.findDependencyById("dep1")).toBeDefined();
     expect(State.findDependencyById("dep1")?.predId).toBe("A");
     expect(State.findDependencyById("nope")).toBeUndefined();
@@ -421,21 +502,21 @@ describe("Inline Edit State Preservation", () => {
   });
 
   it("should update name only and preserve duration and id", () => {
-    State.addTask({ id: "A", name: "Original", duration: 7, depth: 0, isSummary: false });
+    State.addTask({ id: "A", name: "Original", durationWorkMinutes: wm(7), siblingOrder: "V" });
     State.updateTask("A", { name: "Renamed" });
 
     const task = State.findTask("A");
     expect(task?.name).toBe("Renamed");
-    expect(task?.duration).toBe(7);
+    expect(task?.durationWorkMinutes).toBe(7);
     expect(task?.id).toBe("A");
   });
 
   it("should update duration only and preserve name and id", () => {
-    State.addTask({ id: "A", name: "Keep Me", duration: 5, depth: 0, isSummary: false });
-    State.updateTask("A", { duration: 12 });
+    State.addTask({ id: "A", name: "Keep Me", durationWorkMinutes: wm(5), siblingOrder: "V" });
+    State.updateTask("A", { durationWorkMinutes: wm(12) });
 
     const task = State.findTask("A");
-    expect(task?.duration).toBe(12);
+    expect(task?.durationWorkMinutes).toBe(12);
     expect(task?.name).toBe("Keep Me");
     expect(task?.id).toBe("A");
   });
@@ -451,12 +532,12 @@ describe("Inline Edit State Preservation", () => {
   });
 
   it("should reject zero duration via validation", () => {
-    const error = validateTaskUpdate("test-task", { duration: 0 });
+    const error = validateTaskUpdate("test-task", { durationWorkMinutes: wm(0) });
     expect(error).toBe("Task duration must be greater than 0");
   });
 
   it("should reject negative duration via validation", () => {
-    const error = validateTaskUpdate("test-task", { duration: -3 });
+    const error = validateTaskUpdate("test-task", { durationWorkMinutes: wm(-3) });
     expect(error).toBe("Task duration must be greater than 0");
   });
 
@@ -466,7 +547,7 @@ describe("Inline Edit State Preservation", () => {
   });
 
   it("should accept valid duration-only update via validation", () => {
-    const error = validateTaskUpdate("test-task", { duration: 10 });
+    const error = validateTaskUpdate("test-task", { durationWorkMinutes: wm(10) });
     expect(error).toBeNull();
   });
 });
@@ -477,50 +558,50 @@ describe("minEarlyStart constraint", () => {
   });
 
   it("should reject negative minEarlyStart via validation", () => {
-    expect(validateTaskUpdate("test-task", { minEarlyStart: -1 })).toBe("minEarlyStart must not be negative");
+    expect(validateTaskUpdate("test-task", { minEarlyStartMinutes: wm(-1) })).toBe("minEarlyStart must not be negative");
   });
 
   it("should accept zero minEarlyStart via validation", () => {
-    expect(validateTaskUpdate("test-task", { minEarlyStart: 0 })).toBeNull();
+    expect(validateTaskUpdate("test-task", { minEarlyStartMinutes: wm(0) })).toBeNull();
   });
 
   it("should accept positive minEarlyStart via validation", () => {
-    expect(validateTaskUpdate("test-task", { minEarlyStart: 10 })).toBeNull();
+    expect(validateTaskUpdate("test-task", { minEarlyStartMinutes: wm(10) })).toBeNull();
   });
 
   it("should persist minEarlyStart on update", () => {
-    State.addTask({ id: "t1", name: "Task1", duration: 5, depth: 0, isSummary: false });
-    State.updateTask("t1", { minEarlyStart: 7 });
+    State.addTask({ id: "t1", name: "Task1", durationWorkMinutes: wm(5), siblingOrder: "V" });
+    State.updateTask("t1", { minEarlyStartMinutes: wm(7) });
     const task = State.findTask("t1");
-    expect(task?.minEarlyStart).toBe(7);
+    expect(task?.minEarlyStartMinutes).toBe(7);
   });
 
   it("should preserve minEarlyStart on partial update", () => {
-    State.addTask({ id: "t1", name: "Task1", duration: 5, minEarlyStart: 3, depth: 0, isSummary: false });
+    State.addTask({ id: "t1", name: "Task1", durationWorkMinutes: wm(5), minEarlyStartMinutes: wm(3), siblingOrder: "V" });
     State.updateTask("t1", { name: "Renamed" });
     const task = State.findTask("t1");
-    expect(task?.minEarlyStart).toBe(3);
+    expect(task?.minEarlyStartMinutes).toBe(3);
     expect(task?.name).toBe("Renamed");
   });
 
   it("should map minEarlyStart in buildScheduleRequest (defaults 0)", () => {
     const tasks: Task[] = [
-      { id: "a", name: "A", duration: 5, depth: 0, isSummary: false },
-      { id: "b", name: "B", duration: 3, minEarlyStart: 10, depth: 0, isSummary: false },
+      { id: "a", name: "A", durationWorkMinutes: d(5), siblingOrder: "V" },
+      { id: "b", name: "B", durationWorkMinutes: d(3), minEarlyStartMinutes: d(10), siblingOrder: "V" },
     ];
     const deps: Dependency[] = [];
-    const req = buildScheduleRequest(tasks, deps, []);
-    expect(req.tasks[0].minEarlyStart).toBe(0);
-    expect(req.tasks[1].minEarlyStart).toBe(10);
+    const req = buildScheduleRequest(tasks, deps, [], slotTranslator);
+    expect(req.tasks[0].minEarlyStartMinutes).toBe(0);
+    expect(req.tasks[1].minEarlyStartMinutes).toBe(10);
   });
 
   it("should snapshot and restore minEarlyStart", () => {
-    State.addTask({ id: "t1", name: "T1", duration: 5, minEarlyStart: 4, depth: 0, isSummary: false });
+    State.addTask({ id: "t1", name: "T1", durationWorkMinutes: wm(5), minEarlyStartMinutes: wm(4), siblingOrder: "V" });
     const snapshot = State.createSnapshot();
-    State.updateTask("t1", { minEarlyStart: 99 });
-    expect(State.findTask("t1")?.minEarlyStart).toBe(99);
+    State.updateTask("t1", { minEarlyStartMinutes: wm(99) });
+    expect(State.findTask("t1")?.minEarlyStartMinutes).toBe(99);
     State.restoreSnapshot(snapshot);
-    expect(State.findTask("t1")?.minEarlyStart).toBe(4);
+    expect(State.findTask("t1")?.minEarlyStartMinutes).toBe(4);
   });
 });
 
@@ -529,34 +610,32 @@ describe("Hierarchy", () => {
     State.clearState();
   });
 
-  it("should compute depth and isSummary", () => {
-    State.addTask({ id: "S", name: "Summary", duration: 0, depth: 0, isSummary: false });
-    State.addTask({ id: "A", name: "Child A", duration: 5, parentId: "S", depth: 0, isSummary: false });
-    State.addTask({ id: "B", name: "Child B", duration: 3, parentId: "S", depth: 0, isSummary: false });
+  it("should compute depth and isSummary via derived helpers", () => {
+    State.addTask({ id: "S", name: "Summary", durationWorkMinutes: wm(0), siblingOrder: "V" });
+    State.addTask({ id: "A", name: "Child A", durationWorkMinutes: wm(5), parentId: "S", siblingOrder: "V" });
+    State.addTask({ id: "B", name: "Child B", durationWorkMinutes: wm(3), parentId: "S", siblingOrder: "V" });
     State.computeHierarchy();
-    const s = State.findTask("S")!;
-    const a = State.findTask("A")!;
-    expect(s.isSummary).toBe(true);
-    expect(s.depth).toBe(0);
-    expect(a.isSummary).toBe(false);
-    expect(a.depth).toBe(1);
+    expect(State.isTaskSummary("S")).toBe(true);
+    expect(State.getTaskDepth("S")).toBe(0);
+    expect(State.isTaskSummary("A")).toBe(false);
+    expect(State.getTaskDepth("A")).toBe(1);
   });
 
   it("should compute nested depth", () => {
-    State.addTask({ id: "OS", name: "Outer", duration: 0, depth: 0, isSummary: false });
-    State.addTask({ id: "IS", name: "Inner", duration: 0, parentId: "OS", depth: 0, isSummary: false });
-    State.addTask({ id: "A", name: "Leaf", duration: 3, parentId: "IS", depth: 0, isSummary: false });
+    State.addTask({ id: "OS", name: "Outer", durationWorkMinutes: wm(0), siblingOrder: "V" });
+    State.addTask({ id: "IS", name: "Inner", durationWorkMinutes: wm(0), parentId: "OS", siblingOrder: "V" });
+    State.addTask({ id: "A", name: "Leaf", durationWorkMinutes: wm(3), parentId: "IS", siblingOrder: "V" });
     State.computeHierarchy();
-    expect(State.findTask("OS")!.depth).toBe(0);
-    expect(State.findTask("IS")!.depth).toBe(1);
-    expect(State.findTask("A")!.depth).toBe(2);
+    expect(State.getTaskDepth("OS")).toBe(0);
+    expect(State.getTaskDepth("IS")).toBe(1);
+    expect(State.getTaskDepth("A")).toBe(2);
   });
 
   it("should delete subtree recursively", () => {
-    State.addTask({ id: "S", name: "Summary", duration: 0, depth: 0, isSummary: false });
-    State.addTask({ id: "A", name: "Child", duration: 5, parentId: "S", depth: 0, isSummary: false });
-    State.addTask({ id: "X", name: "Standalone", duration: 3, depth: 0, isSummary: false });
-    State.addDependency({ id: "d1", predId: "A", succId: "X", type: "FS", lag: 0 });
+    State.addTask({ id: "S", name: "Summary", durationWorkMinutes: wm(0), siblingOrder: "V" });
+    State.addTask({ id: "A", name: "Child", durationWorkMinutes: wm(5), parentId: "S", siblingOrder: "V" });
+    State.addTask({ id: "X", name: "Standalone", durationWorkMinutes: wm(3), siblingOrder: "V" });
+    State.addDependency({ id: "d1", predId: "A", succId: "X", type: "FS", lagWorkMinutes: wm(0) });
     State.deleteTaskRecursive("S");
     expect(State.getTasks()).toHaveLength(1);
     expect(State.findTask("X")).toBeDefined();
@@ -564,21 +643,21 @@ describe("Hierarchy", () => {
   });
 
   it("should reject self-parent via validation", () => {
-    State.addTask({ id: "A", name: "Task A", duration: 5, depth: 0, isSummary: false });
+    State.addTask({ id: "A", name: "Task A", durationWorkMinutes: wm(5), siblingOrder: "V" });
     const error = validateTaskUpdate("A", { parentId: "A" });
     expect(error).toBe("Task cannot be its own parent");
   });
 
   it("should reject hierarchy cycle via validation", () => {
-    State.addTask({ id: "A", name: "Task A", duration: 5, parentId: "B", depth: 0, isSummary: false });
-    State.addTask({ id: "B", name: "Task B", duration: 3, depth: 0, isSummary: false });
+    State.addTask({ id: "A", name: "Task A", durationWorkMinutes: wm(5), parentId: "B", siblingOrder: "V" });
+    State.addTask({ id: "B", name: "Task B", durationWorkMinutes: wm(3), siblingOrder: "V" });
     const error = validateTaskUpdate("B", { parentId: "A" });
     expect(error).toBe("Setting this parent would create a hierarchy cycle");
   });
 
   it("should update parentId", () => {
-    State.addTask({ id: "S", name: "Summary", duration: 0, depth: 0, isSummary: false });
-    State.addTask({ id: "A", name: "Task A", duration: 5, depth: 0, isSummary: false });
+    State.addTask({ id: "S", name: "Summary", durationWorkMinutes: wm(0), siblingOrder: "V" });
+    State.addTask({ id: "A", name: "Task A", durationWorkMinutes: wm(5), siblingOrder: "V" });
     State.updateTask("A", { parentId: "S" });
     expect(State.findTask("A")!.parentId).toBe("S");
     State.updateTask("A", { parentId: null });
@@ -587,10 +666,10 @@ describe("Hierarchy", () => {
 
   it("should map parentId and isSummary in buildScheduleRequest", () => {
     const tasks: Task[] = [
-      { id: "S", name: "Summary", duration: 0, depth: 0, isSummary: true },
-      { id: "A", name: "Child", duration: 5, parentId: "S", depth: 1, isSummary: false },
+      { id: "S", name: "Summary", durationWorkMinutes: wm(0), siblingOrder: "V" },
+      { id: "A", name: "Child", durationWorkMinutes: wm(5), parentId: "S", siblingOrder: "V" },
     ];
-    const req = buildScheduleRequest(tasks, [], []);
+    const req = buildScheduleRequest(tasks, [], [], slotTranslator);
     expect(req.tasks[0].isSummary).toBe(true);
     expect(req.tasks[1].parentId).toBe("S");
     expect(req.tasks[1].isSummary).toBe(false);
@@ -603,69 +682,69 @@ describe("Summary Rollup", () => {
   });
 
   it("deep stretch: increasing leaf duration updates both ancestors", () => {
-    State.addTask({ id: "GP", name: "Grandparent", duration: 1, depth: 0, isSummary: false });
-    State.addTask({ id: "P", name: "Parent", duration: 1, parentId: "GP", depth: 0, isSummary: false });
-    State.addTask({ id: "L", name: "Leaf", duration: 5, parentId: "P", depth: 0, isSummary: false });
+    State.addTask({ id: "GP", name: "Grandparent", durationWorkMinutes: wm(1), siblingOrder: "V" });
+    State.addTask({ id: "P", name: "Parent", durationWorkMinutes: wm(1), parentId: "GP", siblingOrder: "V" });
+    State.addTask({ id: "L", name: "Leaf", durationWorkMinutes: wm(5), parentId: "P", siblingOrder: "V" });
     State.computeHierarchy();
 
     const sched: ScheduleResultMap = {
-      "L": { earlyStart: 0, earlyFinish: 5, lateStart: 0, lateFinish: 5, totalFloat: 0, isCritical: true },
+      "L": { earlyStartMinutes: wm(0), earlyFinishMinutes: wm(5), lateStartMinutes: wm(0), lateFinishMinutes: wm(5), totalFloatMinutes: wm(0), isCritical: true },
     };
     rollupSummarySchedules(State.getTasks(), sched);
 
     expect(sched["P"]).toBeDefined();
-    expect(sched["P"].earlyStart).toBe(0);
-    expect(sched["P"].earlyFinish).toBe(5);
+    expect(sched["P"].earlyStartMinutes).toBe(0);
+    expect(sched["P"].earlyFinishMinutes).toBe(5);
     expect(sched["GP"]).toBeDefined();
-    expect(sched["GP"].earlyStart).toBe(0);
-    expect(sched["GP"].earlyFinish).toBe(5);
+    expect(sched["GP"].earlyStartMinutes).toBe(0);
+    expect(sched["GP"].earlyFinishMinutes).toBe(5);
 
     // Simulate increased leaf duration
     const sched2: ScheduleResultMap = {
-      "L": { earlyStart: 0, earlyFinish: 10, lateStart: 0, lateFinish: 10, totalFloat: 0, isCritical: true },
+      "L": { earlyStartMinutes: wm(0), earlyFinishMinutes: wm(10), lateStartMinutes: wm(0), lateFinishMinutes: wm(10), totalFloatMinutes: wm(0), isCritical: true },
     };
     rollupSummarySchedules(State.getTasks(), sched2);
 
-    expect(sched2["P"].earlyFinish).toBe(10);
-    expect(sched2["GP"].earlyFinish).toBe(10);
+    expect(sched2["P"].earlyFinishMinutes).toBe(10);
+    expect(sched2["GP"].earlyFinishMinutes).toBe(10);
   });
 
   it("old/new parent transfer: reparent shrinks old and expands new", () => {
-    State.addTask({ id: "X", name: "Old Parent", duration: 1, depth: 0, isSummary: false });
-    State.addTask({ id: "Y", name: "New Parent", duration: 1, depth: 0, isSummary: false });
-    State.addTask({ id: "A", name: "Big Child", duration: 5, parentId: "X", depth: 0, isSummary: false });
-    State.addTask({ id: "B", name: "Small Child", duration: 3, parentId: "X", depth: 0, isSummary: false });
-    State.addTask({ id: "C", name: "Tiny Child", duration: 2, parentId: "Y", depth: 0, isSummary: false });
+    State.addTask({ id: "X", name: "Old Parent", durationWorkMinutes: wm(1), siblingOrder: "V" });
+    State.addTask({ id: "Y", name: "New Parent", durationWorkMinutes: wm(1), siblingOrder: "V" });
+    State.addTask({ id: "A", name: "Big Child", durationWorkMinutes: wm(5), parentId: "X", siblingOrder: "V" });
+    State.addTask({ id: "B", name: "Small Child", durationWorkMinutes: wm(3), parentId: "X", siblingOrder: "V" });
+    State.addTask({ id: "C", name: "Tiny Child", durationWorkMinutes: wm(2), parentId: "Y", siblingOrder: "V" });
     State.computeHierarchy();
 
     const sched1: ScheduleResultMap = {
-      "A": { earlyStart: 0, earlyFinish: 5, lateStart: 0, lateFinish: 5, totalFloat: 0, isCritical: true },
-      "B": { earlyStart: 0, earlyFinish: 3, lateStart: 2, lateFinish: 5, totalFloat: 2, isCritical: false },
-      "C": { earlyStart: 0, earlyFinish: 2, lateStart: 0, lateFinish: 2, totalFloat: 0, isCritical: true },
+      "A": { earlyStartMinutes: wm(0), earlyFinishMinutes: wm(5), lateStartMinutes: wm(0), lateFinishMinutes: wm(5), totalFloatMinutes: wm(0), isCritical: true },
+      "B": { earlyStartMinutes: wm(0), earlyFinishMinutes: wm(3), lateStartMinutes: wm(2), lateFinishMinutes: wm(5), totalFloatMinutes: wm(2), isCritical: false },
+      "C": { earlyStartMinutes: wm(0), earlyFinishMinutes: wm(2), lateStartMinutes: wm(0), lateFinishMinutes: wm(2), totalFloatMinutes: wm(0), isCritical: true },
     };
     rollupSummarySchedules(State.getTasks(), sched1);
 
-    expect(sched1["X"].earlyFinish).toBe(5);
-    expect(sched1["Y"].earlyFinish).toBe(2);
+    expect(sched1["X"].earlyFinishMinutes).toBe(5);
+    expect(sched1["Y"].earlyFinishMinutes).toBe(2);
 
     // Move A from X to Y
     State.updateTask("A", { parentId: "Y" });
     State.computeHierarchy();
 
     const sched2: ScheduleResultMap = {
-      "A": { earlyStart: 0, earlyFinish: 5, lateStart: 0, lateFinish: 5, totalFloat: 0, isCritical: true },
-      "B": { earlyStart: 0, earlyFinish: 3, lateStart: 2, lateFinish: 5, totalFloat: 2, isCritical: false },
-      "C": { earlyStart: 0, earlyFinish: 2, lateStart: 0, lateFinish: 2, totalFloat: 0, isCritical: true },
+      "A": { earlyStartMinutes: wm(0), earlyFinishMinutes: wm(5), lateStartMinutes: wm(0), lateFinishMinutes: wm(5), totalFloatMinutes: wm(0), isCritical: true },
+      "B": { earlyStartMinutes: wm(0), earlyFinishMinutes: wm(3), lateStartMinutes: wm(2), lateFinishMinutes: wm(5), totalFloatMinutes: wm(2), isCritical: false },
+      "C": { earlyStartMinutes: wm(0), earlyFinishMinutes: wm(2), lateStartMinutes: wm(0), lateFinishMinutes: wm(2), totalFloatMinutes: wm(0), isCritical: true },
     };
     rollupSummarySchedules(State.getTasks(), sched2);
 
-    expect(sched2["X"].earlyFinish).toBe(3);
-    expect(sched2["Y"].earlyFinish).toBe(5);
+    expect(sched2["X"].earlyFinishMinutes).toBe(3);
+    expect(sched2["Y"].earlyFinishMinutes).toBe(5);
   });
 
   it("blanking: summary with no valid scheduled children has no schedule entry", () => {
-    State.addTask({ id: "S", name: "Summary", duration: 1, depth: 0, isSummary: false });
-    State.addTask({ id: "A", name: "Child", duration: 5, parentId: "S", depth: 0, isSummary: false });
+    State.addTask({ id: "S", name: "Summary", durationWorkMinutes: wm(1), siblingOrder: "V" });
+    State.addTask({ id: "A", name: "Child", durationWorkMinutes: wm(5), parentId: "S", siblingOrder: "V" });
     State.computeHierarchy();
 
     // No schedule entries for children → summary blanked
@@ -676,71 +755,71 @@ describe("Summary Rollup", () => {
   });
 
   it("guard: summary task strips duration and minEarlyStart from updates", () => {
-    State.addTask({ id: "S", name: "Summary", duration: 1, depth: 0, isSummary: false });
-    State.addTask({ id: "A", name: "Child", duration: 5, parentId: "S", depth: 0, isSummary: false });
+    State.addTask({ id: "S", name: "Summary", durationWorkMinutes: wm(1), siblingOrder: "V" });
+    State.addTask({ id: "A", name: "Child", durationWorkMinutes: wm(5), parentId: "S", siblingOrder: "V" });
     State.computeHierarchy();
 
-    expect(State.findTask("S")!.isSummary).toBe(true);
+    expect(State.isTaskSummary("S")).toBe(true);
 
     // Simulate worker guard: strip physics fields before applying
-    const updates: { duration?: number; minEarlyStart?: number; name?: string } = {
-      duration: 99,
-      minEarlyStart: 10,
+    const updates: { durationWorkMinutes?: WorkMinutes; minEarlyStartMinutes?: WorkMinutes; name?: string } = {
+      durationWorkMinutes: wm(99),
+      minEarlyStartMinutes: wm(10),
       name: "Renamed",
     };
-    if (State.findTask("S")!.isSummary) {
-      delete updates.duration;
-      delete updates.minEarlyStart;
+    if (State.isTaskSummary("S")) {
+      delete updates.durationWorkMinutes;
+      delete updates.minEarlyStartMinutes;
     }
     State.updateTask("S", updates);
 
-    expect(State.findTask("S")!.duration).toBe(1); // unchanged
-    expect(State.findTask("S")!.minEarlyStart).toBeUndefined(); // unchanged
+    expect(State.findTask("S")!.durationWorkMinutes).toBe(1); // unchanged
+    expect(State.findTask("S")!.minEarlyStartMinutes).toBeUndefined(); // unchanged
     expect(State.findTask("S")!.name).toBe("Renamed"); // name changed
   });
 
   it("mixed valid/invalid children: summary ignores invalid children", () => {
-    State.addTask({ id: "S", name: "Summary", duration: 1, depth: 0, isSummary: false });
-    State.addTask({ id: "A", name: "Valid", duration: 5, parentId: "S", depth: 0, isSummary: false });
-    State.addTask({ id: "B", name: "Invalid", duration: 3, parentId: "S", depth: 0, isSummary: false });
+    State.addTask({ id: "S", name: "Summary", durationWorkMinutes: wm(1), siblingOrder: "V" });
+    State.addTask({ id: "A", name: "Valid", durationWorkMinutes: wm(5), parentId: "S", siblingOrder: "V" });
+    State.addTask({ id: "B", name: "Invalid", durationWorkMinutes: wm(3), parentId: "S", siblingOrder: "V" });
     State.computeHierarchy();
 
     // Only A has valid schedule, B is unscheduled
     const sched: ScheduleResultMap = {
-      "A": { earlyStart: 2, earlyFinish: 7, lateStart: 2, lateFinish: 7, totalFloat: 0, isCritical: true },
+      "A": { earlyStartMinutes: wm(2), earlyFinishMinutes: wm(7), lateStartMinutes: wm(2), lateFinishMinutes: wm(7), totalFloatMinutes: wm(0), isCritical: true },
     };
     rollupSummarySchedules(State.getTasks(), sched);
 
     expect(sched["S"]).toBeDefined();
-    expect(sched["S"].earlyStart).toBe(2);
-    expect(sched["S"].earlyFinish).toBe(7);
+    expect(sched["S"].earlyStartMinutes).toBe(2);
+    expect(sched["S"].earlyFinishMinutes).toBe(7);
   });
 
-  it("empty summary with isSummary=false after computeHierarchy is not processed", () => {
-    State.addTask({ id: "S", name: "Lone Task", duration: 5, depth: 0, isSummary: false });
+  it("leaf task without children is not processed as summary", () => {
+    State.addTask({ id: "S", name: "Lone Task", durationWorkMinutes: wm(5), siblingOrder: "V" });
     State.computeHierarchy();
 
-    expect(State.findTask("S")!.isSummary).toBe(false);
+    expect(State.isTaskSummary("S")).toBe(false);
 
     // Rollup should not touch non-summary tasks
     const sched: ScheduleResultMap = {
-      "S": { earlyStart: 0, earlyFinish: 5, lateStart: 0, lateFinish: 5, totalFloat: 0, isCritical: true },
+      "S": { earlyStartMinutes: wm(0), earlyFinishMinutes: wm(5), lateStartMinutes: wm(0), lateFinishMinutes: wm(5), totalFloatMinutes: wm(0), isCritical: true },
     };
     rollupSummarySchedules(State.getTasks(), sched);
 
     // Leaf task schedule is untouched
-    expect(sched["S"].earlyStart).toBe(0);
-    expect(sched["S"].earlyFinish).toBe(5);
+    expect(sched["S"].earlyStartMinutes).toBe(0);
+    expect(sched["S"].earlyFinishMinutes).toBe(5);
   });
 
   it("drawGantt receives no schedule for empty summary (no ghost bracket)", () => {
-    State.addTask({ id: "S", name: "Summary", duration: 1, depth: 0, isSummary: false });
-    State.addTask({ id: "A", name: "Child", duration: 5, parentId: "S", depth: 0, isSummary: false });
+    State.addTask({ id: "S", name: "Summary", durationWorkMinutes: wm(1), siblingOrder: "V" });
+    State.addTask({ id: "A", name: "Child", durationWorkMinutes: wm(5), parentId: "S", siblingOrder: "V" });
     State.computeHierarchy();
 
     // Kernel returned a stale entry for summary — rollup should overwrite
     const sched: ScheduleResultMap = {
-      "S": { earlyStart: 0, earlyFinish: 1, lateStart: 0, lateFinish: 1, totalFloat: 0, isCritical: false },
+      "S": { earlyStartMinutes: wm(0), earlyFinishMinutes: wm(1), lateStartMinutes: wm(0), lateFinishMinutes: wm(1), totalFloatMinutes: wm(0), isCritical: false },
       // Child has no valid schedule
     };
     rollupSummarySchedules(State.getTasks(), sched);
@@ -851,10 +930,10 @@ describe("Calendar — advanceByWorkingDays", () => {
 describe("Calendar — buildScheduleRequest passes nonWorkingDays", () => {
   it("includes nonWorkingDays in request", () => {
     const tasks: Task[] = [
-      { id: "A", name: "A", duration: 3, depth: 0, isSummary: false },
+      { id: "A", name: "A", durationWorkMinutes: wm(3), siblingOrder: "V" },
     ];
     const blocked = [5, 6, 12, 13];
-    const req = buildScheduleRequest(tasks, [], blocked);
+    const req = buildScheduleRequest(tasks, [], blocked, slotTranslator);
     expect(req.nonWorkingDays).toEqual([5, 6, 12, 13]);
   });
 });
@@ -868,42 +947,42 @@ describe("Subtree-Contiguous Insertion", () => {
 
   it("inserts child after parent's last descendant in the subtree", () => {
     // Set up: P (parent) → C1 (child) → GC (grandchild), then D (root)
-    State.addTask({ id: "P", name: "Parent", duration: 1, depth: 0, isSummary: false });
-    State.addTask({ id: "C1", name: "Child 1", duration: 1, parentId: "P", depth: 0, isSummary: false });
+    State.addTask({ id: "P", name: "Parent", durationWorkMinutes: wm(1), siblingOrder: "V" });
+    State.addTask({ id: "C1", name: "Child 1", durationWorkMinutes: wm(1), parentId: "P", siblingOrder: "V" });
     State.computeHierarchy();
-    State.addTask({ id: "GC", name: "Grandchild", duration: 1, parentId: "C1", depth: 0, isSummary: false });
+    State.addTask({ id: "GC", name: "Grandchild", durationWorkMinutes: wm(1), parentId: "C1", siblingOrder: "V" });
     State.computeHierarchy();
-    State.addTask({ id: "D", name: "Root D", duration: 1, depth: 0, isSummary: false });
+    State.addTask({ id: "D", name: "Root D", durationWorkMinutes: wm(1), siblingOrder: "V" });
 
     // Now add a second child under P — should land after GC, before D
     State.computeHierarchy();
-    State.addTask({ id: "C2", name: "Child 2", duration: 1, parentId: "P", depth: 0, isSummary: false });
+    State.addTask({ id: "C2", name: "Child 2", durationWorkMinutes: wm(1), parentId: "P", siblingOrder: "V" });
 
     const ids = State.getTasks().map(t => t.id);
     expect(ids).toEqual(["P", "C1", "GC", "C2", "D"]);
   });
 
   it("appends child at end when parent is last in array", () => {
-    State.addTask({ id: "A", name: "A", duration: 1, depth: 0, isSummary: false });
-    State.addTask({ id: "P", name: "Parent", duration: 1, depth: 0, isSummary: false });
+    State.addTask({ id: "A", name: "A", durationWorkMinutes: wm(1), siblingOrder: "V" });
+    State.addTask({ id: "P", name: "Parent", durationWorkMinutes: wm(1), siblingOrder: "V" });
     State.computeHierarchy();
-    State.addTask({ id: "C1", name: "Child 1", duration: 1, parentId: "P", depth: 0, isSummary: false });
+    State.addTask({ id: "C1", name: "Child 1", durationWorkMinutes: wm(1), parentId: "P", siblingOrder: "V" });
 
     const ids = State.getTasks().map(t => t.id);
     expect(ids).toEqual(["A", "P", "C1"]);
   });
 
   it("descendants remain contiguous after insertion", () => {
-    State.addTask({ id: "P", name: "Parent", duration: 1, depth: 0, isSummary: false });
-    State.addTask({ id: "C1", name: "C1", duration: 1, parentId: "P", depth: 0, isSummary: false });
+    State.addTask({ id: "P", name: "Parent", durationWorkMinutes: wm(1), siblingOrder: "V" });
+    State.addTask({ id: "C1", name: "C1", durationWorkMinutes: wm(1), parentId: "P", siblingOrder: "V" });
     State.computeHierarchy();
-    State.addTask({ id: "C2", name: "C2", duration: 1, parentId: "P", depth: 0, isSummary: false });
+    State.addTask({ id: "C2", name: "C2", durationWorkMinutes: wm(1), parentId: "P", siblingOrder: "V" });
     State.computeHierarchy();
-    State.addTask({ id: "R", name: "Root", duration: 1, depth: 0, isSummary: false });
+    State.addTask({ id: "R", name: "Root", durationWorkMinutes: wm(1), siblingOrder: "V" });
 
     // Add C3 under P — should be contiguous with C1 and C2
     State.computeHierarchy();
-    State.addTask({ id: "C3", name: "C3", duration: 1, parentId: "P", depth: 0, isSummary: false });
+    State.addTask({ id: "C3", name: "C3", durationWorkMinutes: wm(1), parentId: "P", siblingOrder: "V" });
 
     const tasks = State.getTasks();
     const ids = tasks.map(t => t.id);
@@ -922,16 +1001,16 @@ describe("Subtree-Contiguous Insertion", () => {
   });
 
   it("root task without parentId appends at end", () => {
-    State.addTask({ id: "A", name: "A", duration: 1, depth: 0, isSummary: false });
-    State.addTask({ id: "B", name: "B", duration: 1, depth: 0, isSummary: false });
-    State.addTask({ id: "C", name: "C", duration: 1, depth: 0, isSummary: false });
+    State.addTask({ id: "A", name: "A", durationWorkMinutes: wm(1), siblingOrder: "V" });
+    State.addTask({ id: "B", name: "B", durationWorkMinutes: wm(1), siblingOrder: "V" });
+    State.addTask({ id: "C", name: "C", durationWorkMinutes: wm(1), siblingOrder: "V" });
 
     const ids = State.getTasks().map(t => t.id);
     expect(ids).toEqual(["A", "B", "C"]);
   });
 
   it("findInsertionIndexForParent returns end for unknown parent", () => {
-    State.addTask({ id: "A", name: "A", duration: 1, depth: 0, isSummary: false });
+    State.addTask({ id: "A", name: "A", durationWorkMinutes: wm(1), siblingOrder: "V" });
     expect(State.findInsertionIndexForParent("nonexistent")).toBe(1);
   });
 });
@@ -946,41 +1025,41 @@ describe("Dependency Type & Lag Validation", () => {
   });
 
   it("should accept SS dependency with positive lag", () => {
-    State.addTask({ id: "A", name: "A", duration: 5, depth: 0, isSummary: false });
-    State.addTask({ id: "B", name: "B", duration: 3, depth: 0, isSummary: false });
-    const dep: Dependency = { id: "dep1", predId: "A", succId: "B", type: "SS", lag: 2 };
+    State.addTask({ id: "A", name: "A", durationWorkMinutes: wm(5), siblingOrder: "V" });
+    State.addTask({ id: "B", name: "B", durationWorkMinutes: wm(3), siblingOrder: "V" });
+    const dep: Dependency = { id: "dep1", predId: "A", succId: "B", type: "SS", lagWorkMinutes: wm(2) };
     const error = validateDependency(dep);
     expect(error).toBeNull();
   });
 
   it("should accept FF dependency with negative lag", () => {
-    State.addTask({ id: "A", name: "A", duration: 5, depth: 0, isSummary: false });
-    State.addTask({ id: "B", name: "B", duration: 3, depth: 0, isSummary: false });
-    const dep: Dependency = { id: "dep1", predId: "A", succId: "B", type: "FF", lag: -1 };
+    State.addTask({ id: "A", name: "A", durationWorkMinutes: wm(5), siblingOrder: "V" });
+    State.addTask({ id: "B", name: "B", durationWorkMinutes: wm(3), siblingOrder: "V" });
+    const dep: Dependency = { id: "dep1", predId: "A", succId: "B", type: "FF", lagWorkMinutes: wm(-1) };
     const error = validateDependency(dep);
     expect(error).toBeNull();
   });
 
   it("should accept SF dependency with zero lag", () => {
-    State.addTask({ id: "A", name: "A", duration: 5, depth: 0, isSummary: false });
-    State.addTask({ id: "B", name: "B", duration: 3, depth: 0, isSummary: false });
-    const dep: Dependency = { id: "dep1", predId: "A", succId: "B", type: "SF", lag: 0 };
+    State.addTask({ id: "A", name: "A", durationWorkMinutes: wm(5), siblingOrder: "V" });
+    State.addTask({ id: "B", name: "B", durationWorkMinutes: wm(3), siblingOrder: "V" });
+    const dep: Dependency = { id: "dep1", predId: "A", succId: "B", type: "SF", lagWorkMinutes: wm(0) };
     const error = validateDependency(dep);
     expect(error).toBeNull();
   });
 
   it("should reject invalid dependency type", () => {
-    State.addTask({ id: "A", name: "A", duration: 5, depth: 0, isSummary: false });
-    State.addTask({ id: "B", name: "B", duration: 3, depth: 0, isSummary: false });
-    const dep: Dependency = { id: "dep1", predId: "A", succId: "B", type: "XX" as any, lag: 0 };
+    State.addTask({ id: "A", name: "A", durationWorkMinutes: wm(5), siblingOrder: "V" });
+    State.addTask({ id: "B", name: "B", durationWorkMinutes: wm(3), siblingOrder: "V" });
+    const dep: Dependency = { id: "dep1", predId: "A", succId: "B", type: "XX" as any, lagWorkMinutes: wm(0) };
     const error = validateDependency(dep);
     expect(error).toBe("Invalid dependency type: XX");
   });
 
   it("should reject non-integer lag", () => {
-    State.addTask({ id: "A", name: "A", duration: 5, depth: 0, isSummary: false });
-    State.addTask({ id: "B", name: "B", duration: 3, depth: 0, isSummary: false });
-    const dep: Dependency = { id: "dep1", predId: "A", succId: "B", type: "FS", lag: 1.5 };
+    State.addTask({ id: "A", name: "A", durationWorkMinutes: wm(5), siblingOrder: "V" });
+    State.addTask({ id: "B", name: "B", durationWorkMinutes: wm(3), siblingOrder: "V" });
+    const dep: Dependency = { id: "dep1", predId: "A", succId: "B", type: "FS", lagWorkMinutes: wm(1.5) };
     const error = validateDependency(dep);
     expect(error).toBe("Lag must be an integer");
   });
@@ -992,7 +1071,7 @@ describe("Dependency Update Validation", () => {
   });
 
   it("should accept valid lag update", () => {
-    expect(validateDependencyUpdate({ lag: -3 })).toBeNull();
+    expect(validateDependencyUpdate({ lagWorkMinutes: wm(-3) })).toBeNull();
   });
 
   it("should reject invalid type in update", () => {
@@ -1000,7 +1079,7 @@ describe("Dependency Update Validation", () => {
   });
 
   it("should reject non-integer lag in update", () => {
-    expect(validateDependencyUpdate({ lag: 2.7 })).toBe("Lag must be an integer");
+    expect(validateDependencyUpdate({ lagWorkMinutes: wm(2.7) })).toBe("Lag must be an integer");
   });
 });
 
@@ -1010,9 +1089,9 @@ describe("Update Dependency State", () => {
   });
 
   it("should update dependency type", () => {
-    State.addTask({ id: "A", name: "A", duration: 5, depth: 0, isSummary: false });
-    State.addTask({ id: "B", name: "B", duration: 3, depth: 0, isSummary: false });
-    State.addDependency({ id: "dep1", predId: "A", succId: "B", type: "FS", lag: 0 });
+    State.addTask({ id: "A", name: "A", durationWorkMinutes: wm(5), siblingOrder: "V" });
+    State.addTask({ id: "B", name: "B", durationWorkMinutes: wm(3), siblingOrder: "V" });
+    State.addDependency({ id: "dep1", predId: "A", succId: "B", type: "FS", lagWorkMinutes: wm(0) });
 
     const result = State.updateDependency("dep1", { type: "SS" });
     expect(result).toBe(true);
@@ -1020,39 +1099,39 @@ describe("Update Dependency State", () => {
   });
 
   it("should update dependency lag", () => {
-    State.addTask({ id: "A", name: "A", duration: 5, depth: 0, isSummary: false });
-    State.addTask({ id: "B", name: "B", duration: 3, depth: 0, isSummary: false });
-    State.addDependency({ id: "dep1", predId: "A", succId: "B", type: "FS", lag: 0 });
+    State.addTask({ id: "A", name: "A", durationWorkMinutes: wm(5), siblingOrder: "V" });
+    State.addTask({ id: "B", name: "B", durationWorkMinutes: wm(3), siblingOrder: "V" });
+    State.addDependency({ id: "dep1", predId: "A", succId: "B", type: "FS", lagWorkMinutes: wm(0) });
 
-    const result = State.updateDependency("dep1", { lag: 3 });
+    const result = State.updateDependency("dep1", { lagWorkMinutes: wm(3) });
     expect(result).toBe(true);
-    expect(State.findDependencyById("dep1")?.lag).toBe(3);
+    expect(State.findDependencyById("dep1")?.lagWorkMinutes).toBe(3);
   });
 
   it("should update both type and lag", () => {
-    State.addTask({ id: "A", name: "A", duration: 5, depth: 0, isSummary: false });
-    State.addTask({ id: "B", name: "B", duration: 3, depth: 0, isSummary: false });
-    State.addDependency({ id: "dep1", predId: "A", succId: "B", type: "FS", lag: 0 });
+    State.addTask({ id: "A", name: "A", durationWorkMinutes: wm(5), siblingOrder: "V" });
+    State.addTask({ id: "B", name: "B", durationWorkMinutes: wm(3), siblingOrder: "V" });
+    State.addDependency({ id: "dep1", predId: "A", succId: "B", type: "FS", lagWorkMinutes: wm(0) });
 
-    State.updateDependency("dep1", { type: "FF", lag: -2 });
+    State.updateDependency("dep1", { type: "FF", lagWorkMinutes: wm(-2) });
     const dep = State.findDependencyById("dep1");
     expect(dep?.type).toBe("FF");
-    expect(dep?.lag).toBe(-2);
+    expect(dep?.lagWorkMinutes).toBe(-2);
   });
 
   it("should return false for non-existent dependency", () => {
-    expect(State.updateDependency("nope", { lag: 1 })).toBe(false);
+    expect(State.updateDependency("nope", { lagWorkMinutes: wm(1) })).toBe(false);
   });
 
   it("should preserve other fields when updating type only", () => {
-    State.addTask({ id: "A", name: "A", duration: 5, depth: 0, isSummary: false });
-    State.addTask({ id: "B", name: "B", duration: 3, depth: 0, isSummary: false });
-    State.addDependency({ id: "dep1", predId: "A", succId: "B", type: "FS", lag: 5 });
+    State.addTask({ id: "A", name: "A", durationWorkMinutes: wm(5), siblingOrder: "V" });
+    State.addTask({ id: "B", name: "B", durationWorkMinutes: wm(3), siblingOrder: "V" });
+    State.addDependency({ id: "dep1", predId: "A", succId: "B", type: "FS", lagWorkMinutes: wm(5) });
 
     State.updateDependency("dep1", { type: "SS" });
     const dep = State.findDependencyById("dep1");
     expect(dep?.type).toBe("SS");
-    expect(dep?.lag).toBe(5); // lag preserved
+    expect(dep?.lagWorkMinutes).toBe(5); // lag preserved
     expect(dep?.predId).toBe("A"); // other fields preserved
   });
 });
@@ -1060,24 +1139,24 @@ describe("Update Dependency State", () => {
 describe("BuildScheduleRequest with all dep types", () => {
   it("should map all four dependency types with lag", () => {
     const tasks: Task[] = [
-      { id: "A", name: "A", duration: 3, depth: 0, isSummary: false },
-      { id: "B", name: "B", duration: 5, depth: 0, isSummary: false },
+      { id: "A", name: "A", durationWorkMinutes: d(3), siblingOrder: "V" },
+      { id: "B", name: "B", durationWorkMinutes: d(5), siblingOrder: "V" },
     ];
     const deps: Dependency[] = [
-      { id: "d1", predId: "A", succId: "B", type: "FS", lag: 0 },
-      { id: "d2", predId: "A", succId: "B", type: "SS", lag: 2 },
-      { id: "d3", predId: "A", succId: "B", type: "FF", lag: -1 },
-      { id: "d4", predId: "A", succId: "B", type: "SF", lag: 3 },
+      { id: "d1", predId: "A", succId: "B", type: "FS", lagWorkMinutes: wm(0) },
+      { id: "d2", predId: "A", succId: "B", type: "SS", lagWorkMinutes: d(2) },
+      { id: "d3", predId: "A", succId: "B", type: "FF", lagWorkMinutes: d(-1) },
+      { id: "d4", predId: "A", succId: "B", type: "SF", lagWorkMinutes: d(3) },
     ];
-    const req = buildScheduleRequest(tasks, deps, []);
+    const req = buildScheduleRequest(tasks, deps, [], slotTranslator);
     expect(req.dependencies).toHaveLength(4);
     expect(req.dependencies[0].depType).toBe("FS");
     expect(req.dependencies[1].depType).toBe("SS");
-    expect(req.dependencies[1].lag).toBe(2);
+    expect(req.dependencies[1].lagWorkMinutes).toBe(2);
     expect(req.dependencies[2].depType).toBe("FF");
-    expect(req.dependencies[2].lag).toBe(-1);
+    expect(req.dependencies[2].lagWorkMinutes).toBe(-1);
     expect(req.dependencies[3].depType).toBe("SF");
-    expect(req.dependencies[3].lag).toBe(3);
+    expect(req.dependencies[3].lagWorkMinutes).toBe(3);
   });
 });
 
@@ -1122,20 +1201,20 @@ describe("Phase R — Persistence & Hydration", () => {
       projectStartDate: "2025-06-01",
       excludeWeekends: false,
       tasks: [
-        { id: "A", name: "Alpha", duration: 5, depth: 0, isSummary: false },
-        { id: "B", name: "Beta", duration: 3, depth: 0, isSummary: false },
+        { id: "A", name: "Alpha", durationWorkMinutes: wm(5), siblingOrder: "V" },
+        { id: "B", name: "Beta", durationWorkMinutes: wm(3), siblingOrder: "V" },
       ],
       dependencies: [
-        { id: "d1", predId: "A", succId: "B", type: "FS" as const, lag: 0 },
+        { id: "d1", predId: "A", succId: "B", type: "FS" as const, lagWorkMinutes: wm(0) },
       ],
-      baselines: { "A": { start: 0, finish: 5 } },
+      baselines: { "A": { startMinutes: wm(0), finishMinutes: wm(5) } },
     };
     State.hydrateState(persisted);
     expect(State.getTasks()).toHaveLength(2);
     expect(State.getDependencies()).toHaveLength(1);
     expect(State.getProjectStartDate()).toBe("2025-06-01");
     expect(State.getExcludeWeekends()).toBe(false);
-    expect(State.getBaselineMap()["A"]).toEqual({ start: 0, finish: 5 });
+    expect(State.getBaselineMap()["A"]).toEqual({ startMinutes: wm(0), finishMinutes: wm(5) });
   });
 
   // Test 3: after hydration, recompute runs and produces valid schedule
@@ -1144,11 +1223,11 @@ describe("Phase R — Persistence & Hydration", () => {
       projectStartDate: "2025-01-06",
       excludeWeekends: false,
       tasks: [
-        { id: "A", name: "A", duration: 3, depth: 0, isSummary: false },
-        { id: "B", name: "B", duration: 5, depth: 0, isSummary: false },
+        { id: "A", name: "A", durationWorkMinutes: wm(3), siblingOrder: "V" },
+        { id: "B", name: "B", durationWorkMinutes: wm(5), siblingOrder: "V" },
       ],
       dependencies: [
-        { id: "d1", predId: "A", succId: "B", type: "FS" as const, lag: 0 },
+        { id: "d1", predId: "A", succId: "B", type: "FS" as const, lagWorkMinutes: wm(0) },
       ],
       baselines: {},
     });
@@ -1158,6 +1237,7 @@ describe("Phase R — Persistence & Hydration", () => {
       State.getTasks(),
       State.getDependencies(),
       [],
+      slotTranslator,
     );
     expect(request.tasks).toHaveLength(2);
     expect(request.dependencies).toHaveLength(1);
@@ -1166,7 +1246,7 @@ describe("Phase R — Persistence & Hydration", () => {
 
   // Test 4: corrupted persistence falls back to empty state
   it("hydrateState with empty arrays yields empty state", () => {
-    State.addTask({ id: "X", name: "Pre-existing", duration: 1, depth: 0, isSummary: false });
+    State.addTask({ id: "X", name: "Pre-existing", durationWorkMinutes: wm(1), siblingOrder: "V" });
     State.hydrateState({
       projectStartDate: "2025-01-01",
       excludeWeekends: true,
@@ -1183,12 +1263,12 @@ describe("Phase R — Persistence & Hydration", () => {
     State.hydrateState({
       projectStartDate: "2025-01-06",
       excludeWeekends: true,
-      tasks: [{ id: "A", name: "A", duration: 3, depth: 0, isSummary: false }],
+      tasks: [{ id: "A", name: "A", durationWorkMinutes: wm(3), siblingOrder: "V" }],
       dependencies: [],
       baselines: {},
     });
     State.setLatestScheduleResults({
-      "A": { earlyStart: 0, earlyFinish: 3, lateStart: 0, lateFinish: 3, totalFloat: 0, isCritical: true },
+      "A": { earlyStartMinutes: wm(0), earlyFinishMinutes: wm(3), lateStartMinutes: wm(0), lateFinishMinutes: wm(3), totalFloatMinutes: wm(0), isCritical: true },
     });
 
     const persisted: PersistedState = {
@@ -1233,26 +1313,26 @@ describe("Phase R — Persistence & Hydration", () => {
 
   // Test 7: deleting a task removes baselines and dependencies
   it("deleteTask removes baseline and connected dependencies", () => {
-    State.addTask({ id: "A", name: "A", duration: 5, depth: 0, isSummary: false });
-    State.addTask({ id: "B", name: "B", duration: 3, depth: 0, isSummary: false });
-    State.addTask({ id: "C", name: "C", duration: 2, depth: 0, isSummary: false });
-    State.addDependency({ id: "d1", predId: "A", succId: "B", type: "FS", lag: 0 });
-    State.addDependency({ id: "d2", predId: "B", succId: "C", type: "FS", lag: 0 });
-    State.setBaselineMap({ "A": { start: 0, finish: 5 }, "B": { start: 5, finish: 8 }, "C": { start: 8, finish: 10 } });
+    State.addTask({ id: "A", name: "A", durationWorkMinutes: wm(5), siblingOrder: "V" });
+    State.addTask({ id: "B", name: "B", durationWorkMinutes: wm(3), siblingOrder: "V" });
+    State.addTask({ id: "C", name: "C", durationWorkMinutes: wm(2), siblingOrder: "V" });
+    State.addDependency({ id: "d1", predId: "A", succId: "B", type: "FS", lagWorkMinutes: wm(0) });
+    State.addDependency({ id: "d2", predId: "B", succId: "C", type: "FS", lagWorkMinutes: wm(0) });
+    State.setBaselineMap({ "A": { startMinutes: wm(0), finishMinutes: wm(5) }, "B": { startMinutes: wm(5), finishMinutes: wm(8) }, "C": { startMinutes: wm(8), finishMinutes: wm(10) } });
 
     State.deleteTask("B");
 
     expect(State.getBaselineMap()["B"]).toBeUndefined();
     expect(State.getDependencies()).toHaveLength(0); // d1 and d2 both removed (B was in both)
-    expect(State.getBaselineMap()["A"]).toEqual({ start: 0, finish: 5 });
-    expect(State.getBaselineMap()["C"]).toEqual({ start: 8, finish: 10 });
+    expect(State.getBaselineMap()["A"]).toEqual({ startMinutes: wm(0), finishMinutes: wm(5) });
+    expect(State.getBaselineMap()["C"]).toEqual({ startMinutes: wm(8), finishMinutes: wm(10) });
   });
 
   // Test 8: baselines survive hydration round-trip
   it("baselines survive persist/hydrate round-trip", () => {
-    State.addTask({ id: "A", name: "A", duration: 5, depth: 0, isSummary: false });
-    State.addTask({ id: "B", name: "B", duration: 3, depth: 0, isSummary: false });
-    const baselines = { "A": { start: 0, finish: 5 }, "B": { start: 5, finish: 8 } };
+    State.addTask({ id: "A", name: "A", durationWorkMinutes: wm(5), siblingOrder: "V" });
+    State.addTask({ id: "B", name: "B", durationWorkMinutes: wm(3), siblingOrder: "V" });
+    const baselines = { "A": { startMinutes: wm(0), finishMinutes: wm(5) }, "B": { startMinutes: wm(5), finishMinutes: wm(8) } };
     State.setBaselineMap(baselines);
 
     // Simulate persistence round-trip
@@ -1272,17 +1352,17 @@ describe("Phase R — Persistence & Hydration", () => {
     expect(State.getBaselineMap()).toEqual({});
 
     State.hydrateState(persisted.state);
-    expect(State.getBaselineMap()["A"]).toEqual({ start: 0, finish: 5 });
-    expect(State.getBaselineMap()["B"]).toEqual({ start: 5, finish: 8 });
+    expect(State.getBaselineMap()["A"]).toEqual({ startMinutes: wm(0), finishMinutes: wm(5) });
+    expect(State.getBaselineMap()["B"]).toEqual({ startMinutes: wm(5), finishMinutes: wm(8) });
   });
 
   // Test 9: SS/FF/SF dependencies survive hydration round-trip
   it("advanced dependency types survive persist/hydrate round-trip", () => {
-    State.addTask({ id: "A", name: "A", duration: 5, depth: 0, isSummary: false });
-    State.addTask({ id: "B", name: "B", duration: 3, depth: 0, isSummary: false });
-    State.addDependency({ id: "d1", predId: "A", succId: "B", type: "SS", lag: 2 });
-    State.addDependency({ id: "d2", predId: "A", succId: "B", type: "FF", lag: -1 });
-    State.addDependency({ id: "d3", predId: "A", succId: "B", type: "SF", lag: 3 });
+    State.addTask({ id: "A", name: "A", durationWorkMinutes: wm(5), siblingOrder: "V" });
+    State.addTask({ id: "B", name: "B", durationWorkMinutes: wm(3), siblingOrder: "V" });
+    State.addDependency({ id: "d1", predId: "A", succId: "B", type: "SS", lagWorkMinutes: wm(2) });
+    State.addDependency({ id: "d2", predId: "A", succId: "B", type: "FF", lagWorkMinutes: wm(-1) });
+    State.addDependency({ id: "d3", predId: "A", succId: "B", type: "SF", lagWorkMinutes: wm(3) });
 
     const persisted: PersistedState = {
       version: 1,
@@ -1302,11 +1382,11 @@ describe("Phase R — Persistence & Hydration", () => {
     const deps = State.getDependencies();
     expect(deps).toHaveLength(3);
     expect(deps.find(d => d.id === "d1")?.type).toBe("SS");
-    expect(deps.find(d => d.id === "d1")?.lag).toBe(2);
+    expect(deps.find(d => d.id === "d1")?.lagWorkMinutes).toBe(2);
     expect(deps.find(d => d.id === "d2")?.type).toBe("FF");
-    expect(deps.find(d => d.id === "d2")?.lag).toBe(-1);
+    expect(deps.find(d => d.id === "d2")?.lagWorkMinutes).toBe(-1);
     expect(deps.find(d => d.id === "d3")?.type).toBe("SF");
-    expect(deps.find(d => d.id === "d3")?.lag).toBe(3);
+    expect(deps.find(d => d.id === "d3")?.lagWorkMinutes).toBe(3);
   });
 
   // Test 10: schema version is included on save
@@ -1346,15 +1426,15 @@ describe("Phase R — Persistence & Hydration", () => {
 
   // Subtree delete scrubs baselines for descendants
   it("deleteTaskRecursive removes baselines for subtree", () => {
-    State.addTask({ id: "S", name: "Summary", duration: 0, depth: 0, isSummary: false });
-    State.addTask({ id: "C1", name: "Child 1", duration: 5, parentId: "S", depth: 0, isSummary: false });
-    State.addTask({ id: "C2", name: "Child 2", duration: 3, parentId: "S", depth: 0, isSummary: false });
-    State.addTask({ id: "X", name: "Standalone", duration: 2, depth: 0, isSummary: false });
+    State.addTask({ id: "S", name: "Summary", durationWorkMinutes: wm(0), siblingOrder: "V" });
+    State.addTask({ id: "C1", name: "Child 1", durationWorkMinutes: wm(5), parentId: "S", siblingOrder: "V" });
+    State.addTask({ id: "C2", name: "Child 2", durationWorkMinutes: wm(3), parentId: "S", siblingOrder: "V" });
+    State.addTask({ id: "X", name: "Standalone", durationWorkMinutes: wm(2), siblingOrder: "V" });
     State.setBaselineMap({
-      "S": { start: 0, finish: 5 },
-      "C1": { start: 0, finish: 5 },
-      "C2": { start: 0, finish: 3 },
-      "X": { start: 0, finish: 2 },
+      "S": { startMinutes: wm(0), finishMinutes: wm(5) },
+      "C1": { startMinutes: wm(0), finishMinutes: wm(5) },
+      "C2": { startMinutes: wm(0), finishMinutes: wm(3) },
+      "X": { startMinutes: wm(0), finishMinutes: wm(2) },
     });
 
     State.deleteTaskRecursive("S");
@@ -1362,7 +1442,7 @@ describe("Phase R — Persistence & Hydration", () => {
     expect(State.getBaselineMap()["S"]).toBeUndefined();
     expect(State.getBaselineMap()["C1"]).toBeUndefined();
     expect(State.getBaselineMap()["C2"]).toBeUndefined();
-    expect(State.getBaselineMap()["X"]).toEqual({ start: 0, finish: 2 });
+    expect(State.getBaselineMap()["X"]).toEqual({ startMinutes: wm(0), finishMinutes: wm(2) });
     expect(State.getTasks()).toHaveLength(1);
   });
 });
@@ -1379,7 +1459,7 @@ describe("Phase S — Variance Metrics", () => {
   // Test 1: computeVariances returns empty map when no baselines exist
   it("returns empty map when no baselines exist", () => {
     const scheduleResults: ScheduleResultMap = {
-      "A": { earlyStart: 0, earlyFinish: 5, lateStart: 0, lateFinish: 5, totalFloat: 0, isCritical: true },
+      "A": { earlyStartMinutes: wm(0), earlyFinishMinutes: wm(5), lateStartMinutes: wm(0), lateFinishMinutes: wm(5), totalFloatMinutes: wm(0), isCritical: true },
     };
     const result = computeVariances(scheduleResults, {});
     expect(Object.keys(result)).toHaveLength(0);
@@ -1388,10 +1468,10 @@ describe("Phase S — Variance Metrics", () => {
   // Test 2: computeVariances only emits entries for tasks that have baselines
   it("only emits entries for tasks with baselines", () => {
     const scheduleResults: ScheduleResultMap = {
-      "A": { earlyStart: 0, earlyFinish: 5, lateStart: 0, lateFinish: 5, totalFloat: 0, isCritical: true },
-      "B": { earlyStart: 5, earlyFinish: 10, lateStart: 5, lateFinish: 10, totalFloat: 0, isCritical: true },
+      "A": { earlyStartMinutes: wm(0), earlyFinishMinutes: wm(5), lateStartMinutes: wm(0), lateFinishMinutes: wm(5), totalFloatMinutes: wm(0), isCritical: true },
+      "B": { earlyStartMinutes: wm(5), earlyFinishMinutes: wm(10), lateStartMinutes: wm(5), lateFinishMinutes: wm(10), totalFloatMinutes: wm(0), isCritical: true },
     };
-    const baselines = { "A": { start: 0, finish: 5 } };
+    const baselines = { "A": { startMinutes: wm(0), finishMinutes: wm(5) } };
     const result = computeVariances(scheduleResults, baselines);
     expect(Object.keys(result)).toEqual(["A"]);
     expect(result["B"]).toBeUndefined();
@@ -1400,67 +1480,67 @@ describe("Phase S — Variance Metrics", () => {
   // Test 3: startVariance / finishVariance / durationVariance are computed correctly
   it("computes correct variance values", () => {
     const scheduleResults: ScheduleResultMap = {
-      "A": { earlyStart: 2, earlyFinish: 9, lateStart: 2, lateFinish: 9, totalFloat: 0, isCritical: true },
+      "A": { earlyStartMinutes: wm(2), earlyFinishMinutes: wm(9), lateStartMinutes: wm(2), lateFinishMinutes: wm(9), totalFloatMinutes: wm(0), isCritical: true },
     };
-    const baselines = { "A": { start: 0, finish: 5 } };
+    const baselines = { "A": { startMinutes: wm(0), finishMinutes: wm(5) } };
     const result = computeVariances(scheduleResults, baselines);
 
-    expect(result["A"].startVariance).toBe(2);    // 2 - 0
-    expect(result["A"].finishVariance).toBe(4);    // 9 - 5
-    expect(result["A"].durationVariance).toBe(2);  // (9-2)=7 vs (5-0)=5 → 2
+    expect(result["A"].startVarianceMinutes).toBe(2);    // 2 - 0
+    expect(result["A"].finishVarianceMinutes).toBe(4);    // 9 - 5
+    expect(result["A"].durationVarianceMinutes).toBe(2);  // (9-2)=7 vs (5-0)=5 → 2
   });
 
   // Test 3b: zero variance when baseline matches live
   it("returns zero variance when baseline matches live schedule", () => {
     const scheduleResults: ScheduleResultMap = {
-      "A": { earlyStart: 0, earlyFinish: 5, lateStart: 0, lateFinish: 5, totalFloat: 0, isCritical: true },
+      "A": { earlyStartMinutes: wm(0), earlyFinishMinutes: wm(5), lateStartMinutes: wm(0), lateFinishMinutes: wm(5), totalFloatMinutes: wm(0), isCritical: true },
     };
-    const baselines = { "A": { start: 0, finish: 5 } };
+    const baselines = { "A": { startMinutes: wm(0), finishMinutes: wm(5) } };
     const result = computeVariances(scheduleResults, baselines);
 
-    expect(result["A"].startVariance).toBe(0);
-    expect(result["A"].finishVariance).toBe(0);
-    expect(result["A"].durationVariance).toBe(0);
+    expect(result["A"].startVarianceMinutes).toBe(0);
+    expect(result["A"].finishVarianceMinutes).toBe(0);
+    expect(result["A"].durationVarianceMinutes).toBe(0);
   });
 
   // Test 3c: negative variance (task is ahead of baseline)
   it("computes negative variance when task is ahead of baseline", () => {
     const scheduleResults: ScheduleResultMap = {
-      "A": { earlyStart: 0, earlyFinish: 3, lateStart: 0, lateFinish: 3, totalFloat: 0, isCritical: true },
+      "A": { earlyStartMinutes: wm(0), earlyFinishMinutes: wm(3), lateStartMinutes: wm(0), lateFinishMinutes: wm(3), totalFloatMinutes: wm(0), isCritical: true },
     };
-    const baselines = { "A": { start: 2, finish: 7 } };
+    const baselines = { "A": { startMinutes: wm(2), finishMinutes: wm(7) } };
     const result = computeVariances(scheduleResults, baselines);
 
-    expect(result["A"].startVariance).toBe(-2);     // 0 - 2
-    expect(result["A"].finishVariance).toBe(-4);     // 3 - 7
-    expect(result["A"].durationVariance).toBe(-2);   // (3-0)=3 vs (7-2)=5 → -2
+    expect(result["A"].startVarianceMinutes).toBe(-2);     // 0 - 2
+    expect(result["A"].finishVarianceMinutes).toBe(-4);     // 3 - 7
+    expect(result["A"].durationVarianceMinutes).toBe(-2);   // (3-0)=3 vs (7-2)=5 → -2
   });
 
   // Test 4: variance is recomputed after schedule changes
   it("variance changes when schedule results change", () => {
-    const baselines = { "A": { start: 0, finish: 5 } };
+    const baselines = { "A": { startMinutes: wm(0), finishMinutes: wm(5) } };
 
     const before: ScheduleResultMap = {
-      "A": { earlyStart: 0, earlyFinish: 5, lateStart: 0, lateFinish: 5, totalFloat: 0, isCritical: true },
+      "A": { earlyStartMinutes: wm(0), earlyFinishMinutes: wm(5), lateStartMinutes: wm(0), lateFinishMinutes: wm(5), totalFloatMinutes: wm(0), isCritical: true },
     };
     const v1 = computeVariances(before, baselines);
-    expect(v1["A"].startVariance).toBe(0);
-    expect(v1["A"].finishVariance).toBe(0);
+    expect(v1["A"].startVarianceMinutes).toBe(0);
+    expect(v1["A"].finishVarianceMinutes).toBe(0);
 
     const after: ScheduleResultMap = {
-      "A": { earlyStart: 2, earlyFinish: 10, lateStart: 2, lateFinish: 10, totalFloat: 0, isCritical: true },
+      "A": { earlyStartMinutes: wm(2), earlyFinishMinutes: wm(10), lateStartMinutes: wm(2), lateFinishMinutes: wm(10), totalFloatMinutes: wm(0), isCritical: true },
     };
     const v2 = computeVariances(after, baselines);
-    expect(v2["A"].startVariance).toBe(2);
-    expect(v2["A"].finishVariance).toBe(5);
+    expect(v2["A"].startVarianceMinutes).toBe(2);
+    expect(v2["A"].finishVarianceMinutes).toBe(5);
   });
 
   // Test 5: variance is present in DIFF_STATE payload shape
   it("DIFF_STATE payload includes variances field", () => {
     const scheduleResults: ScheduleResultMap = {
-      "A": { earlyStart: 0, earlyFinish: 5, lateStart: 0, lateFinish: 5, totalFloat: 0, isCritical: true },
+      "A": { earlyStartMinutes: wm(0), earlyFinishMinutes: wm(5), lateStartMinutes: wm(0), lateFinishMinutes: wm(5), totalFloatMinutes: wm(0), isCritical: true },
     };
-    const baselines = { "A": { start: 0, finish: 5 } };
+    const baselines = { "A": { startMinutes: wm(0), finishMinutes: wm(5) } };
     const variances = computeVariances(scheduleResults, baselines);
 
     const payload = {
@@ -1475,9 +1555,9 @@ describe("Phase S — Variance Metrics", () => {
 
     expect(payload.variances).toBeDefined();
     expect(payload.variances["A"]).toEqual({
-      startVariance: 0,
-      finishVariance: 0,
-      durationVariance: 0,
+      startVarianceMinutes: 0,
+      finishVarianceMinutes: 0,
+      durationVarianceMinutes: 0,
     });
   });
 
@@ -1487,22 +1567,22 @@ describe("Phase S — Variance Metrics", () => {
       projectStartDate: "2025-01-06",
       excludeWeekends: false,
       tasks: [
-        { id: "A", name: "A", duration: 5, depth: 0, isSummary: false },
+        { id: "A", name: "A", durationWorkMinutes: wm(5), siblingOrder: "V" },
       ],
       dependencies: [],
-      baselines: { "A": { start: 0, finish: 5 } },
+      baselines: { "A": { startMinutes: wm(0), finishMinutes: wm(5) } },
     });
 
     // Simulate post-hydration schedule
     const scheduleResults: ScheduleResultMap = {
-      "A": { earlyStart: 0, earlyFinish: 5, lateStart: 0, lateFinish: 5, totalFloat: 0, isCritical: true },
+      "A": { earlyStartMinutes: wm(0), earlyFinishMinutes: wm(5), lateStartMinutes: wm(0), lateFinishMinutes: wm(5), totalFloatMinutes: wm(0), isCritical: true },
     };
     const variances = computeVariances(scheduleResults, State.getBaselineMap());
 
     expect(variances["A"]).toEqual({
-      startVariance: 0,
-      finishVariance: 0,
-      durationVariance: 0,
+      startVarianceMinutes: 0,
+      finishVarianceMinutes: 0,
+      durationVarianceMinutes: 0,
     });
   });
 
@@ -1514,9 +1594,9 @@ describe("Phase S — Variance Metrics", () => {
       state: {
         projectStartDate: "2025-01-06",
         excludeWeekends: true,
-        tasks: [{ id: "A", name: "A", duration: 5, depth: 0, isSummary: false }],
+        tasks: [{ id: "A", name: "A", durationWorkMinutes: wm(5), siblingOrder: "V" }],
         dependencies: [],
-        baselines: { "A": { start: 0, finish: 5 } },
+        baselines: { "A": { startMinutes: wm(0), finishMinutes: wm(5) } },
       },
     };
 
@@ -1527,7 +1607,7 @@ describe("Phase S — Variance Metrics", () => {
   // Test: skips tasks that have baseline but no live schedule
   it("skips tasks with baseline but no schedule result", () => {
     const scheduleResults: ScheduleResultMap = {};
-    const baselines = { "A": { start: 0, finish: 5 } };
+    const baselines = { "A": { startMinutes: wm(0), finishMinutes: wm(5) } };
     const result = computeVariances(scheduleResults, baselines);
     expect(Object.keys(result)).toHaveLength(0);
   });
@@ -1542,15 +1622,15 @@ describe("Phase T — Undo/Redo History", () => {
   });
 
   it("UPDATE_TASK undo restores previous duration", () => {
-    State.addTask({ id: "A", name: "Task A", duration: 5, depth: 0, isSummary: false });
+    State.addTask({ id: "A", name: "Task A", durationWorkMinutes: wm(5), siblingOrder: "V" });
 
-    const cmd = { type: "UPDATE_TASK" as const, v: 1 as const, reqId: "r1", taskId: "A", updates: { duration: 10 } };
+    const cmd = { type: "UPDATE_TASK" as const, v: 1 as const, reqId: "r1", taskId: "A", updates: { durationWorkMinutes: wm(10) } };
     const entry = UndoHistory.buildHistoryEntry(cmd);
     expect(entry).not.toBeNull();
 
     // Apply forward mutation
-    State.updateTask("A", { duration: 10 });
-    expect(State.findTask("A")!.duration).toBe(10);
+    State.updateTask("A", { durationWorkMinutes: wm(10) });
+    expect(State.findTask("A")!.durationWorkMinutes).toBe(10);
 
     // Apply undo transaction
     UndoHistory.pushEntry(entry!);
@@ -1558,15 +1638,15 @@ describe("Phase T — Undo/Redo History", () => {
     for (const c of undoEntry!.undo) {
       if (c.type === "UPDATE_TASK") State.updateTask(c.taskId, c.updates);
     }
-    expect(State.findTask("A")!.duration).toBe(5);
+    expect(State.findTask("A")!.durationWorkMinutes).toBe(5);
   });
 
   it("redo reapplies UPDATE_TASK change", () => {
-    State.addTask({ id: "A", name: "Task A", duration: 5, depth: 0, isSummary: false });
+    State.addTask({ id: "A", name: "Task A", durationWorkMinutes: wm(5), siblingOrder: "V" });
 
-    const cmd = { type: "UPDATE_TASK" as const, v: 1 as const, reqId: "r1", taskId: "A", updates: { duration: 10 } };
+    const cmd = { type: "UPDATE_TASK" as const, v: 1 as const, reqId: "r1", taskId: "A", updates: { durationWorkMinutes: wm(10) } };
     const entry = UndoHistory.buildHistoryEntry(cmd);
-    State.updateTask("A", { duration: 10 });
+    State.updateTask("A", { durationWorkMinutes: wm(10) });
     UndoHistory.pushEntry(entry!);
 
     // Undo
@@ -1574,21 +1654,21 @@ describe("Phase T — Undo/Redo History", () => {
     for (const c of undoEntry!.undo) {
       if (c.type === "UPDATE_TASK") State.updateTask(c.taskId, c.updates);
     }
-    expect(State.findTask("A")!.duration).toBe(5);
+    expect(State.findTask("A")!.durationWorkMinutes).toBe(5);
 
     // Redo
     const redoEntry = UndoHistory.popRedo();
     for (const c of redoEntry!.redo) {
       if (c.type === "UPDATE_TASK") State.updateTask(c.taskId, c.updates);
     }
-    expect(State.findTask("A")!.duration).toBe(10);
+    expect(State.findTask("A")!.durationWorkMinutes).toBe(10);
   });
 
   it("ADD_DEPENDENCY undo removes dependency", () => {
-    State.addTask({ id: "A", name: "A", duration: 5, depth: 0, isSummary: false });
-    State.addTask({ id: "B", name: "B", duration: 3, depth: 0, isSummary: false });
+    State.addTask({ id: "A", name: "A", durationWorkMinutes: wm(5), siblingOrder: "V" });
+    State.addTask({ id: "B", name: "B", durationWorkMinutes: wm(3), siblingOrder: "V" });
 
-    const dep: Dependency = { id: "d1", predId: "A", succId: "B", type: "FS", lag: 0 };
+    const dep: Dependency = { id: "d1", predId: "A", succId: "B", type: "FS", lagWorkMinutes: wm(0) };
     const cmd = { type: "ADD_DEPENDENCY" as const, v: 1 as const, reqId: "r1", payload: dep };
     const entry = UndoHistory.buildHistoryEntry(cmd);
     State.addDependency(dep);
@@ -1605,9 +1685,9 @@ describe("Phase T — Undo/Redo History", () => {
   });
 
   it("DELETE_DEPENDENCY undo restores dependency", () => {
-    State.addTask({ id: "A", name: "A", duration: 5, depth: 0, isSummary: false });
-    State.addTask({ id: "B", name: "B", duration: 3, depth: 0, isSummary: false });
-    const dep: Dependency = { id: "d1", predId: "A", succId: "B", type: "FS", lag: 0 };
+    State.addTask({ id: "A", name: "A", durationWorkMinutes: wm(5), siblingOrder: "V" });
+    State.addTask({ id: "B", name: "B", durationWorkMinutes: wm(3), siblingOrder: "V" });
+    const dep: Dependency = { id: "d1", predId: "A", succId: "B", type: "FS", lagWorkMinutes: wm(0) };
     State.addDependency(dep);
 
     const cmd = { type: "DELETE_DEPENDENCY" as const, v: 1 as const, reqId: "r1", dependencyId: "d1" };
@@ -1627,9 +1707,9 @@ describe("Phase T — Undo/Redo History", () => {
   });
 
   it("DELETE_TASK undo restores task and connected dependencies", () => {
-    State.addTask({ id: "A", name: "A", duration: 5, depth: 0, isSummary: false });
-    State.addTask({ id: "B", name: "B", duration: 3, depth: 0, isSummary: false });
-    State.addDependency({ id: "d1", predId: "A", succId: "B", type: "FS", lag: 0 });
+    State.addTask({ id: "A", name: "A", durationWorkMinutes: wm(5), siblingOrder: "V" });
+    State.addTask({ id: "B", name: "B", durationWorkMinutes: wm(3), siblingOrder: "V" });
+    State.addDependency({ id: "d1", predId: "A", succId: "B", type: "FS", lagWorkMinutes: wm(0) });
 
     const cmd = { type: "DELETE_TASK" as const, v: 1 as const, reqId: "r1", taskId: "A" };
     const entry = UndoHistory.buildHistoryEntry(cmd);
@@ -1650,12 +1730,12 @@ describe("Phase T — Undo/Redo History", () => {
   });
 
   it("redo invalidation: new forward action clears redo stack", () => {
-    State.addTask({ id: "A", name: "A", duration: 5, depth: 0, isSummary: false });
+    State.addTask({ id: "A", name: "A", durationWorkMinutes: wm(5), siblingOrder: "V" });
 
     // First mutation
-    const cmd1 = { type: "UPDATE_TASK" as const, v: 1 as const, reqId: "r1", taskId: "A", updates: { duration: 10 } };
+    const cmd1 = { type: "UPDATE_TASK" as const, v: 1 as const, reqId: "r1", taskId: "A", updates: { durationWorkMinutes: wm(10) } };
     const entry1 = UndoHistory.buildHistoryEntry(cmd1);
-    State.updateTask("A", { duration: 10 });
+    State.updateTask("A", { durationWorkMinutes: wm(10) });
     UndoHistory.pushEntry(entry1!);
 
     // Undo
@@ -1678,10 +1758,10 @@ describe("Phase T — Undo/Redo History", () => {
     expect(UndoHistory.canUndo()).toBe(false);
     expect(UndoHistory.canRedo()).toBe(false);
 
-    State.addTask({ id: "A", name: "A", duration: 5, depth: 0, isSummary: false });
-    const cmd = { type: "UPDATE_TASK" as const, v: 1 as const, reqId: "r1", taskId: "A", updates: { duration: 10 } };
+    State.addTask({ id: "A", name: "A", durationWorkMinutes: wm(5), siblingOrder: "V" });
+    const cmd = { type: "UPDATE_TASK" as const, v: 1 as const, reqId: "r1", taskId: "A", updates: { durationWorkMinutes: wm(10) } };
     const entry = UndoHistory.buildHistoryEntry(cmd);
-    State.updateTask("A", { duration: 10 });
+    State.updateTask("A", { durationWorkMinutes: wm(10) });
     UndoHistory.pushEntry(entry!);
 
     expect(UndoHistory.canUndo()).toBe(true);
@@ -1697,21 +1777,21 @@ describe("Phase T — Undo/Redo History", () => {
   });
 
   it("history stack capped at 50", () => {
-    State.addTask({ id: "A", name: "A", duration: 1, depth: 0, isSummary: false });
+    State.addTask({ id: "A", name: "A", durationWorkMinutes: wm(1), siblingOrder: "V" });
     for (let i = 0; i < 60; i++) {
-      const cmd = { type: "UPDATE_TASK" as const, v: 1 as const, reqId: `r${i}`, taskId: "A", updates: { duration: i + 2 } };
+      const cmd = { type: "UPDATE_TASK" as const, v: 1 as const, reqId: `r${i}`, taskId: "A", updates: { durationWorkMinutes: wm(i + 2) } };
       const entry = UndoHistory.buildHistoryEntry(cmd);
-      State.updateTask("A", { duration: i + 2 });
+      State.updateTask("A", { durationWorkMinutes: wm(i + 2) });
       UndoHistory.pushEntry(entry!);
     }
     expect(UndoHistory.getUndoStack().length).toBe(50);
   });
 
   it("clearHistory resets stacks (simulates reload)", () => {
-    State.addTask({ id: "A", name: "A", duration: 5, depth: 0, isSummary: false });
-    const cmd = { type: "UPDATE_TASK" as const, v: 1 as const, reqId: "r1", taskId: "A", updates: { duration: 10 } };
+    State.addTask({ id: "A", name: "A", durationWorkMinutes: wm(5), siblingOrder: "V" });
+    const cmd = { type: "UPDATE_TASK" as const, v: 1 as const, reqId: "r1", taskId: "A", updates: { durationWorkMinutes: wm(10) } };
     const entry = UndoHistory.buildHistoryEntry(cmd);
-    State.updateTask("A", { duration: 10 });
+    State.updateTask("A", { durationWorkMinutes: wm(10) });
     UndoHistory.pushEntry(entry!);
 
     expect(UndoHistory.canUndo()).toBe(true);
@@ -1721,7 +1801,7 @@ describe("Phase T — Undo/Redo History", () => {
   });
 
   it("buildHistoryEntry returns null for nonexistent task", () => {
-    const cmd = { type: "UPDATE_TASK" as const, v: 1 as const, reqId: "r1", taskId: "MISSING", updates: { duration: 10 } };
+    const cmd = { type: "UPDATE_TASK" as const, v: 1 as const, reqId: "r1", taskId: "MISSING", updates: { durationWorkMinutes: wm(10) } };
     const entry = UndoHistory.buildHistoryEntry(cmd);
     expect(entry).toBeNull();
   });
@@ -1750,7 +1830,7 @@ describe("Phase U — Resource & Assignment State", () => {
   });
 
   it("deleteResource cascades to assignments", () => {
-    State.addTask({ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false });
+    State.addTask({ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V" });
     State.addResource({ id: "r1", name: "Engineer", maxUnitsPerDay: 1 });
     State.addAssignment({ id: "a1", taskId: "t1", resourceId: "r1", unitsPerDay: 1 });
     expect(State.getAssignments()).toHaveLength(1);
@@ -1760,7 +1840,7 @@ describe("Phase U — Resource & Assignment State", () => {
   });
 
   it("addAssignment and findAssignment", () => {
-    State.addTask({ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false });
+    State.addTask({ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V" });
     State.addResource({ id: "r1", name: "Engineer", maxUnitsPerDay: 1 });
     const a: Assignment = { id: "a1", taskId: "t1", resourceId: "r1", unitsPerDay: 0.5 };
     State.addAssignment(a);
@@ -1769,7 +1849,7 @@ describe("Phase U — Resource & Assignment State", () => {
   });
 
   it("updateAssignment", () => {
-    State.addTask({ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false });
+    State.addTask({ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V" });
     State.addResource({ id: "r1", name: "Engineer", maxUnitsPerDay: 1 });
     State.addAssignment({ id: "a1", taskId: "t1", resourceId: "r1", unitsPerDay: 1 });
     State.updateAssignment("a1", { unitsPerDay: 0.75 });
@@ -1777,7 +1857,7 @@ describe("Phase U — Resource & Assignment State", () => {
   });
 
   it("deleteAssignment", () => {
-    State.addTask({ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false });
+    State.addTask({ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V" });
     State.addResource({ id: "r1", name: "Engineer", maxUnitsPerDay: 1 });
     State.addAssignment({ id: "a1", taskId: "t1", resourceId: "r1", unitsPerDay: 1 });
     State.deleteAssignment("a1");
@@ -1785,8 +1865,8 @@ describe("Phase U — Resource & Assignment State", () => {
   });
 
   it("deleteTaskRecursive cascades to assignments", () => {
-    State.addTask({ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false });
-    State.addTask({ id: "t2", name: "T2", duration: 3, depth: 1, isSummary: false, parentId: "t1" });
+    State.addTask({ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V" });
+    State.addTask({ id: "t2", name: "T2", durationWorkMinutes: wm(3), siblingOrder: "V", parentId: "t1" });
     State.addResource({ id: "r1", name: "Engineer", maxUnitsPerDay: 1 });
     State.addAssignment({ id: "a1", taskId: "t1", resourceId: "r1", unitsPerDay: 1 });
     State.addAssignment({ id: "a2", taskId: "t2", resourceId: "r1", unitsPerDay: 1 });
@@ -1796,7 +1876,7 @@ describe("Phase U — Resource & Assignment State", () => {
 
   it("clearState clears resources and assignments", () => {
     State.addResource({ id: "r1", name: "Engineer", maxUnitsPerDay: 1 });
-    State.addTask({ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false });
+    State.addTask({ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V" });
     State.addAssignment({ id: "a1", taskId: "t1", resourceId: "r1", unitsPerDay: 1 });
     State.clearState();
     expect(State.getResources()).toHaveLength(0);
@@ -1805,7 +1885,7 @@ describe("Phase U — Resource & Assignment State", () => {
 
   it("snapshot/restore preserves resources and assignments", () => {
     State.addResource({ id: "r1", name: "Engineer", maxUnitsPerDay: 1 });
-    State.addTask({ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false });
+    State.addTask({ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V" });
     State.addAssignment({ id: "a1", taskId: "t1", resourceId: "r1", unitsPerDay: 1 });
     const snap = State.createSnapshot();
     State.clearState();
@@ -1819,7 +1899,7 @@ describe("Phase U — Resource & Assignment State", () => {
     State.hydrateState({
       projectStartDate: "2026-01-06",
       excludeWeekends: true,
-      tasks: [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false }],
+      tasks: [{ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V" }],
       dependencies: [],
       baselines: {},
       resources: [{ id: "r1", name: "Engineer", maxUnitsPerDay: 1 }],
@@ -1874,18 +1954,18 @@ describe("Phase U — Resource/Assignment Validation", () => {
   });
 
   it("validateAssignment rejects nonexistent resource", () => {
-    State.addTask({ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false });
+    State.addTask({ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V" });
     expect(validateAssignment({ id: "a1", taskId: "t1", resourceId: "MISSING", unitsPerDay: 1 })).toBe("Resource MISSING does not exist");
   });
 
   it("validateAssignment rejects unitsPerDay <= 0", () => {
-    State.addTask({ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false });
+    State.addTask({ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V" });
     State.addResource({ id: "r1", name: "Eng", maxUnitsPerDay: 1 });
     expect(validateAssignment({ id: "a1", taskId: "t1", resourceId: "r1", unitsPerDay: 0 })).toBe("unitsPerDay must be greater than 0");
   });
 
   it("validateAssignment accepts valid assignment", () => {
-    State.addTask({ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false });
+    State.addTask({ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V" });
     State.addResource({ id: "r1", name: "Eng", maxUnitsPerDay: 1 });
     expect(validateAssignment({ id: "a1", taskId: "t1", resourceId: "r1", unitsPerDay: 1 })).toBeNull();
   });
@@ -1917,7 +1997,7 @@ describe("Phase U — Resource/Assignment Undo/Redo", () => {
   });
 
   it("DELETE_RESOURCE undo restores resource and linked assignments", () => {
-    State.addTask({ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false });
+    State.addTask({ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V" });
     State.addResource({ id: "r1", name: "Engineer", maxUnitsPerDay: 1 });
     State.addAssignment({ id: "a1", taskId: "t1", resourceId: "r1", unitsPerDay: 1 });
     State.addAssignment({ id: "a2", taskId: "t1", resourceId: "r1", unitsPerDay: 0.5 });
@@ -1956,7 +2036,7 @@ describe("Phase U — Resource/Assignment Undo/Redo", () => {
   });
 
   it("ADD_ASSIGNMENT undo removes assignment", () => {
-    State.addTask({ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false });
+    State.addTask({ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V" });
     State.addResource({ id: "r1", name: "Eng", maxUnitsPerDay: 1 });
     const payload: Assignment = { id: "a1", taskId: "t1", resourceId: "r1", unitsPerDay: 1 };
     const cmd = { type: "ADD_ASSIGNMENT" as const, v: 1 as const, reqId: "r1", payload };
@@ -1972,7 +2052,7 @@ describe("Phase U — Resource/Assignment Undo/Redo", () => {
   });
 
   it("DELETE_ASSIGNMENT undo restores assignment", () => {
-    State.addTask({ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false });
+    State.addTask({ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V" });
     State.addResource({ id: "r1", name: "Eng", maxUnitsPerDay: 1 });
     State.addAssignment({ id: "a1", taskId: "t1", resourceId: "r1", unitsPerDay: 1 });
 
@@ -1990,7 +2070,7 @@ describe("Phase U — Resource/Assignment Undo/Redo", () => {
   });
 
   it("UPDATE_ASSIGNMENT undo restores previous unitsPerDay", () => {
-    State.addTask({ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false });
+    State.addTask({ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V" });
     State.addResource({ id: "r1", name: "Eng", maxUnitsPerDay: 1 });
     State.addAssignment({ id: "a1", taskId: "t1", resourceId: "r1", unitsPerDay: 1 });
 
@@ -2007,9 +2087,9 @@ describe("Phase U — Resource/Assignment Undo/Redo", () => {
   });
 
   it("DELETE_TASK undo restores task + deps + assignments", () => {
-    State.addTask({ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false });
-    State.addTask({ id: "t2", name: "T2", duration: 3, depth: 0, isSummary: false });
-    State.addDependency({ id: "d1", predId: "t1", succId: "t2", type: "FS", lag: 0 });
+    State.addTask({ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V" });
+    State.addTask({ id: "t2", name: "T2", durationWorkMinutes: wm(3), siblingOrder: "V" });
+    State.addDependency({ id: "d1", predId: "t1", succId: "t2", type: "FS", lagWorkMinutes: wm(0) });
     State.addResource({ id: "r1", name: "Eng", maxUnitsPerDay: 1 });
     State.addAssignment({ id: "a1", taskId: "t1", resourceId: "r1", unitsPerDay: 1 });
 
@@ -2056,7 +2136,7 @@ describe("Phase U.2 — computeResourceHistogram", () => {
   it("computes loading for a single assignment", () => {
     const assignments: Assignment[] = [{ id: "a1", taskId: "t1", resourceId: "r1", unitsPerDay: 1 }];
     const scheduleResults: ScheduleResultMap = {
-      t1: { earlyStart: 0, earlyFinish: 3, lateStart: 0, lateFinish: 3, totalFloat: 0, isCritical: true },
+      t1: { earlyStartMinutes: wm(0), earlyFinishMinutes: wm(3), lateStartMinutes: wm(0), lateFinishMinutes: wm(3), totalFloatMinutes: wm(0), isCritical: true },
     };
     const result = computeResourceHistogram(assignments, scheduleResults, new Set());
     expect(result["r1"]).toBeDefined();
@@ -2069,7 +2149,7 @@ describe("Phase U.2 — computeResourceHistogram", () => {
   it("earlyFinish is exclusive — does not include finish day", () => {
     const assignments: Assignment[] = [{ id: "a1", taskId: "t1", resourceId: "r1", unitsPerDay: 1 }];
     const scheduleResults: ScheduleResultMap = {
-      t1: { earlyStart: 5, earlyFinish: 8, lateStart: 5, lateFinish: 8, totalFloat: 0, isCritical: true },
+      t1: { earlyStartMinutes: wm(5), earlyFinishMinutes: wm(8), lateStartMinutes: wm(5), lateFinishMinutes: wm(8), totalFloatMinutes: wm(0), isCritical: true },
     };
     const result = computeResourceHistogram(assignments, scheduleResults, new Set());
     expect(result["r1"][5]).toBe(1);
@@ -2081,7 +2161,7 @@ describe("Phase U.2 — computeResourceHistogram", () => {
   it("skips non-working days", () => {
     const assignments: Assignment[] = [{ id: "a1", taskId: "t1", resourceId: "r1", unitsPerDay: 1 }];
     const scheduleResults: ScheduleResultMap = {
-      t1: { earlyStart: 0, earlyFinish: 5, lateStart: 0, lateFinish: 5, totalFloat: 0, isCritical: true },
+      t1: { earlyStartMinutes: wm(0), earlyFinishMinutes: wm(5), lateStartMinutes: wm(0), lateFinishMinutes: wm(5), totalFloatMinutes: wm(0), isCritical: true },
     };
     const nwd = new Set([1, 3]); // days 1 and 3 are non-working
     const result = computeResourceHistogram(assignments, scheduleResults, nwd);
@@ -2098,8 +2178,8 @@ describe("Phase U.2 — computeResourceHistogram", () => {
       { id: "a2", taskId: "t2", resourceId: "r1", unitsPerDay: 0.75 },
     ];
     const scheduleResults: ScheduleResultMap = {
-      t1: { earlyStart: 0, earlyFinish: 3, lateStart: 0, lateFinish: 3, totalFloat: 0, isCritical: false },
-      t2: { earlyStart: 1, earlyFinish: 4, lateStart: 1, lateFinish: 4, totalFloat: 0, isCritical: false },
+      t1: { earlyStartMinutes: wm(0), earlyFinishMinutes: wm(3), lateStartMinutes: wm(0), lateFinishMinutes: wm(3), totalFloatMinutes: wm(0), isCritical: false },
+      t2: { earlyStartMinutes: wm(1), earlyFinishMinutes: wm(4), lateStartMinutes: wm(1), lateFinishMinutes: wm(4), totalFloatMinutes: wm(0), isCritical: false },
     };
     const result = computeResourceHistogram(assignments, scheduleResults, new Set());
     expect(result["r1"][0]).toBe(0.5);     // only t1
@@ -2114,7 +2194,7 @@ describe("Phase U.2 — computeResourceHistogram", () => {
       { id: "a2", taskId: "t1", resourceId: "r2", unitsPerDay: 0.5 },
     ];
     const scheduleResults: ScheduleResultMap = {
-      t1: { earlyStart: 0, earlyFinish: 2, lateStart: 0, lateFinish: 2, totalFloat: 0, isCritical: false },
+      t1: { earlyStartMinutes: wm(0), earlyFinishMinutes: wm(2), lateStartMinutes: wm(0), lateFinishMinutes: wm(2), totalFloatMinutes: wm(0), isCritical: false },
     };
     const result = computeResourceHistogram(assignments, scheduleResults, new Set());
     expect(result["r1"][0]).toBe(1);
@@ -2130,7 +2210,7 @@ describe("Phase U.2 — computeResourceHistogram", () => {
   it("handles zero-duration task (earlyStart === earlyFinish)", () => {
     const assignments: Assignment[] = [{ id: "a1", taskId: "t1", resourceId: "r1", unitsPerDay: 1 }];
     const scheduleResults: ScheduleResultMap = {
-      t1: { earlyStart: 5, earlyFinish: 5, lateStart: 5, lateFinish: 5, totalFloat: 0, isCritical: false },
+      t1: { earlyStartMinutes: wm(5), earlyFinishMinutes: wm(5), lateStartMinutes: wm(5), lateFinishMinutes: wm(5), totalFloatMinutes: wm(0), isCritical: false },
     };
     const result = computeResourceHistogram(assignments, scheduleResults, new Set());
     // Zero-duration task: no days loaded
@@ -2158,30 +2238,30 @@ describe("Phase V — Constraint Validation", () => {
     }
   });
 
-  it("allows dated constraint without constraintDate (diagnostic, not rejection)", () => {
+  it("allows dated constraint without constraintDateMinutes (diagnostic, not rejection)", () => {
     const err = validateTaskUpdate("t1", { constraintType: "SNET" });
     expect(err).toBeNull();
   });
 
-  it("rejects negative constraintDate", () => {
-    const err = validateTaskUpdate("t1", { constraintType: "SNET", constraintDate: -1 });
+  it("rejects negative constraintDateMinutes", () => {
+    const err = validateTaskUpdate("t1", { constraintType: "SNET", constraintDateMinutes: wm(-1) });
     expect(err).toBe("constraintDate must not be negative");
   });
 
-  it("rejects constraintDate on ASAP constraint", () => {
-    State.addTask({ id: "t1", name: "T", duration: 5, depth: 0, isSummary: false, constraintType: "ASAP" });
-    const err = validateTaskUpdate("t1", { constraintDate: 10 });
+  it("rejects constraintDateMinutes on ASAP constraint", () => {
+    State.addTask({ id: "t1", name: "T", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "ASAP" });
+    const err = validateTaskUpdate("t1", { constraintDateMinutes: wm(10) });
     expect(err).toBe("Cannot set constraintDate on ASAP constraint");
   });
 
-  it("rejects constraintDate on ALAP constraint", () => {
-    State.addTask({ id: "t1", name: "T", duration: 5, depth: 0, isSummary: false, constraintType: "ALAP" });
-    const err = validateTaskUpdate("t1", { constraintDate: 10 });
+  it("rejects constraintDateMinutes on ALAP constraint", () => {
+    State.addTask({ id: "t1", name: "T", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "ALAP" });
+    const err = validateTaskUpdate("t1", { constraintDateMinutes: wm(10) });
     expect(err).toBe("Cannot set constraintDate on ALAP constraint");
   });
 
   it("accepts dated constraint when task already has a date", () => {
-    State.addTask({ id: "t1", name: "T", duration: 5, depth: 0, isSummary: false, constraintType: "SNET", constraintDate: 5 });
+    State.addTask({ id: "t1", name: "T", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "SNET", constraintDateMinutes: wm(5) });
     // Switch to another dated type — existing date satisfies
     const err = validateTaskUpdate("t1", { constraintType: "FNLT" });
     expect(err).toBeNull();
@@ -2193,28 +2273,28 @@ describe("Phase V — Constraint State Management", () => {
     State.clearState();
   });
 
-  it("persists constraintType and constraintDate on update", () => {
-    State.addTask({ id: "t1", name: "T", duration: 5, depth: 0, isSummary: false });
-    State.updateTask("t1", { constraintType: "SNET", constraintDate: 10 });
+  it("persists constraintType and constraintDateMinutes on update", () => {
+    State.addTask({ id: "t1", name: "T", durationWorkMinutes: wm(5), siblingOrder: "V" });
+    State.updateTask("t1", { constraintType: "SNET", constraintDateMinutes: wm(10) });
     const t = State.findTask("t1");
     expect(t?.constraintType).toBe("SNET");
-    expect(t?.constraintDate).toBe(10);
+    expect(t?.constraintDateMinutes).toBe(10);
   });
 
-  it("switching to ASAP auto-clears constraintDate", () => {
-    State.addTask({ id: "t1", name: "T", duration: 5, depth: 0, isSummary: false, constraintType: "SNET", constraintDate: 10 });
+  it("switching to ASAP auto-clears constraintDateMinutes", () => {
+    State.addTask({ id: "t1", name: "T", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "SNET", constraintDateMinutes: wm(10) });
     State.updateTask("t1", { constraintType: "ASAP" });
     const t = State.findTask("t1");
     expect(t?.constraintType).toBe("ASAP");
-    expect(t?.constraintDate).toBeNull();
+    expect(t?.constraintDateMinutes).toBeNull();
   });
 
-  it("switching to ALAP auto-clears constraintDate", () => {
-    State.addTask({ id: "t1", name: "T", duration: 5, depth: 0, isSummary: false, constraintType: "FNLT", constraintDate: 7 });
+  it("switching to ALAP auto-clears constraintDateMinutes", () => {
+    State.addTask({ id: "t1", name: "T", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "FNLT", constraintDateMinutes: wm(7) });
     State.updateTask("t1", { constraintType: "ALAP" });
     const t = State.findTask("t1");
     expect(t?.constraintType).toBe("ALAP");
-    expect(t?.constraintDate).toBeNull();
+    expect(t?.constraintDateMinutes).toBeNull();
   });
 });
 
@@ -2224,7 +2304,7 @@ describe("Phase V — Constraint Hydration", () => {
   });
 
   it("defaults legacy tasks without constraint fields to ASAP + null", () => {
-    const legacyTask = { id: "t1", name: "T", duration: 5, depth: 0, isSummary: false } as any;
+    const legacyTask = { id: "t1", name: "T", durationWorkMinutes: wm(5), siblingOrder: "V" } as any;
     State.hydrateState({
       projectStartDate: "2025-01-01",
       excludeWeekends: false,
@@ -2234,40 +2314,40 @@ describe("Phase V — Constraint Hydration", () => {
     });
     const t = State.findTask("t1");
     expect(t?.constraintType).toBe("ASAP");
-    expect(t?.constraintDate).toBeNull();
+    expect(t?.constraintDateMinutes).toBeNull();
   });
 
   it("preserves existing constraint fields during hydration", () => {
     State.hydrateState({
       projectStartDate: "2025-01-01",
       excludeWeekends: false,
-      tasks: [{ id: "t1", name: "T", duration: 5, depth: 0, isSummary: false, constraintType: "MSO", constraintDate: 12 }],
+      tasks: [{ id: "t1", name: "T", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "MSO", constraintDateMinutes: wm(12) }],
       dependencies: [],
       baselines: {},
     });
     const t = State.findTask("t1");
     expect(t?.constraintType).toBe("MSO");
-    expect(t?.constraintDate).toBe(12);
+    expect(t?.constraintDateMinutes).toBe(12);
   });
 });
 
 describe("Phase V — Constraint in buildScheduleRequest", () => {
-  it("passes constraintType and constraintDate to schedule request", () => {
+  it("passes constraintType and constraintDateMinutes to schedule request", () => {
     const tasks: Task[] = [
-      { id: "A", name: "A", duration: 5, depth: 0, isSummary: false, constraintType: "SNET", constraintDate: 10 },
+      { id: "A", name: "A", durationWorkMinutes: d(5), siblingOrder: "V", constraintType: "SNET", constraintDateMinutes: d(10) },
     ];
-    const req = buildScheduleRequest(tasks, [], []);
+    const req = buildScheduleRequest(tasks, [], [], slotTranslator);
     expect(req.tasks[0].constraintType).toBe("SNET");
-    expect(req.tasks[0].constraintDate).toBe(10);
+    expect(req.tasks[0].constraintDateMinutes).toBe(10);
   });
 
   it("omits constraint fields when absent on canonical task", () => {
     const tasks: Task[] = [
-      { id: "A", name: "A", duration: 5, depth: 0, isSummary: false },
+      { id: "A", name: "A", durationWorkMinutes: d(5), siblingOrder: "V" },
     ];
-    const req = buildScheduleRequest(tasks, [], []);
+    const req = buildScheduleRequest(tasks, [], [], slotTranslator);
     expect(req.tasks[0]).not.toHaveProperty("constraintType");
-    expect(req.tasks[0]).not.toHaveProperty("constraintDate");
+    expect(req.tasks[0]).not.toHaveProperty("constraintDateMinutes");
   });
 });
 
@@ -2277,95 +2357,95 @@ describe("Phase V.1 — Constraint Pipeline Integration", () => {
   });
 
   it("SNET constraint survives State → buildScheduleRequest pipeline", () => {
-    State.addTask({ id: "A", name: "A", duration: 3, depth: 0, isSummary: false });
-    State.addTask({ id: "B", name: "B", duration: 5, depth: 0, isSummary: false, constraintType: "SNET", constraintDate: 10 });
-    State.addDependency({ id: "d1", predId: "A", succId: "B", type: "FS", lag: 0 });
+    State.addTask({ id: "A", name: "A", durationWorkMinutes: d(3), siblingOrder: "V" });
+    State.addTask({ id: "B", name: "B", durationWorkMinutes: d(5), siblingOrder: "V", constraintType: "SNET", constraintDateMinutes: d(10) });
+    State.addDependency({ id: "d1", predId: "A", succId: "B", type: "FS", lagWorkMinutes: wm(0) });
 
-    const req = buildScheduleRequest(State.getTasks(), State.getDependencies(), []);
+    const req = buildScheduleRequest(State.getTasks(), State.getDependencies(), [], slotTranslator);
     const taskB = req.tasks.find(t => t.id === "B")!;
     expect(taskB.constraintType).toBe("SNET");
-    expect(taskB.constraintDate).toBe(10);
-    expect(taskB.duration).toBe(5);
+    expect(taskB.constraintDateMinutes).toBe(10);
+    expect(taskB.durationWorkMinutes).toBe(5);
     expect(req.dependencies).toHaveLength(1);
   });
 
   it("FNLT constraint survives State → buildScheduleRequest pipeline", () => {
-    State.addTask({ id: "A", name: "A", duration: 4, depth: 0, isSummary: false, constraintType: "FNLT", constraintDate: 3 });
+    State.addTask({ id: "A", name: "A", durationWorkMinutes: d(4), siblingOrder: "V", constraintType: "FNLT", constraintDateMinutes: d(3) });
 
-    const req = buildScheduleRequest(State.getTasks(), State.getDependencies(), []);
+    const req = buildScheduleRequest(State.getTasks(), State.getDependencies(), [], slotTranslator);
     const taskA = req.tasks[0];
     expect(taskA.constraintType).toBe("FNLT");
-    expect(taskA.constraintDate).toBe(3);
+    expect(taskA.constraintDateMinutes).toBe(3);
   });
 
   it("MSO constraint survives State → buildScheduleRequest pipeline", () => {
-    State.addTask({ id: "A", name: "A", duration: 3, depth: 0, isSummary: false, constraintType: "MSO", constraintDate: 5 });
+    State.addTask({ id: "A", name: "A", durationWorkMinutes: d(3), siblingOrder: "V", constraintType: "MSO", constraintDateMinutes: d(5) });
 
-    const req = buildScheduleRequest(State.getTasks(), State.getDependencies(), []);
+    const req = buildScheduleRequest(State.getTasks(), State.getDependencies(), [], slotTranslator);
     const taskA = req.tasks[0];
     expect(taskA.constraintType).toBe("MSO");
-    expect(taskA.constraintDate).toBe(5);
+    expect(taskA.constraintDateMinutes).toBe(5);
   });
 
   it("MFO constraint survives State → buildScheduleRequest pipeline", () => {
-    State.addTask({ id: "A", name: "A", duration: 3, depth: 0, isSummary: false, constraintType: "MFO", constraintDate: 10 });
+    State.addTask({ id: "A", name: "A", durationWorkMinutes: d(3), siblingOrder: "V", constraintType: "MFO", constraintDateMinutes: d(10) });
 
-    const req = buildScheduleRequest(State.getTasks(), State.getDependencies(), []);
+    const req = buildScheduleRequest(State.getTasks(), State.getDependencies(), [], slotTranslator);
     const taskA = req.tasks[0];
     expect(taskA.constraintType).toBe("MFO");
-    expect(taskA.constraintDate).toBe(10);
+    expect(taskA.constraintDateMinutes).toBe(10);
   });
 
-  it("ALAP constraint survives without constraintDate", () => {
-    State.addTask({ id: "A", name: "A", duration: 3, depth: 0, isSummary: false, constraintType: "ALAP" });
+  it("ALAP constraint survives without constraintDateMinutes", () => {
+    State.addTask({ id: "A", name: "A", durationWorkMinutes: wm(3), siblingOrder: "V", constraintType: "ALAP" });
 
-    const req = buildScheduleRequest(State.getTasks(), State.getDependencies(), []);
+    const req = buildScheduleRequest(State.getTasks(), State.getDependencies(), [], slotTranslator);
     const taskA = req.tasks[0];
     expect(taskA.constraintType).toBe("ALAP");
-    // ALAP tasks have no constraintDate — worker does not inject one
-    expect(taskA.constraintDate).toBeUndefined();
+    // ALAP tasks have no constraintDateMinutes — worker does not inject one
+    expect(taskA.constraintDateMinutes).toBeUndefined();
   });
 
   it("unconstrained task emits no constraint fields", () => {
-    State.addTask({ id: "A", name: "A", duration: 5, depth: 0, isSummary: false });
+    State.addTask({ id: "A", name: "A", durationWorkMinutes: d(5), siblingOrder: "V" });
 
-    const req = buildScheduleRequest(State.getTasks(), State.getDependencies(), []);
+    const req = buildScheduleRequest(State.getTasks(), State.getDependencies(), [], slotTranslator);
     const taskA = req.tasks[0];
     expect(taskA).not.toHaveProperty("constraintType");
-    expect(taskA).not.toHaveProperty("constraintDate");
+    expect(taskA).not.toHaveProperty("constraintDateMinutes");
     expect(taskA.id).toBe("A");
-    expect(taskA.duration).toBe(5);
+    expect(taskA.durationWorkMinutes).toBe(5);
   });
 
   it("Worker does not inject default constraintType for bare tasks", () => {
     // Bare task with no constraintType set — worker must not inject "ASAP"
     const tasks: Task[] = [
-      { id: "X", name: "X", duration: 3, depth: 0, isSummary: false },
+      { id: "X", name: "X", durationWorkMinutes: d(3), siblingOrder: "V" },
     ];
-    const req = buildScheduleRequest(tasks, [], []);
+    const req = buildScheduleRequest(tasks, [], [], slotTranslator);
     expect(req.tasks[0]).not.toHaveProperty("constraintType");
   });
 
   it("mixed constrained and unconstrained tasks in same request", () => {
-    State.addTask({ id: "A", name: "A", duration: 3, depth: 0, isSummary: false, constraintType: "SNET", constraintDate: 5 });
-    State.addTask({ id: "B", name: "B", duration: 4, depth: 0, isSummary: false });
-    State.addTask({ id: "C", name: "C", duration: 2, depth: 0, isSummary: false, constraintType: "MFO", constraintDate: 20 });
-    State.addDependency({ id: "d1", predId: "A", succId: "B", type: "FS", lag: 0 });
+    State.addTask({ id: "A", name: "A", durationWorkMinutes: d(3), siblingOrder: "V", constraintType: "SNET", constraintDateMinutes: d(5) });
+    State.addTask({ id: "B", name: "B", durationWorkMinutes: d(4), siblingOrder: "V" });
+    State.addTask({ id: "C", name: "C", durationWorkMinutes: d(2), siblingOrder: "V", constraintType: "MFO", constraintDateMinutes: d(20) });
+    State.addDependency({ id: "d1", predId: "A", succId: "B", type: "FS", lagWorkMinutes: wm(0) });
 
-    const req = buildScheduleRequest(State.getTasks(), State.getDependencies(), []);
+    const req = buildScheduleRequest(State.getTasks(), State.getDependencies(), [], slotTranslator);
     expect(req.tasks).toHaveLength(3);
 
     const a = req.tasks.find(t => t.id === "A")!;
     expect(a.constraintType).toBe("SNET");
-    expect(a.constraintDate).toBe(5);
+    expect(a.constraintDateMinutes).toBe(5);
 
     const b = req.tasks.find(t => t.id === "B")!;
     expect(b).not.toHaveProperty("constraintType");
-    expect(b).not.toHaveProperty("constraintDate");
+    expect(b).not.toHaveProperty("constraintDateMinutes");
 
     const c = req.tasks.find(t => t.id === "C")!;
     expect(c.constraintType).toBe("MFO");
-    expect(c.constraintDate).toBe(20);
+    expect(c.constraintDateMinutes).toBe(20);
 
     expect(req.dependencies).toHaveLength(1);
   });
@@ -2376,8 +2456,8 @@ describe("Phase V.2 — Constraint Persistence Round-Trip", () => {
     State.clearState();
   });
 
-  it("SNET + constraintDate survives persist/hydrate round-trip", () => {
-    State.addTask({ id: "A", name: "A", duration: 5, depth: 0, isSummary: false, constraintType: "SNET", constraintDate: 10 });
+  it("SNET + constraintDateMinutes survives persist/hydrate round-trip", () => {
+    State.addTask({ id: "A", name: "A", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "SNET", constraintDateMinutes: wm(10) });
 
     const snapshot: PersistedState = {
       version: 1,
@@ -2396,11 +2476,11 @@ describe("Phase V.2 — Constraint Persistence Round-Trip", () => {
 
     const t = State.findTask("A")!;
     expect(t.constraintType).toBe("SNET");
-    expect(t.constraintDate).toBe(10);
+    expect(t.constraintDateMinutes).toBe(10);
   });
 
-  it("ALAP persists without injected constraintDate", () => {
-    State.addTask({ id: "A", name: "A", duration: 3, depth: 0, isSummary: false, constraintType: "ALAP" });
+  it("ALAP persists without injected constraintDateMinutes", () => {
+    State.addTask({ id: "A", name: "A", durationWorkMinutes: wm(3), siblingOrder: "V", constraintType: "ALAP" });
 
     const snapshot: PersistedState = {
       version: 1,
@@ -2419,14 +2499,14 @@ describe("Phase V.2 — Constraint Persistence Round-Trip", () => {
 
     const t = State.findTask("A")!;
     expect(t.constraintType).toBe("ALAP");
-    expect(t.constraintDate).toBeNull();
+    expect(t.constraintDateMinutes).toBeNull();
   });
 
   it("unconstrained task persists without injected constraint defaults", () => {
-    State.addTask({ id: "A", name: "A", duration: 4, depth: 0, isSummary: false });
+    State.addTask({ id: "A", name: "A", durationWorkMinutes: wm(4), siblingOrder: "V" });
 
     const persisted = State.getTasks().map(t => ({ ...t }));
-    // Spread must not inject constraintType/constraintDate where they didn't exist
+    // Spread must not inject constraintType/constraintDateMinutes where they didn't exist
     // After hydration, defaults apply
     const snapshot: PersistedState = {
       version: 1,
@@ -2445,14 +2525,14 @@ describe("Phase V.2 — Constraint Persistence Round-Trip", () => {
 
     const t = State.findTask("A")!;
     expect(t.constraintType).toBe("ASAP");
-    expect(t.constraintDate).toBeNull();
+    expect(t.constraintDateMinutes).toBeNull();
   });
 
   it("mixed constrained/unconstrained tasks round-trip correctly", () => {
-    State.addTask({ id: "A", name: "A", duration: 3, depth: 0, isSummary: false, constraintType: "SNET", constraintDate: 5 });
-    State.addTask({ id: "B", name: "B", duration: 4, depth: 0, isSummary: false });
-    State.addTask({ id: "C", name: "C", duration: 2, depth: 0, isSummary: false, constraintType: "MFO", constraintDate: 20 });
-    State.addDependency({ id: "d1", predId: "A", succId: "B", type: "FS", lag: 0 });
+    State.addTask({ id: "A", name: "A", durationWorkMinutes: wm(3), siblingOrder: "V", constraintType: "SNET", constraintDateMinutes: wm(5) });
+    State.addTask({ id: "B", name: "B", durationWorkMinutes: wm(4), siblingOrder: "V" });
+    State.addTask({ id: "C", name: "C", durationWorkMinutes: wm(2), siblingOrder: "V", constraintType: "MFO", constraintDateMinutes: wm(20) });
+    State.addDependency({ id: "d1", predId: "A", succId: "B", type: "FS", lagWorkMinutes: wm(0) });
 
     const snapshot: PersistedState = {
       version: 1,
@@ -2473,15 +2553,15 @@ describe("Phase V.2 — Constraint Persistence Round-Trip", () => {
 
     const a = State.findTask("A")!;
     expect(a.constraintType).toBe("SNET");
-    expect(a.constraintDate).toBe(5);
+    expect(a.constraintDateMinutes).toBe(5);
 
     const b = State.findTask("B")!;
     expect(b.constraintType).toBe("ASAP");
-    expect(b.constraintDate).toBeNull();
+    expect(b.constraintDateMinutes).toBeNull();
 
     const c = State.findTask("C")!;
     expect(c.constraintType).toBe("MFO");
-    expect(c.constraintDate).toBe(20);
+    expect(c.constraintDateMinutes).toBe(20);
 
     expect(State.getDependencies()).toHaveLength(1);
   });
@@ -2493,14 +2573,14 @@ describe("Phase V — Constraint Undo/Redo", () => {
     UndoHistory.clearHistory();
   });
 
-  it("undo restores previous constraintType and constraintDate", () => {
-    State.addTask({ id: "A", name: "A", duration: 5, depth: 0, isSummary: false, constraintType: "ASAP", constraintDate: null });
+  it("undo restores previous constraintType and constraintDateMinutes", () => {
+    State.addTask({ id: "A", name: "A", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "ASAP", constraintDateMinutes: null });
 
-    const cmd = { type: "UPDATE_TASK" as const, v: 1 as const, reqId: "r1", taskId: "A", updates: { constraintType: "SNET" as const, constraintDate: 10 } };
+    const cmd = { type: "UPDATE_TASK" as const, v: 1 as const, reqId: "r1", taskId: "A", updates: { constraintType: "SNET" as const, constraintDateMinutes: wm(10) } };
     const entry = UndoHistory.buildHistoryEntry(cmd);
-    State.updateTask("A", { constraintType: "SNET", constraintDate: 10 });
+    State.updateTask("A", { constraintType: "SNET", constraintDateMinutes: wm(10) });
     expect(State.findTask("A")!.constraintType).toBe("SNET");
-    expect(State.findTask("A")!.constraintDate).toBe(10);
+    expect(State.findTask("A")!.constraintDateMinutes).toBe(10);
 
     UndoHistory.pushEntry(entry!);
     const undoEntry = UndoHistory.popUndo();
@@ -2508,15 +2588,15 @@ describe("Phase V — Constraint Undo/Redo", () => {
       if (c.type === "UPDATE_TASK") State.updateTask(c.taskId, c.updates);
     }
     expect(State.findTask("A")!.constraintType).toBe("ASAP");
-    expect(State.findTask("A")!.constraintDate).toBeNull();
+    expect(State.findTask("A")!.constraintDateMinutes).toBeNull();
   });
 
   it("redo reapplies constraint changes", () => {
-    State.addTask({ id: "A", name: "A", duration: 5, depth: 0, isSummary: false, constraintType: "ASAP", constraintDate: null });
+    State.addTask({ id: "A", name: "A", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "ASAP", constraintDateMinutes: null });
 
-    const cmd = { type: "UPDATE_TASK" as const, v: 1 as const, reqId: "r1", taskId: "A", updates: { constraintType: "MFO" as const, constraintDate: 20 } };
+    const cmd = { type: "UPDATE_TASK" as const, v: 1 as const, reqId: "r1", taskId: "A", updates: { constraintType: "MFO" as const, constraintDateMinutes: wm(20) } };
     const entry = UndoHistory.buildHistoryEntry(cmd);
-    State.updateTask("A", { constraintType: "MFO", constraintDate: 20 });
+    State.updateTask("A", { constraintType: "MFO", constraintDateMinutes: wm(20) });
     UndoHistory.pushEntry(entry!);
 
     // Undo
@@ -2532,7 +2612,7 @@ describe("Phase V — Constraint Undo/Redo", () => {
       if (c.type === "UPDATE_TASK") State.updateTask(c.taskId, c.updates);
     }
     expect(State.findTask("A")!.constraintType).toBe("MFO");
-    expect(State.findTask("A")!.constraintDate).toBe(20);
+    expect(State.findTask("A")!.constraintDateMinutes).toBe(20);
   });
 });
 
@@ -2540,8 +2620,8 @@ describe("Phase V — Constraint Undo/Redo", () => {
 // M03 Phase 1 — Command Spine (internal envelope)
 // ────────────────────────────────────────────────────────────────────────────
 
-import type { DispatchOutcome } from "../src/commandEnvelope.js";
-import { _resetEnvelopeSeq, auditLog, createEnvelope } from "../src/commandEnvelope.js";
+import type { DispatchResult } from "../src/commandEnvelope.js";
+import { _resetEnvelopeSeq, ack, auditLog, createEnvelope, dispatchError, nack } from "../src/commandEnvelope.js";
 
 describe("M03 — CommandEnvelope", () => {
   beforeEach(() => {
@@ -2549,7 +2629,7 @@ describe("M03 — CommandEnvelope", () => {
   });
 
   it("createEnvelope populates all required fields", () => {
-    const cmd = { type: "ADD_TASK" as const, v: 1 as const, reqId: "r1", payload: { id: "t1", name: "T", duration: 5, depth: 0, isSummary: false } };
+    const cmd = { type: "ADD_TASK" as const, v: 1 as const, reqId: "r1", payload: { id: "t1", name: "T", durationWorkMinutes: wm(5), siblingOrder: "V" } };
     const before = Date.now();
     const envelope = createEnvelope(cmd, "human");
     const after = Date.now();
@@ -2583,7 +2663,7 @@ describe("M03 — CommandEnvelope", () => {
   });
 
   it("envelope does not mutate the original command", () => {
-    const cmd = { type: "ADD_TASK" as const, v: 1 as const, reqId: "r1", payload: { id: "t1", name: "T", duration: 5, depth: 0, isSummary: false } };
+    const cmd = { type: "ADD_TASK" as const, v: 1 as const, reqId: "r1", payload: { id: "t1", name: "T", durationWorkMinutes: wm(5), siblingOrder: "V" } };
     const envelope = createEnvelope(cmd, "human");
     expect(envelope.command).toBe(cmd); // same reference, not cloned
     expect(envelope.command.reqId).toBe("r1");
@@ -2592,9 +2672,9 @@ describe("M03 — CommandEnvelope", () => {
   it("auditLog does not throw for any outcome", () => {
     const cmd = { type: "UNDO" as const, v: 1 as const, reqId: "r1" };
     const envelope = createEnvelope(cmd, "human");
-    const outcomes: DispatchOutcome[] = ["ack", "nack", "error"];
-    for (const outcome of outcomes) {
-      expect(() => auditLog(envelope, outcome)).not.toThrow();
+    const results: DispatchResult[] = [ack(), nack("test", "logical"), dispatchError("test")];
+    for (const result of results) {
+      expect(() => auditLog(envelope, result)).not.toThrow();
     }
   });
 
@@ -2614,22 +2694,22 @@ describe("M03 — CommandEnvelope", () => {
 
 describe("M03 Phase 2 — DispatchOutcome type coverage", () => {
   it("DispatchOutcome covers ack, nack, and error", () => {
-    // Type-level test: verify all three outcomes are valid DispatchOutcome values.
-    const outcomes: DispatchOutcome[] = ["ack", "nack", "error"];
-    expect(outcomes).toHaveLength(3);
-    expect(new Set(outcomes).size).toBe(3);
+    // Type-level test: verify all three outcomes are valid DispatchResult values.
+    const results: DispatchResult[] = [ack(), nack("test", "logical"), dispatchError("test")];
+    expect(results).toHaveLength(3);
+    expect(new Set(results.map(r => r.outcome)).size).toBe(3);
   });
 
   it("auditLog includes commandId, type, outcome, issuerType, and correlationId", () => {
     _resetEnvelopeSeq();
-    const cmd = { type: "UPDATE_TASK" as const, v: 1 as const, reqId: "r99", taskId: "t1", updates: { duration: 10 } };
+    const cmd = { type: "UPDATE_TASK" as const, v: 1 as const, reqId: "r99", taskId: "t1", updates: { durationWorkMinutes: wm(10) } };
     const envelope = createEnvelope(cmd, "human");
 
     const logs: string[] = [];
     const origLog = console.log;
     console.log = (...args: unknown[]) => { logs.push(args.join(" ")); };
     try {
-      auditLog(envelope, "nack");
+      auditLog(envelope, nack("test nack", "logical"));
     } finally {
       console.log = origLog;
     }
@@ -2646,14 +2726,14 @@ describe("M03 Phase 2 — DispatchOutcome type coverage", () => {
 
   it("auditLog correctly logs error outcome", () => {
     _resetEnvelopeSeq();
-    const cmd = { type: "ADD_DEPENDENCY" as const, v: 1 as const, reqId: "r50", payload: { id: "d1", predId: "A", succId: "B", type: "FS" as const, lag: 0 } };
+    const cmd = { type: "ADD_DEPENDENCY" as const, v: 1 as const, reqId: "r50", payload: { id: "d1", predId: "A", succId: "B", type: "FS" as const, lagWorkMinutes: wm(0) } };
     const envelope = createEnvelope(cmd, "human");
 
     const logs: string[] = [];
     const origLog = console.log;
     console.log = (...args: unknown[]) => { logs.push(args.join(" ")); };
     try {
-      auditLog(envelope, "error");
+      auditLog(envelope, dispatchError("test error"));
     } finally {
       console.log = origLog;
     }
@@ -2671,7 +2751,7 @@ describe("M03 Phase 2 — DispatchOutcome type coverage", () => {
     const origLog = console.log;
     console.log = (...args: unknown[]) => { logs.push(args.join(" ")); };
     try {
-      auditLog(envelope, "ack");
+      auditLog(envelope, ack());
     } finally {
       console.log = origLog;
     }
@@ -2686,7 +2766,7 @@ describe("M03 Phase 2 — DispatchOutcome type coverage", () => {
 // M04 — Domain Compiler Runtime Scaffolding
 // ────────────────────────────────────────────────────────────────────────────
 
-import type { AssumptionSet, DomainCompiler } from "protocol";
+import type { AssumptionSet, DomainCompiler } from "@planner/protocol";
 import {
     _resetCompilerService,
     compile,
@@ -2769,7 +2849,7 @@ describe("M04 — CompilerService", () => {
         id: "gen-1",
         sourceAuthoredActivityId: "auth-1",
         name: "Stub Activity",
-        durationDays: 5,
+        durationWorkMinutes: wm(5),
         resolvedStrategyKind: "fixed" as const,
         zoneId: "z-1",
       };
@@ -2790,7 +2870,7 @@ describe("M04 — CompilerService", () => {
 
       expect(result.activities).toHaveLength(1);
       expect(result.activities[0].name).toBe("Stub Activity");
-      expect(result.activities[0].durationDays).toBe(5);
+      expect(result.activities[0].durationWorkMinutes).toBe(5);
     });
 
     it("_resetCompilerService restores NullCompiler", () => {
@@ -2818,10 +2898,29 @@ describe("M04 — CompilerService", () => {
 // M05 — Compiler-to-Solver Bridge
 // ────────────────────────────────────────────────────────────────────────────
 
-import type { CompiledScheduleGraph, GeneratedActivity, GeneratedDependency } from "protocol";
+import type { CompiledScheduleGraph, GeneratedActivity, GeneratedDependency } from "@planner/protocol";
 import { mapCompiledGraphToRequest } from "../src/schedule/mapCompiledGraph.js";
 
 describe("M05 — mapCompiledGraphToRequest", () => {
+  const iv = (startMinute: number, endMinute: number): TimeInterval => ({ startMinute, endMinute });
+  const compiledPathCalendarTranslator = new SlotCoordinateTranslator({
+    projectStartDate: "2025-01-06",
+    minutesPerDay: 360,
+    nwdSet: new Set(),
+    projectCalendar: compileCalendar({
+      id: "compiled-path-project" as CalendarId,
+      name: "Compiled Path Project",
+      weeklyPattern: {
+        1: [iv(480, 660), iv(720, 900)],
+        2: [iv(480, 660), iv(720, 900)],
+        3: [iv(480, 660), iv(720, 900)],
+        4: [iv(480, 660), iv(720, 900)],
+        5: [iv(480, 660), iv(720, 900)],
+      },
+      exceptions: [{ date: "2025-01-06", workIntervals: [], name: "Project Holiday" }],
+    }),
+  });
+
   const makeGraph = (
     activities: GeneratedActivity[] = [],
     dependencies: GeneratedDependency[] = [],
@@ -2836,7 +2935,7 @@ describe("M05 — mapCompiledGraphToRequest", () => {
   });
 
   it("maps an empty graph to an empty ScheduleRequest", () => {
-    const request = mapCompiledGraphToRequest(makeGraph());
+    const request = mapCompiledGraphToRequest(makeGraph(), slotTranslator);
 
     expect(request.tasks).toEqual([]);
     expect(request.dependencies).toEqual([]);
@@ -2848,21 +2947,21 @@ describe("M05 — mapCompiledGraphToRequest", () => {
       id: "gen-1",
       sourceAuthoredActivityId: "auth-1",
       name: "Pour Concrete",
-      durationDays: 5,
+      durationWorkMinutes: d(5),
       resolvedStrategyKind: "fixed",
       zoneId: "z-1",
     };
 
-    const request = mapCompiledGraphToRequest(makeGraph([activity]));
+    const request = mapCompiledGraphToRequest(makeGraph([activity]), slotTranslator);
 
     expect(request.tasks).toHaveLength(1);
     const task = request.tasks[0];
     expect(task.id).toBe("gen-1");
-    expect(task.duration).toBe(5);
-    expect(task.minEarlyStart).toBe(0);
+    expect(task.durationWorkMinutes).toBe(5);
+    expect(task.minEarlyStartMinutes).toBe(0);
     expect(task.isSummary).toBe(false);
     expect(task.constraintType).toBe("ASAP");
-    expect(task.constraintDate).toBeNull();
+    expect(task.constraintDateMinutes).toBeNull();
   });
 
   it("forwards constraint fields from activity", () => {
@@ -2870,18 +2969,34 @@ describe("M05 — mapCompiledGraphToRequest", () => {
       id: "gen-2",
       sourceAuthoredActivityId: "auth-2",
       name: "Install Forms",
-      durationDays: 3,
+      durationWorkMinutes: d(3),
       resolvedStrategyKind: "productivity-driven",
       zoneId: "z-1",
       constraintType: "SNET",
-      constraintDate: 10,
+      constraintDateMinutes: d(10),
     };
 
-    const request = mapCompiledGraphToRequest(makeGraph([activity]));
+    const request = mapCompiledGraphToRequest(makeGraph([activity]), slotTranslator);
 
     const task = request.tasks[0];
     expect(task.constraintType).toBe("SNET");
-    expect(task.constraintDate).toBe(10);
+    expect(task.constraintDateMinutes).toBe(10);
+  });
+
+  it("uses the shared calendar-aware translator in compiled mode", () => {
+    const activity: GeneratedActivity = {
+      id: "gen-holiday",
+      sourceAuthoredActivityId: "auth-holiday",
+      name: "Holiday Task",
+      durationWorkMinutes: d(3),
+      resolvedStrategyKind: "fixed",
+      zoneId: "z-1",
+      constraintType: "SNET",
+      constraintDateMinutes: wm(0),
+    };
+
+    const request = mapCompiledGraphToRequest(makeGraph([activity]), compiledPathCalendarTranslator);
+    expect(request.tasks[0].constraintDateMinutes).toBe(1);
   });
 
   it("maps dependencies with field renaming", () => {
@@ -2889,17 +3004,17 @@ describe("M05 — mapCompiledGraphToRequest", () => {
       predecessorId: "gen-1",
       successorId: "gen-2",
       type: "FS",
-      lagDays: 2,
+      lagWorkMinutes: d(2),
     };
 
-    const request = mapCompiledGraphToRequest(makeGraph([], [dep]));
+    const request = mapCompiledGraphToRequest(makeGraph([], [dep]), slotTranslator);
 
     expect(request.dependencies).toHaveLength(1);
     const mapped = request.dependencies[0];
     expect(mapped.predId).toBe("gen-1");
     expect(mapped.succId).toBe("gen-2");
     expect(mapped.depType).toBe("FS");
-    expect(mapped.lag).toBe(2);
+    expect(mapped.lagWorkMinutes).toBe(2);
   });
 
   it("maps all four dependency types", () => {
@@ -2908,21 +3023,21 @@ describe("M05 — mapCompiledGraphToRequest", () => {
       predecessorId: `gen-${i}`,
       successorId: `gen-${i + 10}`,
       type: t,
-      lagDays: i,
+      lagWorkMinutes: d(i),
     }));
 
-    const request = mapCompiledGraphToRequest(makeGraph([], deps));
+    const request = mapCompiledGraphToRequest(makeGraph([], deps), slotTranslator);
 
     expect(request.dependencies).toHaveLength(4);
     types.forEach((t, i) => {
       expect(request.dependencies[i].depType).toBe(t);
-      expect(request.dependencies[i].lag).toBe(i);
+      expect(request.dependencies[i].lagWorkMinutes).toBe(i);
     });
   });
 
   it("passes nonWorkingDays through unchanged", () => {
     const nwd = [0, 6, 7, 13, 14, 20, 21];
-    const request = mapCompiledGraphToRequest(makeGraph([], [], nwd));
+    const request = mapCompiledGraphToRequest(makeGraph([], [], nwd), slotTranslator);
 
     expect(request.nonWorkingDays).toEqual(nwd);
   });
@@ -2932,12 +3047,12 @@ describe("M05 — mapCompiledGraphToRequest", () => {
       id: "gen-1",
       sourceAuthoredActivityId: "auth-1",
       name: "Pour Concrete",
-      durationDays: 5,
+      durationWorkMinutes: d(5),
       resolvedStrategyKind: "productivity-driven",
       zoneId: "z-1",
     };
 
-    const request = mapCompiledGraphToRequest(makeGraph([activity]));
+    const request = mapCompiledGraphToRequest(makeGraph([activity]), slotTranslator);
 
     const task = request.tasks[0];
     // These domain fields must not leak to the kernel
@@ -2948,7 +3063,7 @@ describe("M05 — mapCompiledGraphToRequest", () => {
   });
 
   it("drops compilation provenance (sourceAssumptionSetId, compiledAt)", () => {
-    const request = mapCompiledGraphToRequest(makeGraph());
+    const request = mapCompiledGraphToRequest(makeGraph(), slotTranslator);
 
     // ScheduleRequest has no provenance fields
     expect(request).not.toHaveProperty("sourceAssumptionSetId");
@@ -2962,7 +3077,7 @@ describe("M05 — mapCompiledGraphToRequest", () => {
         id: "gen-1",
         sourceAuthoredActivityId: "auth-1",
         name: "Excavation",
-        durationDays: 10,
+        durationWorkMinutes: d(10),
         resolvedStrategyKind: "productivity-driven",
         zoneId: "z-1",
       },
@@ -2970,48 +3085,48 @@ describe("M05 — mapCompiledGraphToRequest", () => {
         id: "gen-2",
         sourceAuthoredActivityId: "auth-2",
         name: "Foundation",
-        durationDays: 7,
+        durationWorkMinutes: d(7),
         resolvedStrategyKind: "fixed",
         zoneId: "z-1",
         constraintType: "SNET",
-        constraintDate: 15,
+        constraintDateMinutes: d(15),
       },
       {
         id: "gen-3",
         sourceAuthoredActivityId: "auth-3",
         name: "Steel Erection",
-        durationDays: 14,
+        durationWorkMinutes: d(14),
         resolvedStrategyKind: "manual-override",
         zoneId: "z-2",
       },
     ];
 
     const deps: GeneratedDependency[] = [
-      { predecessorId: "gen-1", successorId: "gen-2", type: "FS", lagDays: 0 },
-      { predecessorId: "gen-2", successorId: "gen-3", type: "SS", lagDays: 3 },
+      { predecessorId: "gen-1", successorId: "gen-2", type: "FS", lagWorkMinutes: wm(0) },
+      { predecessorId: "gen-2", successorId: "gen-3", type: "SS", lagWorkMinutes: d(3) },
     ];
 
     const nwd = [5, 6, 12, 13];
 
-    const request = mapCompiledGraphToRequest(makeGraph(activities, deps, nwd));
+    const request = mapCompiledGraphToRequest(makeGraph(activities, deps, nwd), slotTranslator);
 
     expect(request.tasks).toHaveLength(3);
     expect(request.dependencies).toHaveLength(2);
     expect(request.nonWorkingDays).toEqual(nwd);
 
     // Verify durations mapped correctly
-    expect(request.tasks[0].duration).toBe(10);
-    expect(request.tasks[1].duration).toBe(7);
-    expect(request.tasks[2].duration).toBe(14);
+    expect(request.tasks[0].durationWorkMinutes).toBe(10);
+    expect(request.tasks[1].durationWorkMinutes).toBe(7);
+    expect(request.tasks[2].durationWorkMinutes).toBe(14);
 
     // Verify constraint on second task
     expect(request.tasks[1].constraintType).toBe("SNET");
-    expect(request.tasks[1].constraintDate).toBe(15);
+    expect(request.tasks[1].constraintDateMinutes).toBe(15);
 
     // Verify all tasks are leaf (not summary, no hierarchy)
     for (const task of request.tasks) {
       expect(task.isSummary).toBe(false);
-      expect(task.minEarlyStart).toBe(0);
+      expect(task.minEarlyStartMinutes).toBe(0);
       expect(task.parentId).toBeUndefined();
     }
   });
@@ -3021,7 +3136,7 @@ describe("M05 — mapCompiledGraphToRequest", () => {
 // M06 — Controlled Compiler Invocation Path
 // ────────────────────────────────────────────────────────────────────────────
 
-import type { AuthoredActivity } from "protocol";
+import type { AuthoredActivity } from "@planner/protocol";
 import { buildCompiledScheduleRequest } from "../src/schedule/compiledSchedulePath.js";
 
 describe("M06 — buildCompiledScheduleRequest", () => {
@@ -3045,6 +3160,7 @@ describe("M06 — buildCompiledScheduleRequest", () => {
         minimalAssumptionSet,
         [],
         [],
+        slotTranslator,
       );
 
       expect(request.tasks).toEqual([]);
@@ -3059,6 +3175,7 @@ describe("M06 — buildCompiledScheduleRequest", () => {
         minimalAssumptionSet,
         [],
         nwd,
+        slotTranslator,
       );
 
       expect(request.nonWorkingDays).toEqual(nwd);
@@ -3071,19 +3188,19 @@ describe("M06 — buildCompiledScheduleRequest", () => {
         id: "auth-1",
         name: "Excavation",
         zoneId: "z-1",
-        durationStrategy: { kind: "fixed", durationDays: 10 },
+        durationStrategy: { kind: "fixed", durationWorkMinutes: d(10) },
         dependencies: [],
       },
       {
         id: "auth-2",
         name: "Foundation",
         zoneId: "z-1",
-        durationStrategy: { kind: "fixed", durationDays: 7 },
+        durationStrategy: { kind: "fixed", durationWorkMinutes: d(7) },
         dependencies: [
-          { predecessorActivityId: "auth-1", type: "FS", lagDays: 0 },
+          { predecessorActivityId: "auth-1", type: "FS", lagWorkMinutes: wm(0) },
         ],
         constraintType: "SNET",
-        constraintDate: 15,
+        constraintDateMinutes: d(15),
       },
     ];
 
@@ -3101,21 +3218,21 @@ describe("M06 — buildCompiledScheduleRequest", () => {
           id: `gen-${aa.id}`,
           sourceAuthoredActivityId: aa.id,
           name: aa.name,
-          durationDays:
+          durationWorkMinutes:
             aa.durationStrategy.kind === "fixed"
-              ? aa.durationStrategy.durationDays
-              : 1,
+              ? aa.durationStrategy.durationWorkMinutes
+              : wm(1),
           resolvedStrategyKind: aa.durationStrategy.kind,
           zoneId: aa.zoneId,
           constraintType: aa.constraintType,
-          constraintDate: aa.constraintDate,
+          constraintDateMinutes: aa.constraintDateMinutes,
         })),
         dependencies: authoredActivities.flatMap((aa) =>
           aa.dependencies.map((dep) => ({
             predecessorId: `gen-${dep.predecessorActivityId}`,
             successorId: `gen-${aa.id}`,
             type: dep.type,
-            lagDays: dep.lagDays,
+            lagWorkMinutes: dep.lagWorkMinutes,
           })),
         ),
         nonWorkingDays: [...nonWorkingDays],
@@ -3133,26 +3250,27 @@ describe("M06 — buildCompiledScheduleRequest", () => {
         minimalAssumptionSet,
         stubActivities,
         nwd,
+        slotTranslator,
       );
 
       // Tasks
       expect(request.tasks).toHaveLength(2);
       expect(request.tasks[0].id).toBe("gen-auth-1");
-      expect(request.tasks[0].duration).toBe(10);
+      expect(request.tasks[0].durationWorkMinutes).toBe(10);
       expect(request.tasks[0].constraintType).toBe("ASAP");
-      expect(request.tasks[0].constraintDate).toBeNull();
+      expect(request.tasks[0].constraintDateMinutes).toBeNull();
 
       expect(request.tasks[1].id).toBe("gen-auth-2");
-      expect(request.tasks[1].duration).toBe(7);
+      expect(request.tasks[1].durationWorkMinutes).toBe(7);
       expect(request.tasks[1].constraintType).toBe("SNET");
-      expect(request.tasks[1].constraintDate).toBe(15);
+      expect(request.tasks[1].constraintDateMinutes).toBe(15);
 
       // Dependencies
       expect(request.dependencies).toHaveLength(1);
       expect(request.dependencies[0].predId).toBe("gen-auth-1");
       expect(request.dependencies[0].succId).toBe("gen-auth-2");
       expect(request.dependencies[0].depType).toBe("FS");
-      expect(request.dependencies[0].lag).toBe(0);
+      expect(request.dependencies[0].lagWorkMinutes).toBe(0);
 
       // Calendar
       expect(request.nonWorkingDays).toEqual(nwd);
@@ -3168,6 +3286,7 @@ describe("M06 — buildCompiledScheduleRequest", () => {
         minimalAssumptionSet,
         stubActivities,
         [],
+        slotTranslator,
       );
 
       // ScheduleRequest must not carry domain fields
@@ -3188,11 +3307,12 @@ describe("M06 — buildCompiledScheduleRequest", () => {
         minimalAssumptionSet,
         stubActivities,
         [],
+        slotTranslator,
       );
 
       for (const task of request.tasks) {
         expect(task.isSummary).toBe(false);
-        expect(task.minEarlyStart).toBe(0);
+        expect(task.minEarlyStartMinutes).toBe(0);
         expect(task.parentId).toBeUndefined();
       }
     });
@@ -3249,6 +3369,7 @@ describe("M07 — Compiled path produces valid ScheduleRequest via mode switch",
       { id: "as-1", version: 1, name: "S", zones: [], quantities: [], resources: [], productivityRules: [] },
       [],
       [5, 6],
+      slotTranslator,
     );
 
     expect(request.tasks).toEqual([]);
@@ -3267,11 +3388,11 @@ describe("M07 — Compiled path produces valid ScheduleRequest via mode switch",
           id: `g-${a.id}`,
           sourceAuthoredActivityId: a.id,
           name: a.name,
-          durationDays: a.durationStrategy.kind === "fixed" ? a.durationStrategy.durationDays : 1,
+          durationWorkMinutes: a.durationStrategy.kind === "fixed" ? a.durationStrategy.durationWorkMinutes : wm(1),
           resolvedStrategyKind: a.durationStrategy.kind,
           zoneId: a.zoneId,
           constraintType: a.constraintType,
-          constraintDate: a.constraintDate,
+          constraintDateMinutes: a.constraintDateMinutes,
         })),
         dependencies: [],
         nonWorkingDays: [...nwd],
@@ -3289,7 +3410,7 @@ describe("M07 — Compiled path produces valid ScheduleRequest via mode switch",
         id: "a1",
         name: "Task A",
         zoneId: "z1",
-        durationStrategy: { kind: "fixed", durationDays: 5 },
+        durationStrategy: { kind: "fixed", durationWorkMinutes: d(5) },
         dependencies: [],
       },
     ];
@@ -3298,11 +3419,12 @@ describe("M07 — Compiled path produces valid ScheduleRequest via mode switch",
       { id: "as-1", version: 1, name: "S", zones: [], quantities: [], resources: [], productivityRules: [] },
       authored,
       [],
+      slotTranslator,
     );
 
     expect(request.tasks).toHaveLength(1);
     expect(request.tasks[0].id).toBe("g-a1");
-    expect(request.tasks[0].duration).toBe(5);
+    expect(request.tasks[0].durationWorkMinutes).toBe(5);
     expect(request.tasks[0].isSummary).toBe(false);
 
     // Domain fields must not leak to solver
@@ -3315,14 +3437,15 @@ describe("M07 — Compiled path produces valid ScheduleRequest via mode switch",
     expect(getSchedulingMode()).toBe("legacy");
 
     const request = buildScheduleRequest(
-      [{ id: "t1", name: "T1", duration: 3, depth: 0, isSummary: false }],
+      [{ id: "t1", name: "T1", durationWorkMinutes: d(3), siblingOrder: "V" }],
       [],
       [],
+      slotTranslator,
     );
 
     expect(request.tasks).toHaveLength(1);
     expect(request.tasks[0].id).toBe("t1");
-    expect(request.tasks[0].duration).toBe(3);
+    expect(request.tasks[0].durationWorkMinutes).toBe(3);
   });
 });
 
@@ -3333,48 +3456,53 @@ import { computeConstraintDiagnostics, mergeResultDiagnostics } from "../src/con
 
 describe("computeConstraintDiagnostics", () => {
   it("returns empty map for ASAP tasks", () => {
-    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false }];
+    const tasks: Task[] = [{ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V" }];
     expect(computeConstraintDiagnostics(tasks)).toEqual({});
   });
 
   it("emits MISSING_DATE_FOR_CONSTRAINT for dated type without date", () => {
-    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "SNET" }];
+    const tasks: Task[] = [{ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "SNET" }];
     const map = computeConstraintDiagnostics(tasks);
     expect(map["t1"]).toEqual(["MISSING_DATE_FOR_CONSTRAINT"]);
   });
 
   it("emits no code for dated type with date set", () => {
-    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "SNET", constraintDate: 10 }];
+    const tasks: Task[] = [{ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "SNET", constraintDateMinutes: wm(10) }];
     expect(computeConstraintDiagnostics(tasks)).toEqual({});
   });
 
   it("emits DATE_IGNORED_BY_MODE for ALAP with date", () => {
-    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "ALAP", constraintDate: 5 }];
+    const tasks: Task[] = [{ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "ALAP", constraintDateMinutes: wm(5) }];
     const map = computeConstraintDiagnostics(tasks);
     expect(map["t1"]).toEqual(["DATE_IGNORED_BY_MODE"]);
   });
 
   it("emits no code for ALAP without date", () => {
-    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "ALAP" }];
+    const tasks: Task[] = [{ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "ALAP" }];
     expect(computeConstraintDiagnostics(tasks)).toEqual({});
   });
 
   it("skips summary tasks", () => {
-    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: true, constraintType: "SNET" }];
+    const tasks: Task[] = [
+      { id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "SNET" },
+      { id: "t2", name: "T2", durationWorkMinutes: wm(3), siblingOrder: "V", parentId: "t1" },
+    ];
+    // t1 is summary (has child t2), so its SNET constraint is skipped
+    // t2 has no constraint, so no diagnostics
     expect(computeConstraintDiagnostics(tasks)).toEqual({});
   });
 
   it("emits MISSING_DATE for MSO without date", () => {
-    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "MSO" }];
+    const tasks: Task[] = [{ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "MSO" }];
     const map = computeConstraintDiagnostics(tasks);
     expect(map["t1"]).toEqual(["MISSING_DATE_FOR_CONSTRAINT"]);
   });
 
   it("handles multiple tasks with mixed diagnostics", () => {
     const tasks: Task[] = [
-      { id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "SNET" },
-      { id: "t2", name: "T2", duration: 3, depth: 0, isSummary: false, constraintType: "ALAP", constraintDate: 10 },
-      { id: "t3", name: "T3", duration: 2, depth: 0, isSummary: false },
+      { id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "SNET" },
+      { id: "t2", name: "T2", durationWorkMinutes: wm(3), siblingOrder: "V", constraintType: "ALAP", constraintDateMinutes: wm(10) },
+      { id: "t3", name: "T3", durationWorkMinutes: wm(2), siblingOrder: "V" },
     ];
     const map = computeConstraintDiagnostics(tasks);
     expect(map["t1"]).toEqual(["MISSING_DATE_FOR_CONSTRAINT"]);
@@ -3389,15 +3517,15 @@ describe("Phase V.10b — Incomplete dated constraints allowed", () => {
   });
 
   it("allows SNET without date in canonical state", () => {
-    State.addTask({ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false });
+    State.addTask({ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V" });
     State.updateTask("t1", { constraintType: "SNET" });
     const t = State.findTask("t1");
     expect(t?.constraintType).toBe("SNET");
-    expect(t?.constraintDate).toBeUndefined();
+    expect(t?.constraintDateMinutes).toBeUndefined();
   });
 
   it("allows MSO without date in canonical state", () => {
-    State.addTask({ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false });
+    State.addTask({ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V" });
     State.updateTask("t1", { constraintType: "MSO" });
     const t = State.findTask("t1");
     expect(t?.constraintType).toBe("MSO");
@@ -3405,21 +3533,21 @@ describe("Phase V.10b — Incomplete dated constraints allowed", () => {
 
   it("diagnostic fires for incomplete dated constraint", () => {
     const tasks: Task[] = [
-      { id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "FNLT" },
+      { id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "FNLT" },
     ];
     const map = computeConstraintDiagnostics(tasks);
     expect(map["t1"]).toEqual(["MISSING_DATE_FOR_CONSTRAINT"]);
   });
 
   it("buildScheduleRequest succeeds with incomplete constraint", () => {
-    State.addTask({ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false });
+    State.addTask({ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V" });
     State.updateTask("t1", { constraintType: "SNET" });
-    const req = buildScheduleRequest(State.getTasks(), [], []);
+    const req = buildScheduleRequest(State.getTasks(), [], [], slotTranslator);
     // Request builds successfully — kernel treats missing date as unconstrained
     expect(req.tasks).toHaveLength(1);
     expect(req.tasks[0].id).toBe("t1");
     expect(req.tasks[0].constraintType).toBe("SNET");
-    expect(req.tasks[0].constraintDate).toBeUndefined();
+    expect(req.tasks[0].constraintDateMinutes).toBeUndefined();
   });
 });
 
@@ -3429,46 +3557,46 @@ describe("Phase V.10b — Incomplete dated constraints allowed", () => {
 
 describe("mergeResultDiagnostics", () => {
   const mkResult = (totalFloat: number): ScheduleResultMap["string"] => ({
-    earlyStart: 0, earlyFinish: 5, lateStart: 0, lateFinish: 5, totalFloat, isCritical: totalFloat <= 0,
+    earlyStartMinutes: wm(0), earlyFinishMinutes: wm(5), lateStartMinutes: wm(0), lateFinishMinutes: wm(5), totalFloatMinutes: wm(totalFloat), isCritical: totalFloat <= 0,
   });
 
   it("emits GENERATING_NEGATIVE_FLOAT for constrained task with negative float", () => {
-    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "SNET", constraintDate: 10 }];
+    const tasks: Task[] = [{ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "SNET", constraintDateMinutes: wm(10) }];
     const sr: ScheduleResultMap = { t1: mkResult(-2) };
     const map = mergeResultDiagnostics(tasks, sr, {});
     expect(map["t1"]).toEqual(["GENERATING_NEGATIVE_FLOAT"]);
   });
 
   it("does not emit when totalFloat >= 0", () => {
-    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "SNET", constraintDate: 10 }];
+    const tasks: Task[] = [{ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "SNET", constraintDateMinutes: wm(10) }];
     const sr: ScheduleResultMap = { t1: mkResult(3) };
     const map = mergeResultDiagnostics(tasks, sr, {});
     expect(map["t1"]).toBeUndefined();
   });
 
-  it("does not emit when constraintDate is missing", () => {
-    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "SNET" }];
+  it("does not emit when constraintDateMinutes is missing", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "SNET" }];
     const sr: ScheduleResultMap = { t1: mkResult(-2) };
     const map = mergeResultDiagnostics(tasks, sr, {});
     expect(map["t1"]).toBeUndefined();
   });
 
   it("does not emit for ASAP task with negative float", () => {
-    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false }];
+    const tasks: Task[] = [{ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V" }];
     const sr: ScheduleResultMap = { t1: mkResult(-1) };
     const map = mergeResultDiagnostics(tasks, sr, {});
     expect(map["t1"]).toBeUndefined();
   });
 
   it("does not emit for ALAP task with negative float", () => {
-    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "ALAP" }];
+    const tasks: Task[] = [{ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "ALAP" }];
     const sr: ScheduleResultMap = { t1: mkResult(-1) };
     const map = mergeResultDiagnostics(tasks, sr, {});
     expect(map["t1"]).toBeUndefined();
   });
 
   it("merges with existing input diagnostics", () => {
-    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "FNLT", constraintDate: 2 }];
+    const tasks: Task[] = [{ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "FNLT", constraintDateMinutes: wm(2) }];
     const sr: ScheduleResultMap = { t1: mkResult(-3) };
     const inputDiags = { t1: ["DATE_IGNORED_BY_MODE" as const] };
     const map = mergeResultDiagnostics(tasks, sr, inputDiags);
@@ -3476,14 +3604,18 @@ describe("mergeResultDiagnostics", () => {
   });
 
   it("skips summary tasks", () => {
-    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: true, constraintType: "SNET", constraintDate: 10 }];
+    const tasks: Task[] = [
+      { id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "SNET", constraintDateMinutes: wm(10) },
+      { id: "t2", name: "T2", durationWorkMinutes: wm(3), siblingOrder: "V", parentId: "t1" },
+    ];
     const sr: ScheduleResultMap = { t1: mkResult(-5) };
     const map = mergeResultDiagnostics(tasks, sr, {});
+    // t1 is summary (has child), so it's skipped
     expect(map["t1"]).toBeUndefined();
   });
 
   it("does not emit when no schedule result exists for task", () => {
-    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "MSO", constraintDate: 10 }];
+    const tasks: Task[] = [{ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "MSO", constraintDateMinutes: wm(10) }];
     const map = mergeResultDiagnostics(tasks, {}, {});
     expect(map["t1"]).toBeUndefined();
   });
@@ -3495,75 +3627,105 @@ describe("mergeResultDiagnostics", () => {
 
 describe("mergeResultDiagnostics — SUPERSEDED_BY_LOGIC", () => {
   const mkResult = (overrides: Partial<ScheduleResultMap[string]> = {}): ScheduleResultMap[string] => ({
-    earlyStart: 0, earlyFinish: 5, lateStart: 0, lateFinish: 5, totalFloat: 0, isCritical: false, ...overrides,
+    earlyStartMinutes: wm(0), earlyFinishMinutes: wm(5), lateStartMinutes: wm(0), lateFinishMinutes: wm(5), totalFloatMinutes: wm(0), isCritical: false, ...overrides,
   });
+  const iv = (startMinute: number, endMinute: number): TimeInterval => ({ startMinute, endMinute });
+  const sixHourWeekdayCalendar: CalendarOutputContext = {
+    calendar: compileCalendar({
+      id: "six-hour-days" as CalendarId,
+      name: "Six Hour Days",
+      weeklyPattern: {
+        1: [iv(480, 660), iv(720, 900)],
+        2: [iv(480, 660), iv(720, 900)],
+        3: [iv(480, 660), iv(720, 900)],
+        4: [iv(480, 660), iv(720, 900)],
+        5: [iv(480, 660), iv(720, 900)],
+      },
+      exceptions: [],
+    }),
+    projectStartDate: "2025-01-06",
+  };
 
-  it("emits for SNET when earlyStart > constraintDate", () => {
-    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "SNET", constraintDate: 3 }];
-    const sr: ScheduleResultMap = { t1: mkResult({ earlyStart: 5 }) };
+  it("emits for SNET when earlyStart > constraintDateMinutes", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "SNET", constraintDateMinutes: d(3) }];
+    const sr: ScheduleResultMap = { t1: mkResult({ earlyStartMinutes: wm(5) }) };
     const map = mergeResultDiagnostics(tasks, sr, {});
     expect(map["t1"]).toContain("SUPERSEDED_BY_LOGIC");
   });
 
-  it("does not emit for SNET when earlyStart === constraintDate", () => {
-    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "SNET", constraintDate: 5 }];
-    const sr: ScheduleResultMap = { t1: mkResult({ earlyStart: 5 }) };
+  it("does not emit for SNET when earlyStart === constraintDateMinutes", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "SNET", constraintDateMinutes: d(5) }];
+    const sr: ScheduleResultMap = { t1: mkResult({ earlyStartMinutes: wm(5) }) };
     const map = mergeResultDiagnostics(tasks, sr, {});
     expect(map["t1"]).toBeUndefined();
   });
 
-  it("does not emit for SNET when earlyStart < constraintDate", () => {
-    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "SNET", constraintDate: 10 }];
-    const sr: ScheduleResultMap = { t1: mkResult({ earlyStart: 5 }) };
+  it("does not emit for SNET when earlyStart < constraintDateMinutes", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "SNET", constraintDateMinutes: d(10) }];
+    const sr: ScheduleResultMap = { t1: mkResult({ earlyStartMinutes: wm(5) }) };
     const map = mergeResultDiagnostics(tasks, sr, {});
     expect(map["t1"]).toBeUndefined();
   });
 
-  it("emits for FNLT when lateFinish < constraintDate", () => {
-    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "FNLT", constraintDate: 20 }];
-    const sr: ScheduleResultMap = { t1: mkResult({ lateFinish: 15 }) };
+  it("emits for FNLT when lateFinish < constraintDateMinutes", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "FNLT", constraintDateMinutes: d(20) }];
+    const sr: ScheduleResultMap = { t1: mkResult({ lateFinishMinutes: wm(15) }) };
     const map = mergeResultDiagnostics(tasks, sr, {});
     expect(map["t1"]).toContain("SUPERSEDED_BY_LOGIC");
   });
 
-  it("does not emit for FNLT when lateFinish === constraintDate", () => {
-    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "FNLT", constraintDate: 15 }];
-    const sr: ScheduleResultMap = { t1: mkResult({ lateFinish: 15 }) };
+  it("does not emit for FNLT when lateFinish === constraintDateMinutes", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "FNLT", constraintDateMinutes: d(15) }];
+    const sr: ScheduleResultMap = { t1: mkResult({ lateFinishMinutes: wm(15) }) };
     const map = mergeResultDiagnostics(tasks, sr, {});
     expect(map["t1"]).toBeUndefined();
   });
 
-  it("does not emit for FNLT when lateFinish > constraintDate", () => {
-    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "FNLT", constraintDate: 10 }];
-    const sr: ScheduleResultMap = { t1: mkResult({ lateFinish: 15 }) };
+  it("does not emit for FNLT when lateFinish > constraintDateMinutes", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "FNLT", constraintDateMinutes: d(10) }];
+    const sr: ScheduleResultMap = { t1: mkResult({ lateFinishMinutes: wm(15) }) };
     const map = mergeResultDiagnostics(tasks, sr, {});
     expect(map["t1"]).toBeUndefined();
   });
 
   it("does not emit for MSO (must-constraint)", () => {
-    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "MSO", constraintDate: 3 }];
-    const sr: ScheduleResultMap = { t1: mkResult({ earlyStart: 10 }) };
+    const tasks: Task[] = [{ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "MSO", constraintDateMinutes: d(3) }];
+    const sr: ScheduleResultMap = { t1: mkResult({ earlyStartMinutes: wm(10) }) };
     const map = mergeResultDiagnostics(tasks, sr, {});
     expect(map["t1"]?.includes("SUPERSEDED_BY_LOGIC")).toBeFalsy();
   });
 
   it("does not emit for MFO (must-constraint)", () => {
-    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "MFO", constraintDate: 3 }];
-    const sr: ScheduleResultMap = { t1: mkResult({ lateFinish: 1 }) };
+    const tasks: Task[] = [{ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "MFO", constraintDateMinutes: d(3) }];
+    const sr: ScheduleResultMap = { t1: mkResult({ lateFinishMinutes: wm(1) }) };
     const map = mergeResultDiagnostics(tasks, sr, {});
     expect(map["t1"]?.includes("SUPERSEDED_BY_LOGIC")).toBeFalsy();
   });
 
-  it("does not emit for SNET without constraintDate", () => {
-    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "SNET" }];
-    const sr: ScheduleResultMap = { t1: mkResult({ earlyStart: 10 }) };
+  it("does not emit for SNET without constraintDateMinutes", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "SNET" }];
+    const sr: ScheduleResultMap = { t1: mkResult({ earlyStartMinutes: wm(10) }) };
     const map = mergeResultDiagnostics(tasks, sr, {});
     expect(map["t1"]?.includes("SUPERSEDED_BY_LOGIC")).toBeFalsy();
+  });
+
+  it("uses authored project-day offset for logic checks when calendarContext is present", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "SNET", constraintDateMinutes: d(6) }];
+    const sr: ScheduleResultMap = { t1: mkResult({ earlyStartMinutes: wm(7) }) };
+
+    const scalar = mergeResultDiagnostics(tasks, sr, {}, new Set(), 360);
+    expect(scalar["t1"]?.includes("SUPERSEDED_BY_LOGIC")).toBeFalsy();
+
+    const calendarAware = mergeResultDiagnostics(tasks, sr, {}, new Set(), 360, sixHourWeekdayCalendar);
+    expect(calendarAware["t1"]).toContain("SUPERSEDED_BY_LOGIC");
   });
 
   it("skips summary tasks", () => {
-    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: true, constraintType: "SNET", constraintDate: 0 }];
-    const sr: ScheduleResultMap = { t1: mkResult({ earlyStart: 10 }) };
+    const tasks: Task[] = [
+      { id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "SNET", constraintDateMinutes: wm(0) },
+      { id: "t2", name: "T2", durationWorkMinutes: wm(3), siblingOrder: "V", parentId: "t1" },
+    ];
+    const sr: ScheduleResultMap = { t1: mkResult({ earlyStartMinutes: wm(10) }) };
     const map = mergeResultDiagnostics(tasks, sr, {});
     expect(map["t1"]).toBeUndefined();
   });
@@ -3575,19 +3737,50 @@ describe("mergeResultDiagnostics — SUPERSEDED_BY_LOGIC", () => {
 
 describe("mergeResultDiagnostics — SUPERSEDED_BY_CALENDAR", () => {
   const mkResult = (overrides: Partial<ScheduleResultMap[string]> = {}): ScheduleResultMap[string] => ({
-    earlyStart: 0, earlyFinish: 5, lateStart: 0, lateFinish: 5, totalFloat: 0, isCritical: false, ...overrides,
+    earlyStartMinutes: wm(0), earlyFinishMinutes: wm(5), lateStartMinutes: wm(0), lateFinishMinutes: wm(5), totalFloatMinutes: wm(0), isCritical: false, ...overrides,
   });
+  const iv = (startMinute: number, endMinute: number): TimeInterval => ({ startMinute, endMinute });
+  const holidayCalendarCtx: CalendarOutputContext = {
+    calendar: compileCalendar({
+      id: "holiday-six-hour" as CalendarId,
+      name: "Holiday Six Hour",
+      weeklyPattern: {
+        1: [iv(480, 660), iv(720, 900)],
+        2: [iv(480, 660), iv(720, 900)],
+        3: [iv(480, 660), iv(720, 900)],
+        4: [iv(480, 660), iv(720, 900)],
+        5: [iv(480, 660), iv(720, 900)],
+      },
+      exceptions: [{ date: "2025-01-12", workIntervals: [], name: "Holiday" }],
+    }),
+    projectStartDate: "2025-01-06",
+  };
+  const halfDayCalendarCtx: CalendarOutputContext = {
+    calendar: compileCalendar({
+      id: "half-day-six-hour" as CalendarId,
+      name: "Half Day Six Hour",
+      weeklyPattern: {
+        1: [iv(480, 660), iv(720, 900)],
+        2: [iv(480, 660), iv(720, 900)],
+        3: [iv(480, 660), iv(720, 900)],
+        4: [iv(480, 660), iv(720, 900)],
+        5: [iv(480, 660), iv(720, 900)],
+      },
+      exceptions: [{ date: "2025-01-10", workIntervals: [iv(480, 660)], name: "Half Day" }],
+    }),
+    projectStartDate: "2025-01-06",
+  };
 
-  it("emits when constraintDate falls on a non-working day", () => {
-    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "SNET", constraintDate: 6 }];
+  it("emits when constraintDateMinutes falls on a non-working day", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "SNET", constraintDateMinutes: d(6) }];
     const sr: ScheduleResultMap = { t1: mkResult() };
     const nwd = new Set([5, 6, 12, 13]);
     const map = mergeResultDiagnostics(tasks, sr, {}, nwd);
     expect(map["t1"]).toContain("SUPERSEDED_BY_CALENDAR");
   });
 
-  it("does not emit when constraintDate is a working day", () => {
-    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "SNET", constraintDate: 7 }];
+  it("does not emit when constraintDateMinutes is a working day", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "SNET", constraintDateMinutes: d(7) }];
     const sr: ScheduleResultMap = { t1: mkResult() };
     const nwd = new Set([5, 6, 12, 13]);
     const map = mergeResultDiagnostics(tasks, sr, {}, nwd);
@@ -3595,15 +3788,15 @@ describe("mergeResultDiagnostics — SUPERSEDED_BY_CALENDAR", () => {
   });
 
   it("emits for FNLT on non-working day", () => {
-    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "FNLT", constraintDate: 13 }];
-    const sr: ScheduleResultMap = { t1: mkResult({ lateFinish: 15 }) };
+    const tasks: Task[] = [{ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "FNLT", constraintDateMinutes: d(13) }];
+    const sr: ScheduleResultMap = { t1: mkResult({ lateFinishMinutes: wm(15) }) };
     const nwd = new Set([5, 6, 12, 13]);
     const map = mergeResultDiagnostics(tasks, sr, {}, nwd);
     expect(map["t1"]).toContain("SUPERSEDED_BY_CALENDAR");
   });
 
   it("emits for MSO on non-working day", () => {
-    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "MSO", constraintDate: 5 }];
+    const tasks: Task[] = [{ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "MSO", constraintDateMinutes: d(5) }];
     const sr: ScheduleResultMap = { t1: mkResult() };
     const nwd = new Set([5, 6, 12, 13]);
     const map = mergeResultDiagnostics(tasks, sr, {}, nwd);
@@ -3611,15 +3804,15 @@ describe("mergeResultDiagnostics — SUPERSEDED_BY_CALENDAR", () => {
   });
 
   it("does not emit for ASAP", () => {
-    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false }];
+    const tasks: Task[] = [{ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V" }];
     const sr: ScheduleResultMap = { t1: mkResult() };
     const nwd = new Set([0, 1, 2, 3, 4, 5]);
     const map = mergeResultDiagnostics(tasks, sr, {}, nwd);
     expect(map["t1"]).toBeUndefined();
   });
 
-  it("does not emit when constraintDate is missing", () => {
-    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "SNET" }];
+  it("does not emit when constraintDateMinutes is missing", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "SNET" }];
     const sr: ScheduleResultMap = { t1: mkResult() };
     const nwd = new Set([0, 1, 2, 3]);
     const map = mergeResultDiagnostics(tasks, sr, {}, nwd);
@@ -3627,15 +3820,41 @@ describe("mergeResultDiagnostics — SUPERSEDED_BY_CALENDAR", () => {
   });
 
   it("does not emit when nonWorkingDays is not provided", () => {
-    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "SNET", constraintDate: 6 }];
+    const tasks: Task[] = [{ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "SNET", constraintDateMinutes: d(6) }];
     const sr: ScheduleResultMap = { t1: mkResult() };
     const map = mergeResultDiagnostics(tasks, sr, {});
     expect(map["t1"]?.includes("SUPERSEDED_BY_CALENDAR")).toBeFalsy();
   });
 
+  it("uses compiled calendar holiday exceptions when calendarContext is present", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "SNET", constraintDateMinutes: d(6) }];
+    const sr: ScheduleResultMap = { t1: mkResult() };
+
+    const scalar = mergeResultDiagnostics(tasks, sr, {}, new Set([6]), 360);
+    expect(scalar["t1"]?.includes("SUPERSEDED_BY_CALENDAR")).toBeFalsy();
+
+    const calendarAware = mergeResultDiagnostics(tasks, sr, {}, new Set([6]), 360, holidayCalendarCtx);
+    expect(calendarAware["t1"]).toContain("SUPERSEDED_BY_CALENDAR");
+  });
+
+  it("does not treat half-day exceptions as non-working when calendarContext is present", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "SNET", constraintDateMinutes: d(4) }];
+    const sr: ScheduleResultMap = { t1: mkResult() };
+
+    const calendarAware = mergeResultDiagnostics(tasks, sr, {}, new Set([4]), 360, halfDayCalendarCtx);
+    expect(calendarAware["t1"]?.includes("SUPERSEDED_BY_CALENDAR")).toBeFalsy();
+  });
+
+  it("preserves scalar fallback when calendarContext is absent", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "SNET", constraintDateMinutes: d(6) }];
+    const sr: ScheduleResultMap = { t1: mkResult() };
+    const map = mergeResultDiagnostics(tasks, sr, {}, new Set([8]), 360);
+    expect(map["t1"]).toContain("SUPERSEDED_BY_CALENDAR");
+  });
+
   it("coexists with SUPERSEDED_BY_LOGIC when both true", () => {
-    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "SNET", constraintDate: 6 }];
-    const sr: ScheduleResultMap = { t1: mkResult({ earlyStart: 10 }) };
+    const tasks: Task[] = [{ id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "SNET", constraintDateMinutes: d(6) }];
+    const sr: ScheduleResultMap = { t1: mkResult({ earlyStartMinutes: wm(10) }) };
     const nwd = new Set([5, 6, 12, 13]);
     const map = mergeResultDiagnostics(tasks, sr, {}, nwd);
     expect(map["t1"]).toContain("SUPERSEDED_BY_LOGIC");
@@ -3643,10 +3862,174 @@ describe("mergeResultDiagnostics — SUPERSEDED_BY_CALENDAR", () => {
   });
 
   it("skips summary tasks", () => {
-    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: true, constraintType: "SNET", constraintDate: 6 }];
+    const tasks: Task[] = [
+      { id: "t1", name: "T1", durationWorkMinutes: wm(5), siblingOrder: "V", constraintType: "SNET", constraintDateMinutes: d(6) },
+      { id: "t2", name: "T2", durationWorkMinutes: wm(3), siblingOrder: "V", parentId: "t1" },
+    ];
     const sr: ScheduleResultMap = { t1: mkResult() };
     const nwd = new Set([5, 6]);
     const map = mergeResultDiagnostics(tasks, sr, {}, nwd);
     expect(map["t1"]).toBeUndefined();
+  });
+});
+
+// ── Phase 10A: Hierarchy Editing Smoke Tests ──────────────────────────
+
+describe("Phase 10A — Hierarchy Editing", () => {
+  beforeEach(() => {
+    State.clearState();
+  });
+
+  describe("Expand All / Collapse All", () => {
+    it("clearCollapsedIds expands all collapsed nodes", () => {
+      State.addTask({ id: "S", name: "Summary", durationWorkMinutes: wm(0), siblingOrder: "V" });
+      State.addTask({ id: "A", name: "Child", durationWorkMinutes: wm(5), parentId: "S", siblingOrder: "V" });
+      State.computeHierarchy();
+
+      const fullProj = Hierarchy.buildFullProjection(State.getTasks());
+      Hierarchy.setFullProjection(fullProj);
+
+      // Collapse
+      Hierarchy.toggleCollapsed("S");
+      expect(Hierarchy.isCollapsed("S")).toBe(true);
+      const collapsed = Hierarchy.filterVisibleRows(fullProj);
+      expect(collapsed.length).toBe(1); // only summary visible
+
+      // Expand All
+      Hierarchy.clearCollapsedIds();
+      const expanded = Hierarchy.filterVisibleRows(fullProj);
+      expect(expanded.length).toBe(2); // summary + child
+      expect(Hierarchy.isCollapsed("S")).toBe(false);
+    });
+
+    it("setCollapsedIds collapses all summaries", () => {
+      State.addTask({ id: "S1", name: "S1", durationWorkMinutes: wm(0), siblingOrder: "V" });
+      State.addTask({ id: "A", name: "A", durationWorkMinutes: wm(5), parentId: "S1", siblingOrder: "V" });
+      State.addTask({ id: "S2", name: "S2", durationWorkMinutes: wm(0), siblingOrder: "k" });
+      State.addTask({ id: "B", name: "B", durationWorkMinutes: wm(3), parentId: "S2", siblingOrder: "V" });
+      State.addTask({ id: "R", name: "Root Leaf", durationWorkMinutes: wm(2), siblingOrder: "s" });
+      State.computeHierarchy();
+
+      const fullProj = Hierarchy.buildFullProjection(State.getTasks());
+      Hierarchy.setFullProjection(fullProj);
+
+      // All expanded → 5 visible
+      expect(Hierarchy.filterVisibleRows(fullProj).length).toBe(5);
+
+      // Collapse all summaries
+      const summaryIds = new Set<string>();
+      for (const t of State.getTasks()) {
+        if (State.isTaskSummary(t.id)) summaryIds.add(t.id);
+      }
+      Hierarchy.setCollapsedIds(summaryIds);
+      const collapsed = Hierarchy.filterVisibleRows(fullProj);
+      // Only summaries + root leaf visible (children hidden)
+      expect(collapsed.length).toBe(3);
+    });
+  });
+
+  describe("Reorder Task (Move Up / Move Down)", () => {
+    it("reorders task among siblings — move down", () => {
+      State.addTask({ id: "a", name: "A", durationWorkMinutes: wm(5), siblingOrder: "V" });
+      State.addTask({ id: "b", name: "B", durationWorkMinutes: wm(3), siblingOrder: "k" });
+      State.addTask({ id: "c", name: "C", durationWorkMinutes: wm(2), siblingOrder: "s" });
+      State.computeHierarchy();
+
+      // Move "a" after "b" (equivalent to moving "a" down)
+      const err = State.reorderTask("a", "b");
+      expect(err).toBeNull();
+      State.computeHierarchy();
+
+      const ordered = State.getTasks();
+      const names = ordered.map(t => t.name);
+      expect(names).toEqual(["B", "A", "C"]);
+    });
+
+    it("reorders task among siblings — move up (place first)", () => {
+      State.addTask({ id: "a", name: "A", durationWorkMinutes: wm(5), siblingOrder: "V" });
+      State.addTask({ id: "b", name: "B", durationWorkMinutes: wm(3), siblingOrder: "k" });
+      State.computeHierarchy();
+
+      // Move "b" to first position (no afterTaskId)
+      const err = State.reorderTask("b");
+      expect(err).toBeNull();
+      State.computeHierarchy();
+
+      const names = State.getTasks().map(t => t.name);
+      expect(names).toEqual(["B", "A"]);
+    });
+
+    it("rejects reorder with invalid afterTaskId", () => {
+      State.addTask({ id: "a", name: "A", durationWorkMinutes: wm(5), siblingOrder: "V" });
+      State.addTask({ id: "b", name: "B", durationWorkMinutes: wm(3), siblingOrder: "k" });
+      State.addTask({ id: "child", name: "Child", durationWorkMinutes: wm(1), siblingOrder: "V", parentId: "a" });
+
+      // Try to place "b" after "child" — "child" is not a sibling of "b"
+      const err = State.reorderTask("b", "child");
+      expect(err).toContain("not found among siblings");
+    });
+  });
+
+  describe("Indent / Outdent", () => {
+    it("indent makes task a child of previous sibling", () => {
+      State.addTask({ id: "a", name: "A", durationWorkMinutes: wm(5), siblingOrder: "V" });
+      State.addTask({ id: "b", name: "B", durationWorkMinutes: wm(3), siblingOrder: "k" });
+      State.computeHierarchy();
+
+      const err = State.indentTask("b");
+      expect(err).toBeNull();
+      expect(State.findTask("b")!.parentId).toBe("a");
+    });
+
+    it("indent rejects first sibling (no previous sibling)", () => {
+      State.addTask({ id: "a", name: "A", durationWorkMinutes: wm(5), siblingOrder: "V" });
+      State.computeHierarchy();
+
+      const err = State.indentTask("a");
+      expect(err).toContain("no previous sibling");
+    });
+
+    it("outdent moves task up one level", () => {
+      State.addTask({ id: "a", name: "A", durationWorkMinutes: wm(5), siblingOrder: "V" });
+      State.addTask({ id: "b", name: "B", durationWorkMinutes: wm(3), siblingOrder: "V", parentId: "a" });
+      State.computeHierarchy();
+
+      const err = State.outdentTask("b");
+      expect(err).toBeNull();
+      expect(State.findTask("b")!.parentId).toBeUndefined();
+    });
+
+    it("outdent rejects root task", () => {
+      State.addTask({ id: "a", name: "A", durationWorkMinutes: wm(5), siblingOrder: "V" });
+      State.computeHierarchy();
+
+      const err = State.outdentTask("a");
+      expect(err).toContain("root level");
+    });
+  });
+
+  describe("Add Child / Add Sibling", () => {
+    it("addTask with parentId creates a child", () => {
+      State.addTask({ id: "a", name: "Parent", durationWorkMinutes: wm(5), siblingOrder: "V" });
+      State.addTask({ id: "child", name: "Child", durationWorkMinutes: wm(3), siblingOrder: "", parentId: "a" });
+      State.computeHierarchy();
+
+      expect(State.findTask("child")!.parentId).toBe("a");
+      expect(State.isTaskSummary("a")).toBe(true);
+      expect(State.getTaskDepth("child")).toBe(1);
+    });
+
+    it("addTask with same parentId creates a sibling", () => {
+      State.addTask({ id: "parent", name: "Parent", durationWorkMinutes: wm(5), siblingOrder: "V" });
+      State.addTask({ id: "a", name: "A", durationWorkMinutes: wm(3), siblingOrder: "", parentId: "parent" });
+      State.addTask({ id: "b", name: "B", durationWorkMinutes: wm(2), siblingOrder: "", parentId: "parent" });
+      State.computeHierarchy();
+
+      expect(State.findTask("a")!.parentId).toBe("parent");
+      expect(State.findTask("b")!.parentId).toBe("parent");
+      const tasks = State.getTasks();
+      const children = tasks.filter(t => t.parentId === "parent");
+      expect(children.length).toBe(2);
+    });
   });
 });

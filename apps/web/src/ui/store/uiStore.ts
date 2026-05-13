@@ -1,9 +1,11 @@
+import type { TemporalAuthorityDiagnosticsPayload } from '@planner/protocol';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { DEFAULT_DATE_DISPLAY_FORMAT, type DateDisplayFormat } from '../../utils/dateProjection';
 import type { ConstraintFilter } from '../../utils/filterByConstraint';
 import { DENSITY_CONFIG, type DensityMetrics, type DensityMode, type ThemeMode } from '../config/themeConfig';
 
-export type BottomTab = 'task-details' | 'logs' | 'histogram';
+export type BottomTab = 'task-details' | 'logs' | 'histogram' | 'float-path' | 'ai-review' | 'dashboard' | 'driving-logic';
 
 interface UIState {
   theme: ThemeMode;
@@ -23,6 +25,10 @@ interface UIState {
   statusText: string;
   setStatusText: (text: string) => void;
 
+  // Internal-only authority diagnostics (display-only, not persisted)
+  temporalAuthorityDiagnostics: TemporalAuthorityDiagnosticsPayload | null;
+  setTemporalAuthorityDiagnostics: (diagnostics: TemporalAuthorityDiagnosticsPayload | null) => void;
+
   // Constraint filter (view-only, not persisted)
   constraintFilter: ConstraintFilter;
   setConstraintFilter: (filter: ConstraintFilter) => void;
@@ -30,6 +36,10 @@ interface UIState {
   // Splitter
   tableWidth: number;
   setTableWidth: (width: number) => void;
+
+  // Date display format (persisted)
+  dateDisplayFormat: DateDisplayFormat;
+  setDateDisplayFormat: (format: DateDisplayFormat) => void;
 }
 
 const MIN_DRAWER = 120;
@@ -56,11 +66,17 @@ export const useUIStore = create<UIState>()(
       statusText: '',
       setStatusText: (text) => set({ statusText: text }),
 
+      temporalAuthorityDiagnostics: null,
+      setTemporalAuthorityDiagnostics: (diagnostics) => set({ temporalAuthorityDiagnostics: diagnostics }),
+
       constraintFilter: 'all',
       setConstraintFilter: (filter) => set({ constraintFilter: filter }),
 
       tableWidth: 400,
       setTableWidth: (width) => set({ tableWidth: width }),
+
+      dateDisplayFormat: DEFAULT_DATE_DISPLAY_FORMAT,
+      setDateDisplayFormat: (format) => set({ dateDisplayFormat: format }),
     }),
     {
       name: 'planner-ui',
@@ -70,6 +86,7 @@ export const useUIStore = create<UIState>()(
         bottomHeight: state.bottomHeight,
         activeBottomTab: state.activeBottomTab,
         tableWidth: state.tableWidth,
+        dateDisplayFormat: state.dateDisplayFormat,
       }),
     },
   ),

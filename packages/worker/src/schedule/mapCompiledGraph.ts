@@ -29,15 +29,21 @@
  * a pure math engine with no knowledge of domain semantics.
  */
 
-import type { CompiledScheduleGraph } from "protocol";
-import type { ScheduleDependency, ScheduleRequest, ScheduleTask } from "protocol/kernel";
+import type { CompiledScheduleGraph, WorkMinutes } from "@planner/protocol";
+import type { ScheduleDependency, ScheduleRequest, ScheduleTask } from "@planner/protocol/kernel";
+import { ENGINE_ABI_VERSION } from "@planner/protocol/kernel";
+import type { IEngineCoordinateTranslator } from "./IEngineCoordinateTranslator.js";
 
 /**
  * Map a CompiledScheduleGraph to a ScheduleRequest for the solver kernel.
  *
+ * Phase D6a: coordinate conversion is delegated to the translator,
+ * matching the same seam used by buildScheduleRequest. The compiled
+ * path no longer has its own standalone toDaySlots conversion.
+ *
  * Generated activities become ScheduleTasks with:
- * - duration from resolved durationDays
- * - constraint forwarded if present, defaulting to ASAP / null
+ * - duration converted via translator
+ * - constraint converted via translator (with snapping)
  * - minEarlyStart: 0 (no hierarchy-based offset in compiled graph)
  * - isSummary: false (compiler emits leaf activities only)
  * - parentId: undefined (no hierarchy in compiled graph)
@@ -47,24 +53,28 @@ import type { ScheduleDependency, ScheduleRequest, ScheduleTask } from "protocol
  */
 export const mapCompiledGraphToRequest = (
   graph: CompiledScheduleGraph,
+  translator: IEngineCoordinateTranslator,
 ): ScheduleRequest => {
   const tasks: ScheduleTask[] = graph.activities.map((activity) => ({
     id: activity.id,
-    duration: activity.durationDays,
-    minEarlyStart: 0,
+    durationWorkMinutes: translator.convertDuration(activity.durationWorkMinutes) as WorkMinutes,
+    minEarlyStartMinutes: 0 as WorkMinutes,
     isSummary: false,
     constraintType: activity.constraintType ?? "ASAP",
-    constraintDate: activity.constraintDate ?? null,
+    constraintDateMinutes: activity.constraintDateMinutes != null
+      ? translator.convertConstraintDate(activity.constraintDateMinutes, activity.constraintType) as WorkMinutes
+      : null,
   }));
 
   const dependencies: ScheduleDependency[] = graph.dependencies.map((dep) => ({
     predId: dep.predecessorId,
     succId: dep.successorId,
     depType: dep.type,
-    lag: dep.lagDays,
+    lagWorkMinutes: translator.convertLag(dep.lagWorkMinutes) as WorkMinutes,
   }));
 
   return {
+    abiVersion: ENGINE_ABI_VERSION,
     tasks,
     dependencies,
     nonWorkingDays: graph.nonWorkingDays,

@@ -1,15 +1,15 @@
-import type { Task } from "protocol";
+import type { Task, WorkMinutes } from "@planner/protocol";
+import { MINUTES_PER_DAY } from "@planner/protocol";
 import { describe, expect, it } from "vitest";
 import { filterByConstraint } from "./filterByConstraint";
 
 const mkTask = (id: string, ct?: string, cd?: number | null): Task => ({
   id,
   name: id,
-  duration: 5,
-  depth: 0,
-  isSummary: false,
+  durationWorkMinutes: (5 * MINUTES_PER_DAY) as WorkMinutes,
+  siblingOrder: "V",
   ...(ct != null ? { constraintType: ct as Task["constraintType"] } : {}),
-  ...(cd !== undefined ? { constraintDate: cd } : {}),
+  ...(cd !== undefined ? { constraintDateMinutes: cd != null ? (cd * MINUTES_PER_DAY) as WorkMinutes : null } : {}),
 });
 
 const tasks: Task[] = [

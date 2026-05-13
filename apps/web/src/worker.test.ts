@@ -1,4 +1,5 @@
-import type { Command, Dependency, Task, WorkerMessage } from "protocol";
+import type { Command, Dependency, Task, WorkerMessage, WorkMinutes } from "@planner/protocol";
+import { MINUTES_PER_DAY } from "@planner/protocol";
 import { expect, test } from "vitest";
 
 test("Worker DIFF_STATE payload must be a structural object, NOT a JSON string", () => {
@@ -14,7 +15,28 @@ test("Worker DIFF_STATE payload must be a structural object, NOT a JSON string",
       emittedMessages.push({
         type: "DIFF_STATE",
         v: 1,
-        payload: { tasks: [...internalTasks], dependencies: [...internalDeps], scheduleResults: {}, baselines: {}, variances: {}, projectStartDate: "2026-01-01", nonWorkingDays: [], resources: [], assignments: [], resourceHistogram: {}, canUndo: false, canRedo: false }
+        payload: {
+          tasks: [...internalTasks],
+          dependencies: [...internalDeps],
+          scheduleResults: {},
+          baselines: {},
+          variances: {},
+          projectStartDate: "2026-01-01",
+          nonWorkingDays: [],
+          resources: [],
+          assignments: [],
+          resourceHistogram: {},
+          canUndo: false,
+          canRedo: false,
+          visibleRows: [],
+          collapsedIds: [],
+          scheduleLifecycle: "empty",
+          sourceImportRecord: null,
+          sourceImportFidelityState: {
+            actualsByTaskId: {},
+            progressByTaskId: {},
+          },
+        }
       });
     }
   };
@@ -23,7 +45,7 @@ test("Worker DIFF_STATE payload must be a structural object, NOT a JSON string",
     type: "ADD_TASK",
     v: 1,
     reqId: "test-req-123",
-    payload: { id: "1", name: "Site Clearing", duration: 5, depth: 0, isSummary: false }
+    payload: { id: "1", name: "Site Clearing", durationWorkMinutes: (5 * MINUTES_PER_DAY) as WorkMinutes, siblingOrder: "" }
   });
 
   const diffMsg = emittedMessages.find((m) => m.type === "DIFF_STATE");

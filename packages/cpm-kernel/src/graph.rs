@@ -5,13 +5,13 @@ use std::collections::HashMap;
 #[derive(Debug, Clone)]
 pub struct EdgeInfo {
     pub dep_type: DepType,
-    pub lag: i32,
+    pub lag_work_minutes: i32,
 }
 
 pub struct CpmGraph {
     pub node_to_id: Vec<String>,
-    pub durations: Vec<u32>,
-    pub min_early_start: Vec<u32>,
+    pub duration_work_minutes: Vec<u32>,
+    pub min_early_start_minutes: Vec<u32>,
     /// Successors of each node, with per-edge info.
     pub successors: Vec<Vec<(usize, EdgeInfo)>>,
     /// Predecessors of each node, with per-edge info.
@@ -21,7 +21,7 @@ pub struct CpmGraph {
     pub children: Vec<Vec<usize>>,
     pub is_summary: Vec<bool>,
     pub constraint_type: Vec<ConstraintType>,
-    pub constraint_date: Vec<Option<i32>>,
+    pub constraint_date_minutes: Vec<Option<i32>>,
 }
 
 impl CpmGraph {
@@ -29,8 +29,8 @@ impl CpmGraph {
         if tasks.is_empty() {
             return Ok(Self {
                 node_to_id: Vec::new(),
-                durations: Vec::new(),
-                min_early_start: Vec::new(),
+                duration_work_minutes: Vec::new(),
+                min_early_start_minutes: Vec::new(),
                 successors: Vec::new(),
                 predecessors: Vec::new(),
                 in_degree: Vec::new(),
@@ -38,17 +38,17 @@ impl CpmGraph {
                 children: Vec::new(),
                 is_summary: Vec::new(),
                 constraint_type: Vec::new(),
-                constraint_date: Vec::new(),
+                constraint_date_minutes: Vec::new(),
             });
         }
 
         // Load tasks and build ID-to-index mapping
         let mut id_to_index: HashMap<String, usize> = HashMap::new();
         let mut node_to_id: Vec<String> = Vec::new();
-        let mut durations: Vec<u32> = Vec::new();
-        let mut min_early_start: Vec<u32> = Vec::new();
+        let mut duration_work_minutes: Vec<u32> = Vec::new();
+        let mut min_early_start_minutes: Vec<u32> = Vec::new();
         let mut constraint_type_vec: Vec<ConstraintType> = Vec::new();
-        let mut constraint_date_vec: Vec<Option<i32>> = Vec::new();
+        let mut constraint_date_minutes_vec: Vec<Option<i32>> = Vec::new();
 
         for task in tasks {
             // Reject duplicate task IDs
@@ -59,10 +59,10 @@ impl CpmGraph {
             let index = node_to_id.len();
             id_to_index.insert(task.id.clone(), index);
             node_to_id.push(task.id.clone());
-            durations.push(task.duration);
-            min_early_start.push(task.min_early_start);
+            duration_work_minutes.push(task.duration_work_minutes);
+            min_early_start_minutes.push(task.min_early_start_minutes);
             constraint_type_vec.push(task.constraint_type);
-            constraint_date_vec.push(task.constraint_date);
+            constraint_date_minutes_vec.push(task.constraint_date_minutes);
         }
 
         let n = node_to_id.len();
@@ -91,7 +91,7 @@ impl CpmGraph {
 
             let edge = EdgeInfo {
                 dep_type: dep.dep_type,
-                lag: dep.lag,
+                lag_work_minutes: dep.lag_work_minutes,
             };
 
             // Build graph edges — topological direction is always pred → succ
@@ -124,8 +124,8 @@ impl CpmGraph {
 
         Ok(Self {
             node_to_id,
-            durations,
-            min_early_start,
+            duration_work_minutes,
+            min_early_start_minutes,
             successors,
             predecessors,
             in_degree,
@@ -133,7 +133,7 @@ impl CpmGraph {
             children,
             is_summary,
             constraint_type: constraint_type_vec,
-            constraint_date: constraint_date_vec,
+            constraint_date_minutes: constraint_date_minutes_vec,
         })
     }
 

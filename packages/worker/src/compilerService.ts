@@ -24,7 +24,7 @@ import type {
     AuthoredActivity,
     CompiledScheduleGraph,
     DomainCompiler,
-} from "protocol";
+} from "@planner/protocol";
 
 // ─── Null Compiler (Placeholder) ────────────────────────────────────
 

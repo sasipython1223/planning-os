@@ -4,12 +4,16 @@
  * Tests the runImportPreview function and the held candidate lifecycle.
  */
 
-import { beforeEach, describe, expect, it } from "vitest";
+import type { ImportDiagnostic } from "@planner/protocol";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import * as UndoHistory from "../../src/history.js";
 import {
     clearPendingCandidate,
     getPendingCandidate,
 } from "../../src/import/importCandidate.js";
+import * as mspParserModule from "../../src/import/parsers/mspParser.js";
 import { runImportPreview } from "../../src/import/previewOrchestrator.js";
+import * as State from "../../src/state.js";
 
 // ─── Helper ─────────────────────────────────────────────────────────
 
@@ -45,6 +49,8 @@ function wbsTable(rows: string[][]): string {
 
 describe("Preview Orchestrator (W.2)", () => {
   beforeEach(() => {
+    State.clearState();
+    UndoHistory.clearHistory();
     clearPendingCandidate();
   });
 
@@ -68,6 +74,7 @@ describe("Preview Orchestrator (W.2)", () => {
       expect(result.message.payload.projectName).toBe("Test Project");
       expect(result.message.payload.projectStartDate).toBe("2026-01-15");
       expect(result.message.payload.format).toBe("xer");
+      expect(result.message.payload.sourceFileName).toBeUndefined();
       expect(result.message.payload.summary.taskCount).toBe(2);
       expect(result.message.payload.summary.dependencyCount).toBe(1);
       expect(result.message.payload.canCommit).toBe(true);
@@ -78,12 +85,31 @@ describe("Preview Orchestrator (W.2)", () => {
         projectTable([["P1", "Test", "2026-01-01", "8"]]),
         taskTable([["T1", "P1", "W1", "Task A", "TT_TASK", "40", "CS_ASAP", ""]]),
       );
-      runImportPreview("req-2", "xer", xer);
+      runImportPreview("req-2", "xer", xer, "sample.xer");
 
       const candidate = getPendingCandidate();
       expect(candidate).not.toBeNull();
       expect(candidate!.projectName).toBe("Test");
       expect(candidate!.rawData.tasks).toHaveLength(1);
+      expect(candidate!.sourceFileName).toBe("sample.xer");
+    });
+
+    it("should remain read-only: PREVIEW_IMPORT does not mutate canonical state or history", () => {
+      const preTasks = State.getTasks().length;
+      const preDeps = State.getDependencies().length;
+      const preUndo = UndoHistory.getUndoStack().length;
+
+      const xer = buildXer(
+        projectTable([["P1", "ReadOnly", "2026-01-01", "8"]]),
+        taskTable([["T1", "P1", "W1", "Task A", "TT_TASK", "40", "CS_ASAP", ""]]),
+      );
+
+      const result = runImportPreview("req-readonly", "xer", xer, "readonly.xer");
+      expect(result.ok).toBe(true);
+      expect(State.getTasks()).toHaveLength(preTasks);
+      expect(State.getDependencies()).toHaveLength(preDeps);
+      expect(UndoHistory.getUndoStack()).toHaveLength(preUndo);
+      expect(State.getScheduleLifecycle()).toBe("empty");
     });
 
     it("should replace previous candidate on new preview (staleness guard)", () => {
@@ -176,7 +202,7 @@ describe("Preview Orchestrator (W.2)", () => {
       expect(candidate!.mappedTasks).toBeDefined();
       expect(candidate!.mappedTasks).toHaveLength(1);
       expect(candidate!.mappedTasks![0].name).toBe("Task A");
-      expect(candidate!.mappedTasks![0].duration).toBe(5); // 40hrs / 8hrs = 5 days
+      expect(candidate!.mappedTasks![0].durationWorkMinutes).toBe(5 * 480); // 40hrs / 8hrs = 5 days × 480 min/day
       expect(candidate!.mappedDependencies).toHaveLength(0);
     });
 
@@ -191,7 +217,7 @@ describe("Preview Orchestrator (W.2)", () => {
 
       const payload = result.message.payload;
       expect(payload.diagnosticsSummary.warnings).toBeGreaterThan(0);
-      const codes = payload.diagnostics.map(d => d.code);
+      const codes = payload.diagnostics.map((d: ImportDiagnostic) => d.code);
       expect(codes).toContain("CONSTRAINT_APPROXIMATED");
       expect(codes).toContain("DURATION_FRACTIONAL_ROUNDED");
     });
@@ -266,20 +292,44 @@ describe("Preview Orchestrator (W.2)", () => {
       expect(candidate!.mappedTasks).toHaveLength(1);
     });
 
-    it("should report parse errors for malformed MSP XML", () => {
+    it("should report parse errors for malformed MSP XML with detail", () => {
       const result = runImportPreview("req-msp-3", "msp-xml", "not xml at all <<<");
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.message.payload.diagnosticsSummary.errors).toBeGreaterThan(0);
       expect(result.message.payload.canCommit).toBe(false);
+      const errDiag = result.message.payload.diagnostics.find((d: ImportDiagnostic) => d.code === "PARSE_XML_STRUCTURE");
+      expect(errDiag).toBeDefined();
+      expect(errDiag!.message).toMatch(/XML validation failed/i);
     });
 
-    it("should report parse error for XML without <Project> root", () => {
+    it("should report parse error for XML without <Project> root with detail", () => {
       const result = runImportPreview("req-msp-4", "msp-xml", '<?xml version="1.0"?><Data></Data>');
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.message.payload.diagnosticsSummary.errors).toBeGreaterThan(0);
       expect(result.message.payload.canCommit).toBe(false);
+      const errDiag = result.message.payload.diagnostics.find((d: ImportDiagnostic) => d.code === "PARSE_XML_STRUCTURE");
+      expect(errDiag).toBeDefined();
+      expect(errDiag!.message).toMatch(/Missing root <Project>/i);
+    });
+
+    it("should wrap thrown parser exception in PARSE_XML_STRUCTURE diagnostic", () => {
+      const spy = vi.spyOn(mspParserModule, "parseMspXml").mockImplementationOnce(() => {
+        throw new Error("unexpected internal crash");
+      });
+
+      const result = runImportPreview("req-throw", "msp-xml", "<Project/>");
+      spy.mockRestore();
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.message.payload.canCommit).toBe(false);
+      expect(result.message.payload.diagnosticsSummary.errors).toBe(1);
+      const d = result.message.payload.diagnostics[0];
+      expect(d.code).toBe("PARSE_XML_STRUCTURE");
+      expect(d.message).toContain("Failed to parse XML document");
+      expect(d.message).toContain("unexpected internal crash");
     });
 
     it("should include MSP mapping diagnostics in preview message", () => {
@@ -299,8 +349,91 @@ describe("Preview Orchestrator (W.2)", () => {
       expect(result.ok).toBe(true);
       if (!result.ok) return;
 
-      const codes = result.message.payload.diagnostics.map(d => d.code);
+      const codes = result.message.payload.diagnostics.map((d: ImportDiagnostic) => d.code);
       expect(codes).toContain("CONSTRAINT_APPROXIMATED");
+    });
+
+    it("should allow import (canCommit=true) when parse succeeds with many mapper warnings", () => {
+      // Real-world scenario: many tasks with fractional durations + approximated constraints
+      // Produces mapper warnings but no errors — import must NOT be blocked.
+      const tasks = Array.from({ length: 20 }, (_, i) => {
+        const uid = i + 1;
+        const pred = uid > 1
+          ? `<PredecessorLink><PredecessorUID>${uid - 1}</PredecessorUID><Type>1</Type><LinkLag>4800</LinkLag></PredecessorLink>`
+          : "";
+        return `<Task><UID>${uid}</UID><Name>Task ${uid}</Name><Duration>PT13H0M0S</Duration><Summary>0</Summary><OutlineLevel>1</OutlineLevel><ConstraintType>5</ConstraintType><ConstraintDate>2026-03-01T08:00:00</ConstraintDate>${pred}</Task>`;
+      }).join("\n");
+
+      const xml = [
+        '<?xml version="1.0"?>',
+        "<Project>",
+        "<Name>Many Warnings</Name>",
+        "<StartDate>2026-01-01T08:00:00</StartDate>",
+        "<MinutesPerDay>480</MinutesPerDay>",
+        `<Tasks>${tasks}</Tasks>`,
+        "</Project>",
+      ].join("\n");
+
+      const result = runImportPreview("req-warnings", "msp-xml", xml);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      const { payload } = result.message;
+      // Data must be present
+      expect(payload.summary.taskCount).toBe(20);
+      expect(payload.summary.dependencyCount).toBe(19);
+      // Many warnings expected (duration rounding + constraint approximation + lag rounding)
+      expect(payload.diagnosticsSummary.warnings).toBeGreaterThan(10);
+      // Zero errors — import MUST be allowed
+      expect(payload.diagnosticsSummary.errors).toBe(0);
+      expect(payload.canCommit).toBe(true);
+
+      // Candidate also reflects canCommit
+      const candidate = getPendingCandidate();
+      expect(candidate).not.toBeNull();
+      expect(candidate!.canCommit).toBe(true);
+      expect(candidate!.mappedTasks).toHaveLength(20);
+    });
+
+    it("should clear stale error diagnostics when new successful preview replaces failed one", () => {
+      // Step 1: Import malformed XML — produces error, canCommit=false
+      const failResult = runImportPreview("req-fail", "msp-xml", "not xml <<<");
+      expect(failResult.ok).toBe(true);
+      if (!failResult.ok) return;
+      expect(failResult.message.payload.canCommit).toBe(false);
+      expect(failResult.message.payload.diagnosticsSummary.errors).toBeGreaterThan(0);
+
+      const failCandidate = getPendingCandidate();
+      expect(failCandidate!.canCommit).toBe(false);
+
+      // Step 2: Import valid XML — previous error must be gone
+      const xml = [
+        '<?xml version="1.0"?>',
+        "<Project>",
+        "<Name>Fresh Import</Name>",
+        "<StartDate>2026-02-01T08:00:00</StartDate>",
+        "<MinutesPerDay>480</MinutesPerDay>",
+        "<Tasks>",
+        "<Task><UID>1</UID><Name>Task A</Name><Duration>PT8H0M0S</Duration><Summary>0</Summary><OutlineLevel>1</OutlineLevel><ConstraintType>0</ConstraintType></Task>",
+        "</Tasks>",
+        "</Project>",
+      ].join("\n");
+
+      const successResult = runImportPreview("req-success", "msp-xml", xml);
+      expect(successResult.ok).toBe(true);
+      if (!successResult.ok) return;
+
+      const { payload } = successResult.message;
+      // No stale errors from previous run
+      expect(payload.diagnosticsSummary.errors).toBe(0);
+      expect(payload.canCommit).toBe(true);
+      expect(payload.summary.taskCount).toBe(1);
+
+      // Candidate fully replaced — no trace of previous failure
+      const freshCandidate = getPendingCandidate();
+      expect(freshCandidate!.canCommit).toBe(true);
+      expect(freshCandidate!.projectName).toBe("Fresh Import");
+      expect(freshCandidate!.diagnostics.every(d => d.severity !== "error")).toBe(true);
     });
   });
 });

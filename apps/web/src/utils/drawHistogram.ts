@@ -1,4 +1,4 @@
-import type { Resource } from "protocol";
+import type { Resource } from "@planner/protocol";
 
 // ── Palette ─────────────────────────────────────────────────────
 export const HIST_COLOR_NORMAL = "#1976d2";

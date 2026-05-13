@@ -1,4 +1,4 @@
-import type { BaselineMap, ScheduleResultMap, VarianceMap } from "protocol";
+import type { BaselineMap, ScheduleResultMap, VarianceMap, WorkMinutes } from "@planner/protocol";
 
 /**
  * Compute schedule variance metrics by comparing live scheduleResults against baselines.
@@ -10,12 +10,12 @@ export function computeVariances(scheduleResults: ScheduleResultMap, baselines: 
     const live = scheduleResults[taskId];
     if (!live) continue;
     const base = baselines[taskId];
-    const liveDuration = live.earlyFinish - live.earlyStart;
-    const baseDuration = base.finish - base.start;
+    const liveDuration = live.earlyFinishMinutes - live.earlyStartMinutes;
+    const baseDuration = base.finishMinutes - base.startMinutes;
     variances[taskId] = {
-      startVariance: live.earlyStart - base.start,
-      finishVariance: live.earlyFinish - base.finish,
-      durationVariance: liveDuration - baseDuration,
+      startVarianceMinutes: (live.earlyStartMinutes - base.startMinutes) as WorkMinutes,
+      finishVarianceMinutes: (live.earlyFinishMinutes - base.finishMinutes) as WorkMinutes,
+      durationVarianceMinutes: (liveDuration - baseDuration) as WorkMinutes,
     };
   }
   return variances;

@@ -1,5 +1,6 @@
-import type { ScheduleResultMap, Task } from "protocol";
+import type { ScheduleResultMap, Task } from "@planner/protocol";
 import { DAY_WIDTH, getDensityConstants } from "./ganttConstants";
+import type { TimescaleModel } from "./timescaleModel";
 
 /**
  * Geometry information for a single task bar.
@@ -26,18 +27,29 @@ export interface TaskGeometry {
  */
 export function computeTaskGeometry(
   tasks: Task[],
-  scheduleResults: ScheduleResultMap
+  scheduleResults: ScheduleResultMap,
+  timescaleModel?: TimescaleModel,
 ): Map<string, TaskGeometry> {
   const geometryMap = new Map<string, TaskGeometry>();
   const { rowHeight, barHeight, barVerticalPadding } = getDensityConstants();
+  // Compatibility fallbacks for callers/tests that do not pass a model.
+  const dateToX = timescaleModel?.dateToX ?? ((day: number) => day * DAY_WIDTH);
+  const spanWidth = timescaleModel?.spanWidth ?? ((start: number, finish: number) => (finish - start) * DAY_WIDTH);
 
   tasks.forEach((task, index) => {
     const schedule = scheduleResults[task.id];
     if (!schedule) return;
 
-    const x = schedule.earlyStart * DAY_WIDTH;
+    const span = timescaleModel?.spanToX
+      ? timescaleModel.spanToX(schedule.earlyStartMinutes, schedule.earlyFinishMinutes)
+      : {
+          // Compatibility fallback: preserve pre-model x/width computation.
+          x: dateToX(schedule.earlyStartMinutes),
+          width: spanWidth(schedule.earlyStartMinutes, schedule.earlyFinishMinutes),
+        };
+    const x = span.x;
     const y = index * rowHeight + barVerticalPadding;
-    const width = (schedule.earlyFinish - schedule.earlyStart) * DAY_WIDTH;
+    const width = span.width;
     const height = barHeight;
     const centerY = y + height / 2;
 

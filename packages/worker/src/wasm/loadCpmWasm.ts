@@ -7,7 +7,9 @@
  */
 
 type CpmWasmModule = {
+  analyze_float_paths: (request: unknown) => unknown;
   calculate_schedule: (request: unknown) => unknown;
+  calculate_schedule_minute: (request: unknown) => unknown;
 };
 
 let wasmModule: CpmWasmModule | null = null;
@@ -18,7 +20,8 @@ let wasmModule: CpmWasmModule | null = null;
  */
 export const loadCpmWasm = async (): Promise<void> => {
   try {
-    const module = await import("cpm-wasm");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const module: any = await import("@planner/engine");
 
     // --target web requires explicit init before exports are usable
     if (typeof module.default === "function") {
@@ -27,6 +30,10 @@ export const loadCpmWasm = async (): Promise<void> => {
 
     if (typeof module.calculate_schedule !== "function") {
       throw new Error("calculate_schedule not found on WASM module");
+    }
+
+    if (typeof module.analyze_float_paths !== "function") {
+      throw new Error("analyze_float_paths not found on WASM module");
     }
 
     wasmModule = module as CpmWasmModule;

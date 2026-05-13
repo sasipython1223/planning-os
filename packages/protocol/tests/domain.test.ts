@@ -32,6 +32,10 @@ import type {
     Quantity,
     Zone,
 } from "../src/domain.js";
+import type { WorkMinutes } from "../src/types.js";
+
+/** Brand-cast helper — no math, just satisfies the branded type. */
+const wm = (n: number) => n as WorkMinutes;
 
 // ─── Fixtures ───────────────────────────────────────────────────────
 
@@ -128,21 +132,21 @@ describe("Domain Model Contracts (M02)", () => {
     it("should narrow fixed strategy via kind", () => {
       const strategy: DurationStrategy = {
         kind: "fixed",
-        durationDays: 5,
+        durationWorkMinutes: wm(5),
       };
 
       expect(strategy.kind).toBe("fixed");
 
       if (strategy.kind === "fixed") {
         const narrowed: FixedDurationStrategy = strategy;
-        expect(narrowed.durationDays).toBe(5);
+        expect(narrowed.durationWorkMinutes).toBe(5);
       }
     });
 
     it("should narrow manual-override strategy via kind", () => {
       const strategy: DurationStrategy = {
         kind: "manual-override",
-        durationDays: 10,
+        durationWorkMinutes: wm(10),
         reasonCode: "client-directive",
         note: "Client requested extended curing period",
       };
@@ -159,7 +163,7 @@ describe("Domain Model Contracts (M02)", () => {
     it("should model manual-override without optional note", () => {
       const strategy: ManualOverrideStrategy = {
         kind: "manual-override",
-        durationDays: 3,
+        durationWorkMinutes: wm(3),
         reasonCode: "regulatory",
       };
       expect(strategy.note).toBeUndefined();
@@ -168,8 +172,8 @@ describe("Domain Model Contracts (M02)", () => {
     it("should exhaustively switch on DurationStrategy kind", () => {
       const strategies: DurationStrategy[] = [
         { kind: "productivity-driven", quantityId: "q", resourceId: "r", productivityRuleId: "p", crewSize: 1 },
-        { kind: "fixed", durationDays: 5 },
-        { kind: "manual-override", durationDays: 3, reasonCode: "other" },
+        { kind: "fixed", durationWorkMinutes: wm(5) },
+        { kind: "manual-override", durationWorkMinutes: wm(3), reasonCode: "other" },
       ];
 
       const kinds = strategies.map((s) => {
@@ -200,7 +204,7 @@ describe("Domain Model Contracts (M02)", () => {
       const dep: AuthoredDependencyLink = {
         predecessorActivityId: "act-0",
         type: "FS",
-        lagDays: 0,
+        lagWorkMinutes: wm(0),
       };
 
       const activity: AuthoredActivity = {
@@ -216,7 +220,7 @@ describe("Domain Model Contracts (M02)", () => {
         },
         dependencies: [dep],
         constraintType: "SNET",
-        constraintDate: 10,
+        constraintDateMinutes: wm(10),
       };
 
       expect(activity.id).toBe("act-1");
@@ -230,12 +234,12 @@ describe("Domain Model Contracts (M02)", () => {
         id: "act-2",
         name: "Install Formwork",
         zoneId: "zone-1",
-        durationStrategy: { kind: "fixed", durationDays: 3 },
+        durationStrategy: { kind: "fixed", durationWorkMinutes: wm(3) },
         dependencies: [],
       };
 
       expect(activity.constraintType).toBeUndefined();
-      expect(activity.constraintDate).toBeUndefined();
+      expect(activity.constraintDateMinutes).toBeUndefined();
     });
   });
 
@@ -245,14 +249,14 @@ describe("Domain Model Contracts (M02)", () => {
         id: "gen-1",
         sourceAuthoredActivityId: "act-1",
         name: "Pour Ground Floor Concrete",
-        durationDays: 4, // ceil(120 / (2 × 15))
+        durationWorkMinutes: wm(4), // ceil(120 / (2 × 15))
         resolvedStrategyKind: "productivity-driven",
         zoneId: "zone-1",
         constraintType: "SNET",
-        constraintDate: 10,
+        constraintDateMinutes: wm(10),
       };
 
-      expect(generated.durationDays).toBe(4);
+      expect(generated.durationWorkMinutes).toBe(4);
       expect(generated.resolvedStrategyKind).toBe("productivity-driven");
       expect(generated.sourceAuthoredActivityId).toBe("act-1");
     });
@@ -264,7 +268,7 @@ describe("Domain Model Contracts (M02)", () => {
         predecessorId: "gen-0",
         successorId: "gen-1",
         type: "FS",
-        lagDays: 0,
+        lagWorkMinutes: wm(0),
       };
 
       expect(dep.predecessorId).toBe("gen-0");
@@ -280,7 +284,7 @@ describe("Domain Model Contracts (M02)", () => {
             id: "gen-1",
             sourceAuthoredActivityId: "act-1",
             name: "Pour Ground Floor Concrete",
-            durationDays: 4,
+            durationWorkMinutes: wm(4),
             resolvedStrategyKind: "productivity-driven",
             zoneId: "zone-1",
           },
@@ -288,7 +292,7 @@ describe("Domain Model Contracts (M02)", () => {
             id: "gen-2",
             sourceAuthoredActivityId: "act-2",
             name: "Cure Concrete",
-            durationDays: 7,
+            durationWorkMinutes: wm(7),
             resolvedStrategyKind: "fixed",
             zoneId: "zone-1",
           },
@@ -298,7 +302,7 @@ describe("Domain Model Contracts (M02)", () => {
             predecessorId: "gen-1",
             successorId: "gen-2",
             type: "FS",
-            lagDays: 1,
+            lagWorkMinutes: wm(1),
           },
         ],
         nonWorkingDays: [5, 6, 12, 13],
@@ -324,13 +328,13 @@ describe("Domain Model Contracts (M02)", () => {
               id: `gen-${a.id}`,
               sourceAuthoredActivityId: a.id,
               name: a.name,
-              durationDays: a.durationStrategy.kind === "fixed"
-                ? a.durationStrategy.durationDays
-                : 1,
+              durationWorkMinutes: a.durationStrategy.kind === "fixed"
+                ? a.durationStrategy.durationWorkMinutes
+                : wm(1),
               resolvedStrategyKind: a.durationStrategy.kind,
               zoneId: a.zoneId,
               constraintType: a.constraintType,
-              constraintDate: a.constraintDate,
+              constraintDateMinutes: a.constraintDateMinutes,
             })),
             dependencies: [],
             nonWorkingDays: [...nonWorkingDays],
@@ -345,14 +349,14 @@ describe("Domain Model Contracts (M02)", () => {
         id: "act-1",
         name: "Test Activity",
         zoneId: "zone-1",
-        durationStrategy: { kind: "fixed", durationDays: 5 },
+        durationStrategy: { kind: "fixed", durationWorkMinutes: wm(5) },
         dependencies: [],
       };
 
       const result = mockCompiler.compile(assumptionSet, [authored], [5, 6]);
 
       expect(result.activities).toHaveLength(1);
-      expect(result.activities[0].durationDays).toBe(5);
+      expect(result.activities[0].durationWorkMinutes).toBe(5);
       expect(result.activities[0].resolvedStrategyKind).toBe("fixed");
       expect(result.sourceAssumptionSetId).toBe("as-1");
       expect(result.nonWorkingDays).toEqual([5, 6]);

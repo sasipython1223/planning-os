@@ -9,8 +9,8 @@
     "noEmit": true,
     "allowImportingTsExtensions": true,
     "paths": {
-      "protocol": ["../protocol/src/index.ts"],
-      "protocol/kernel": ["../protocol/src/kernel.ts"]
+      "@planner/protocol": ["../protocol/src/index.ts"],
+      "@planner/protocol/*": ["../protocol/src/*.ts"]
     }
   },
   "include": ["src/**/*", "tests/**/*", "worker.ts"]

@@ -1,4 +1,4 @@
-import type { Assignment, ResourceHistogram, ScheduleResultMap } from "protocol";
+import type { Assignment, ResourceHistogram, ScheduleResultMap } from "@planner/protocol";
 
 /**
  * Compute per-resource per-day loading from assignments and schedule results.
@@ -18,9 +18,9 @@ export function computeResourceHistogram(
     const dates = scheduleResults[a.taskId];
     if (!dates) continue;
 
-    const { earlyStart, earlyFinish } = dates;
+    const { earlyStartMinutes, earlyFinishMinutes } = dates;
 
-    for (let day = earlyStart; day < earlyFinish; day++) {
+    for (let day = earlyStartMinutes; day < earlyFinishMinutes; day++) {
       if (!nonWorkingDays.has(day)) {
         if (!histogram[a.resourceId]) {
           histogram[a.resourceId] = {};

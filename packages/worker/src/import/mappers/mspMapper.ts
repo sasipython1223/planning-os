@@ -12,24 +12,37 @@
  * Key mapping decisions (spec §3.2):
  * - All canonical IDs are fresh UUIDs (MSP UIDs in diagnostics only)
  * - OutlineLevel determines depth; Summary flag determines isSummary
- * - Duration: ISO 8601 duration string → integer working days
+ * - Duration: ISO 8601 duration string → WorkMinutes (×MINUTES_PER_DAY)
  * - Constraint types: numeric mapping table per spec §3.2.1
  * - Dependency types: 0→FF, 1→FS, 2→SF, 3→SS per MSP convention
- * - Lag: tenths of minutes → integer working days
+ * - Lag: tenths of minutes → WorkMinutes (×MINUTES_PER_DAY)
  * - Resources: MaxUnits (percent) → decimal maxUnitsPerDay
  * - Assignments: Units (percent) → decimal unitsPerDay
  */
 
 import type {
     Assignment,
+    BaseCalendarDefinition,
+    CalendarFidelitySummary,
+    CalendarId,
     ConstraintType,
     Dependency,
     DependencyType,
     ImportDiagnostic,
     Resource,
+    SourceImportFidelityState,
+    SourceProjectSettings,
+    SourceTaskActuals,
+    SourceTaskDates,
+    SourceTaskProgress,
     Task,
-} from "protocol";
+    WorkMinutes,
+} from "@planner/protocol";
+import { MINUTES_PER_DAY } from "@planner/protocol";
+import { generateMigrationKey } from "../../ordering.js";
 import type { MspData } from "../types/mspTypes.js";
+import { resolveCalendarInheritance } from "./calendarInheritance.js";
+import { buildCalendarFidelitySummary, mapMspCalendars } from "./calendarMapper.js";
 
 // ─── Result Type ────────────────────────────────────────────────────
 
@@ -41,6 +54,15 @@ export type MspMapperResult = {
   readonly diagnostics: readonly ImportDiagnostic[];
   readonly projectName: string;
   readonly projectStartDate: string;
+  readonly sourceImportFidelityState: SourceImportFidelityState;
+  /** Calendar definitions extracted from MSP calendars (sidecar, not used by engine). */
+  readonly calendarDefinitions: Readonly<Record<CalendarId, BaseCalendarDefinition>>;
+  /** W3C: Resolved (flattened) calendar definitions after inheritance resolution. */
+  readonly resolvedCalendarDefinitions: Readonly<Record<CalendarId, BaseCalendarDefinition>>;
+  /** Calendar fidelity counts for ImportSummary. */
+  readonly calendarFidelity: CalendarFidelitySummary;
+  /** W4.3: Project-level default settings preserved from MSP (informational). */
+  readonly sourceProjectSettings: SourceProjectSettings;
 };
 
 // ─── Constraint Mapping Table (spec §3.2.1) ─────────────────────────
@@ -104,6 +126,27 @@ function parseMspDate(dateStr: string): string {
   return datePart;
 }
 
+function parseOffsetMinutes(sourceDate: string | undefined, projectStartMs: number): number | undefined {
+  if (!sourceDate || Number.isNaN(projectStartMs)) return undefined;
+  const ms = Date.parse(sourceDate);
+  if (Number.isNaN(ms)) return undefined;
+  return Math.round((ms - projectStartMs) / 60_000);
+}
+
+function parseIsoDurationToWorkMinutes(iso: string | undefined, hoursPerDay: number): WorkMinutes | undefined {
+  if (!iso || hoursPerDay <= 0) return undefined;
+  const hours = parseIso8601DurationHours(iso);
+  if (Number.isNaN(hours) || hours < 0) return undefined;
+  const minutes = Math.round((hours / hoursPerDay) * MINUTES_PER_DAY);
+  return minutes as WorkMinutes;
+}
+
+function parsePercent(raw: string | undefined): number | undefined {
+  if (!raw) return undefined;
+  const value = parseFloat(raw);
+  return Number.isFinite(value) ? value : undefined;
+}
+
 // ─── Main Mapper ────────────────────────────────────────────────────
 
 export function mapMspToCanonical(data: MspData): MspMapperResult {
@@ -116,13 +159,28 @@ export function mapMspToCanonical(data: MspData): MspMapperResult {
   const rawStartDate = parseMspDate(data.project.startDate);
   const projectStartDate = rawStartDate || "";
   const projectStartMs = Date.parse(projectStartDate);
+  const projectStatusDate = data.project.statusDate || undefined;
 
   // ── Build UID → canonical ID lookup ───────────────────────────
   const taskUidToCanonical = new Map<string, string>();
   const resourceUidToCanonical = new Map<string, string>();
-
+  // ── Calendar extraction ───────────────────────────────────────
+  const {
+    calendarDefinitions,
+    calUidToCalendarId,
+    diagnostics: calDiagnostics,
+    calendarsWithInheritance,
+    calendarsSimplifiedForEngine,
+    totalExceptionCount,
+  } = mapMspCalendars(data.calendars);
+  diagnostics.push(...calDiagnostics);
   // ── Map tasks ─────────────────────────────────────────────────
   const tasks: Task[] = [];
+  const actualsByTaskId: Record<string, SourceTaskActuals> = {};
+  const progressByTaskId: Record<string, SourceTaskProgress> = {};
+  const sourceDatesByTaskId: Record<string, SourceTaskDates> = {};
+  let tasksWithRawActualFields = 0;
+  let tasksWithRawProgressFields = 0;
 
   // First pass: assign canonical IDs for all tasks
   for (const mt of data.tasks) {
@@ -131,6 +189,7 @@ export function mapMspToCanonical(data: MspData): MspMapperResult {
 
   // Track parent IDs by outline level for hierarchy reconstruction
   const parentStack: string[] = []; // stack of canonical IDs by depth
+  let taskIndex = 0;
 
   for (const mt of data.tasks) {
     const canonicalId = taskUidToCanonical.get(mt.uid)!;
@@ -141,36 +200,38 @@ export function mapMspToCanonical(data: MspData): MspMapperResult {
     // MSP UID 0 is often the project summary — skip it
     if (mt.uid === "0") continue;
 
-    // Duration: ISO 8601 → working days
+    // Duration: ISO 8601 → working days → WorkMinutes
     const rawHours = parseIso8601DurationHours(mt.duration);
-    let duration: number;
+    let durationWorkMinutes: WorkMinutes;
     if (isNaN(rawHours)) {
-      duration = isSummary ? 0 : 1;
+      const durationDays = isSummary ? 0 : 1;
+      durationWorkMinutes = (durationDays * MINUTES_PER_DAY) as WorkMinutes;
       if (!isSummary && mt.duration) {
         diagnostics.push({
           code: "DURATION_FRACTIONAL_ROUNDED",
           severity: "warning",
-          message: `Unparseable duration "${mt.duration}" defaulted to ${duration} day`,
+          message: `Unparseable duration "${mt.duration}" defaulted to ${durationDays} day`,
           sourceEntityId: mt.uid,
           canonicalEntityId: canonicalId,
           field: "Duration",
           originalValue: mt.duration,
-          mappedValue: String(duration),
+          mappedValue: String(durationDays),
         });
       }
     } else {
       const rawDays = rawHours / hoursPerDay;
-      duration = isSummary ? 0 : Math.max(1, Math.round(rawDays));
+      const durationDays = isSummary ? 0 : Math.max(1, Math.round(rawDays));
+      durationWorkMinutes = (durationDays * MINUTES_PER_DAY) as WorkMinutes;
       if (!isSummary && rawDays > 0 && Math.abs(rawDays - Math.round(rawDays)) > 0.01) {
         diagnostics.push({
           code: "DURATION_FRACTIONAL_ROUNDED",
           severity: "warning",
-          message: `Duration rounded from ${rawDays.toFixed(2)} to ${duration} days`,
+          message: `Duration rounded from ${rawDays.toFixed(2)} to ${durationDays} days`,
           sourceEntityId: mt.uid,
           canonicalEntityId: canonicalId,
           field: "Duration",
           originalValue: mt.duration,
-          mappedValue: String(duration),
+          mappedValue: String(durationDays),
         });
       }
     }
@@ -188,7 +249,7 @@ export function mapMspToCanonical(data: MspData): MspMapperResult {
 
     // Constraint type
     let constraintType: ConstraintType | undefined;
-    let constraintDate: number | null | undefined;
+    let constraintDateMinutes: WorkMinutes | null | undefined;
 
     if (mt.constraintType && mt.constraintType !== "" && mt.constraintType !== "0") {
       const mapping = MSP_CONSTRAINT_MAP[mt.constraintType];
@@ -220,26 +281,93 @@ export function mapMspToCanonical(data: MspData): MspMapperResult {
         });
       }
 
-      // Constraint date → day-offset from project start
+      // Constraint date → day-offset from project start → WorkMinutes
       const cstrDate = parseMspDate(mt.constraintDate);
       if (cstrDate && !isNaN(projectStartMs)) {
         const cstrMs = Date.parse(cstrDate);
         if (!isNaN(cstrMs)) {
-          constraintDate = Math.round((cstrMs - projectStartMs) / MS_PER_DAY);
+          const dayOffset = Math.round((cstrMs - projectStartMs) / MS_PER_DAY);
+          constraintDateMinutes = (dayOffset * MINUTES_PER_DAY) as WorkMinutes;
         }
       }
     }
 
     tasks.push({
       id: canonicalId,
+      sourceActivityId: mt.id?.trim() || undefined,
       name,
-      duration,
-      depth,
-      isSummary,
+      durationWorkMinutes,
       parentId,
       constraintType,
-      constraintDate,
+      constraintDateMinutes,
+      siblingOrder: generateMigrationKey(taskIndex++),
+      assignedCalendarId: mt.calendarUID ? calUidToCalendarId.get(mt.calendarUID) : undefined,
     });
+
+    const actuals: SourceTaskActuals = {
+      actualStartMinutes: parseOffsetMinutes(mt.actualStart, projectStartMs),
+      actualFinishMinutes: parseOffsetMinutes(mt.actualFinish, projectStartMs),
+      actualDurationWorkMinutes: parseIsoDurationToWorkMinutes(mt.actualDuration, hoursPerDay),
+      remainingDurationWorkMinutes: parseIsoDurationToWorkMinutes(mt.remainingDuration, hoursPerDay),
+      remainingStartMinutes: parseOffsetMinutes(mt.remainingStart, projectStartMs),
+      remainingFinishMinutes: parseOffsetMinutes(mt.remainingFinish, projectStartMs),
+      suspendDateMinutes: parseOffsetMinutes(mt.stop, projectStartMs),
+      resumeDateMinutes: parseOffsetMinutes(mt.resume, projectStartMs),
+      raw: {
+        actualStart: mt.actualStart,
+        actualFinish: mt.actualFinish,
+        actualDuration: mt.actualDuration,
+        remainingDuration: mt.remainingDuration,
+      },
+    };
+    const hasRawActual = Boolean(
+      mt.actualStart || mt.actualFinish || mt.actualDuration || mt.remainingDuration || mt.remainingStart || mt.remainingFinish,
+    );
+    if (hasRawActual) tasksWithRawActualFields += 1;
+    const hasAnyActual = Object.entries(actuals).some(([key, value]) => key !== "raw" && value !== undefined);
+    if (hasAnyActual) {
+      actualsByTaskId[canonicalId] = actuals;
+    }
+
+    const progress: SourceTaskProgress = {
+      physicalPercentComplete: parsePercent(mt.physicalPercentComplete),
+      durationPercentComplete: parsePercent(mt.durationPercentComplete),
+      unitsPercentComplete: parsePercent(mt.unitsPercentComplete),
+      percentComplete: parsePercent(mt.percentComplete),
+      percentWorkComplete: parsePercent(mt.percentWorkComplete),
+      percentCompleteType: mt.percentCompleteType || undefined,
+      raw: {
+        percentComplete: mt.percentComplete,
+        percentWorkComplete: mt.percentWorkComplete,
+        physicalPercentComplete: mt.physicalPercentComplete,
+        durationPercentComplete: mt.durationPercentComplete,
+        unitsPercentComplete: mt.unitsPercentComplete,
+        percentCompleteType: mt.percentCompleteType,
+      },
+    };
+    const hasRawProgress = Boolean(
+      mt.physicalPercentComplete || mt.durationPercentComplete || mt.unitsPercentComplete || mt.percentComplete || mt.percentWorkComplete,
+    );
+    if (hasRawProgress) tasksWithRawProgressFields += 1;
+    const hasAnyProgress = Object.entries(progress).some(([key, value]) => key !== "raw" && value !== undefined);
+    if (hasAnyProgress) {
+      progressByTaskId[canonicalId] = progress;
+    }
+
+    const sourceDates: SourceTaskDates = {
+      sourceStartMinutes: parseOffsetMinutes(mt.start, projectStartMs),
+      sourceFinishMinutes: parseOffsetMinutes(mt.finish, projectStartMs),
+      sourceRawStart: mt.start || undefined,
+      sourceRawFinish: mt.finish || undefined,
+    };
+    if (
+      sourceDates.sourceStartMinutes !== undefined
+      || sourceDates.sourceFinishMinutes !== undefined
+      || sourceDates.sourceRawStart !== undefined
+      || sourceDates.sourceRawFinish !== undefined
+    ) {
+      sourceDatesByTaskId[canonicalId] = sourceDates;
+    }
   }
 
   // ── Map dependencies (from PredecessorLinks) ──────────────────
@@ -279,29 +407,30 @@ export function mapMspToCanonical(data: MspData): MspMapperResult {
         });
       }
 
-      // Lag: MSP stores in tenths of minutes → convert to working days
+      // Lag: MSP stores in tenths of minutes → convert to working days → WorkMinutes
       const lagTenthsOfMinutes = parseInt(link.linkLag || "0", 10);
       const lagMinutes = lagTenthsOfMinutes / 10;
       const lagDays = lagMinutes / (hoursPerDay * 60);
-      const lag = Math.round(lagDays);
-      if (lagDays !== 0 && Math.abs(lagDays - lag) > 0.01) {
+      const lagDaysRounded = Math.round(lagDays);
+      if (lagDays !== 0 && Math.abs(lagDays - lagDaysRounded) > 0.01) {
         diagnostics.push({
           code: "LAG_FRACTIONAL_ROUNDED",
           severity: "warning",
-          message: `Lag rounded from ${lagDays.toFixed(2)} to ${lag} days`,
+          message: `Lag rounded from ${lagDays.toFixed(2)} to ${lagDaysRounded} days`,
           sourceEntityId: mt.uid,
           field: "LinkLag",
           originalValue: link.linkLag,
-          mappedValue: String(lag),
+          mappedValue: String(lagDaysRounded),
         });
       }
+      const lagWorkMinutes = (lagDaysRounded * MINUTES_PER_DAY) as WorkMinutes;
 
       dependencies.push({
         id: generateId(),
         predId,
         succId,
         type: canonicalDepType,
-        lag,
+        lagWorkMinutes,
       });
     }
   }
@@ -371,21 +500,119 @@ export function mapMspToCanonical(data: MspData): MspMapperResult {
   }
 
   // ── Unsupported feature diagnostics ───────────────────────────
-  diagnostics.push({
-    code: "UNSUPPORTED_ACTUALS",
-    severity: "info",
-    message: "Actual dates and percent complete are not imported — actuals tracking not yet supported",
-  });
+  const preservedActualCount = Object.keys(actualsByTaskId).length;
+  const preservedProgressCount = Object.keys(progressByTaskId).length;
+
+  if (tasksWithRawActualFields > preservedActualCount) {
+    diagnostics.push({
+      code: "UNSUPPORTED_ACTUALS",
+      severity: "warning",
+      message: `Some MSP actual fields could not be preserved (${preservedActualCount}/${tasksWithRawActualFields} tasks).`,
+    });
+  } else if (preservedActualCount === 0 && tasksWithRawActualFields === 0) {
+    diagnostics.push({
+      code: "UNSUPPORTED_ACTUALS",
+      severity: "info",
+      message: "No MSP actuals were present in the source file.",
+    });
+  }
+
+  if (tasksWithRawProgressFields > preservedProgressCount) {
+    diagnostics.push({
+      code: "UNSUPPORTED_ACTUALS",
+      severity: "warning",
+      message: `Some MSP progress fields could not be preserved (${preservedProgressCount}/${tasksWithRawProgressFields} tasks).`,
+    });
+  }
   diagnostics.push({
     code: "UNSUPPORTED_COST",
     severity: "info",
     message: "Cost and budget data are not imported — cost model not in scope",
   });
-  diagnostics.push({
-    code: "CALENDAR_SIMPLIFIED",
-    severity: "info",
-    message: "Calendar data simplified to project-level default — per-task and per-resource calendars not yet supported",
+
+  // ── Calendar fidelity ────────────────────────────────────────
+  const taskCalendarAssignments = tasks.filter(t => t.assignedCalendarId !== undefined).length;
+  const resourceCalendarAssignments = data.resources.filter(r => r.calendarUID).length;
+
+  if (taskCalendarAssignments > 0) {
+    diagnostics.push({
+      code: "TASK_CALENDAR_IGNORED_BY_ENGINE",
+      severity: "info",
+      message: `${taskCalendarAssignments} task(s) have assigned calendars — preserved in sidecar data, engine uses project default`,
+    });
+  }
+  if (resourceCalendarAssignments > 0) {
+    diagnostics.push({
+      code: "RESOURCE_CALENDAR_PRESERVED_INACTIVE",
+      severity: "info",
+      message: `${resourceCalendarAssignments} resource(s) have assigned calendars — preserved in sidecar data, not yet active`,
+    });
+  }
+
+  // W3C: Resolve calendar inheritance
+  const { resolvedDefinitions, diagnostics: inheritanceDiags, unresolvedCount } =
+    resolveCalendarInheritance(calendarDefinitions);
+  diagnostics.push(...inheritanceDiags);
+
+  const calendarFidelity = buildCalendarFidelitySummary({
+    totalCalendars: data.calendars.length,
+    taskCalendarAssignments,
+    resourceCalendarAssignments,
+    exceptionCount: totalExceptionCount,
+    calendarsWithInheritance,
+    calendarsSimplifiedForEngine,
+    unresolvedInheritanceCount: unresolvedCount,
   });
+
+  // ── W4.3: Build source project settings (informational) ──────
+  const minutesPerDayNum = parseFloat(data.project.minutesPerDay) || undefined;
+  const minutesPerWeekNum = data.project.minutesPerWeek ? parseFloat(data.project.minutesPerWeek) : undefined;
+  const daysPerMonthNum = data.project.daysPerMonth ? parseFloat(data.project.daysPerMonth) : undefined;
+  const criticalSlackLimitNum = data.project.criticalSlackLimit ? parseFloat(data.project.criticalSlackLimit) : undefined;
+  const scheduleFrom = data.project.scheduleFromStart != null
+    ? (data.project.scheduleFromStart === "1" ? "Start" : "Finish")
+    : undefined;
+
+  const sourceProjectSettings: SourceProjectSettings = {
+    sourceProjectId: data.project.name || undefined,
+    defaultCalendarUID: data.project.calendarUID || undefined,
+    planStartDate: projectStartDate || undefined,
+    statusDate: projectStatusDate || undefined,
+    minutesPerDay: Number.isFinite(minutesPerDayNum) ? minutesPerDayNum : undefined,
+    minutesPerWeek: Number.isFinite(minutesPerWeekNum) ? minutesPerWeekNum : undefined,
+    daysPerMonth: Number.isFinite(daysPerMonthNum) ? daysPerMonthNum : undefined,
+    scheduleFrom,
+    criticalFloatThreshold: Number.isFinite(criticalSlackLimitNum) ? criticalSlackLimitNum : undefined,
+  };
+
+  // ── W4.3: Emit preservation diagnostics ──────────────────────
+  if (data.project.calendarUID) {
+    diagnostics.push({
+      code: "PROJECT_DEFAULT_CALENDAR_PRESERVED_INACTIVE",
+      severity: "info",
+      message: `Project default calendar UID ${data.project.calendarUID} preserved — not yet active in scheduling engine`,
+      field: "CalendarUID",
+      originalValue: data.project.calendarUID,
+    });
+  }
+  if (minutesPerWeekNum !== undefined && Number.isFinite(minutesPerWeekNum)) {
+    diagnostics.push({
+      code: "PROJECT_HOURS_PER_PERIOD_PRESERVED_INACTIVE",
+      severity: "info",
+      message: `Project minutes/week (${minutesPerWeekNum}) and minutes/day (${minutesPerDayNum}) preserved — engine uses fixed working time`,
+      field: "MinutesPerWeek",
+      originalValue: data.project.minutesPerWeek,
+    });
+  }
+  if (criticalSlackLimitNum !== undefined && Number.isFinite(criticalSlackLimitNum)) {
+    diagnostics.push({
+      code: "CRITICAL_PATH_SETTING_PRESERVED_INACTIVE",
+      severity: "info",
+      message: `Critical slack limit (${criticalSlackLimitNum}d) preserved — engine uses its own critical path logic`,
+      field: "CriticalSlackLimit",
+      originalValue: data.project.criticalSlackLimit,
+    });
+  }
 
   return {
     tasks,
@@ -395,5 +622,21 @@ export function mapMspToCanonical(data: MspData): MspMapperResult {
     diagnostics,
     projectName,
     projectStartDate,
+    calendarDefinitions,
+    resolvedCalendarDefinitions: resolvedDefinitions,
+    calendarFidelity,
+    sourceProjectSettings,
+    sourceImportFidelityState: {
+      projectStatus: projectStatusDate
+        ? {
+            statusDate: projectStatusDate,
+            sourceRawDate: projectStatusDate,
+            sourceSystem: "MSP_XML",
+          }
+        : undefined,
+      actualsByTaskId,
+      progressByTaskId,
+      sourceDatesByTaskId,
+    },
   };
 }

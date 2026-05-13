@@ -5,9 +5,10 @@ use wasm_bindgen_test::*;
 
 // Test helper structs matching the boundary contract
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct TestTask {
     id: String,
-    duration: u32,
+    duration_work_minutes: u32,
 }
 
 #[derive(Serialize)]
@@ -31,15 +32,15 @@ fn test_simple_chain() {
         tasks: vec![
             TestTask {
                 id: "A".to_string(),
-                duration: 3,
+                duration_work_minutes: 3,
             },
             TestTask {
                 id: "B".to_string(),
-                duration: 5,
+                duration_work_minutes: 5,
             },
             TestTask {
                 id: "C".to_string(),
-                duration: 2,
+                duration_work_minutes: 2,
             },
         ],
         dependencies: vec![
@@ -64,29 +65,29 @@ fn test_simple_chain() {
 
     // Task A: starts at 0, finishes at 3 (critical)
     assert_eq!(results[0]["taskId"], "A");
-    assert_eq!(results[0]["earlyStart"], 0);
-    assert_eq!(results[0]["earlyFinish"], 3);
-    assert_eq!(results[0]["lateStart"], 0);
-    assert_eq!(results[0]["lateFinish"], 3);
-    assert_eq!(results[0]["totalFloat"], 0);
+    assert_eq!(results[0]["earlyStartMinutes"], 0);
+    assert_eq!(results[0]["earlyFinishMinutes"], 3);
+    assert_eq!(results[0]["lateStartMinutes"], 0);
+    assert_eq!(results[0]["lateFinishMinutes"], 3);
+    assert_eq!(results[0]["totalFloatMinutes"], 0);
     assert_eq!(results[0]["isCritical"], true);
 
     // Task B: starts at 3, finishes at 8 (critical)
     assert_eq!(results[1]["taskId"], "B");
-    assert_eq!(results[1]["earlyStart"], 3);
-    assert_eq!(results[1]["earlyFinish"], 8);
-    assert_eq!(results[1]["lateStart"], 3);
-    assert_eq!(results[1]["lateFinish"], 8);
-    assert_eq!(results[1]["totalFloat"], 0);
+    assert_eq!(results[1]["earlyStartMinutes"], 3);
+    assert_eq!(results[1]["earlyFinishMinutes"], 8);
+    assert_eq!(results[1]["lateStartMinutes"], 3);
+    assert_eq!(results[1]["lateFinishMinutes"], 8);
+    assert_eq!(results[1]["totalFloatMinutes"], 0);
     assert_eq!(results[1]["isCritical"], true);
 
     // Task C: starts at 8, finishes at 10 (critical)
     assert_eq!(results[2]["taskId"], "C");
-    assert_eq!(results[2]["earlyStart"], 8);
-    assert_eq!(results[2]["earlyFinish"], 10);
-    assert_eq!(results[2]["lateStart"], 8);
-    assert_eq!(results[2]["lateFinish"], 10);
-    assert_eq!(results[2]["totalFloat"], 0);
+    assert_eq!(results[2]["earlyStartMinutes"], 8);
+    assert_eq!(results[2]["earlyFinishMinutes"], 10);
+    assert_eq!(results[2]["lateStartMinutes"], 8);
+    assert_eq!(results[2]["lateFinishMinutes"], 10);
+    assert_eq!(results[2]["totalFloatMinutes"], 0);
     assert_eq!(results[2]["isCritical"], true);
 }
 
@@ -98,15 +99,15 @@ fn test_cycle_detected() {
         tasks: vec![
             TestTask {
                 id: "A".to_string(),
-                duration: 1,
+                duration_work_minutes: 1,
             },
             TestTask {
                 id: "B".to_string(),
-                duration: 1,
+                duration_work_minutes: 1,
             },
             TestTask {
                 id: "C".to_string(),
-                duration: 1,
+                duration_work_minutes: 1,
             },
         ],
         dependencies: vec![
@@ -141,15 +142,15 @@ fn test_duplicate_task_id() {
         tasks: vec![
             TestTask {
                 id: "A".to_string(),
-                duration: 3,
+                duration_work_minutes: 3,
             },
             TestTask {
                 id: "B".to_string(),
-                duration: 5,
+                duration_work_minutes: 5,
             },
             TestTask {
                 id: "A".to_string(),
-                duration: 2,
+                duration_work_minutes: 2,
             },
         ],
         dependencies: vec![],
@@ -172,11 +173,11 @@ fn test_self_dependency() {
         tasks: vec![
             TestTask {
                 id: "A".to_string(),
-                duration: 3,
+                duration_work_minutes: 3,
             },
             TestTask {
                 id: "B".to_string(),
-                duration: 5,
+                duration_work_minutes: 5,
             },
         ],
         dependencies: vec![TestDependency {
@@ -204,7 +205,7 @@ fn test_task_not_found() {
     let request = TestRequest {
         tasks: vec![TestTask {
             id: "A".to_string(),
-            duration: 3,
+            duration_work_minutes: 3,
         }],
         dependencies: vec![TestDependency {
             pred_id: "A".to_string(),
@@ -231,15 +232,15 @@ fn test_parallel_paths_with_float() {
         tasks: vec![
             TestTask {
                 id: "A".to_string(),
-                duration: 3,
+                duration_work_minutes: 3,
             },
             TestTask {
                 id: "B".to_string(),
-                duration: 7,
+                duration_work_minutes: 7,
             },
             TestTask {
                 id: "C".to_string(),
-                duration: 2,
+                duration_work_minutes: 2,
             },
         ],
         dependencies: vec![TestDependency {
@@ -261,22 +262,22 @@ fn test_parallel_paths_with_float() {
     let task_c = results.iter().find(|r| r["taskId"] == "C").unwrap();
 
     // Task B is critical (longest path)
-    assert_eq!(task_b["earlyStart"], 0);
-    assert_eq!(task_b["earlyFinish"], 7);
-    assert_eq!(task_b["lateStart"], 0);
-    assert_eq!(task_b["lateFinish"], 7);
-    assert_eq!(task_b["totalFloat"], 0);
+    assert_eq!(task_b["earlyStartMinutes"], 0);
+    assert_eq!(task_b["earlyFinishMinutes"], 7);
+    assert_eq!(task_b["lateStartMinutes"], 0);
+    assert_eq!(task_b["lateFinishMinutes"], 7);
+    assert_eq!(task_b["totalFloatMinutes"], 0);
     assert_eq!(task_b["isCritical"], true);
 
     // Task A has float
-    assert_eq!(task_a["earlyStart"], 0);
-    assert_eq!(task_a["earlyFinish"], 3);
-    assert_eq!(task_a["totalFloat"], 2);
+    assert_eq!(task_a["earlyStartMinutes"], 0);
+    assert_eq!(task_a["earlyFinishMinutes"], 3);
+    assert_eq!(task_a["totalFloatMinutes"], 2);
     assert_eq!(task_a["isCritical"], false);
 
     // Task C has float
-    assert_eq!(task_c["earlyStart"], 3);
-    assert_eq!(task_c["earlyFinish"], 5);
-    assert_eq!(task_c["totalFloat"], 2);
+    assert_eq!(task_c["earlyStartMinutes"], 3);
+    assert_eq!(task_c["earlyFinishMinutes"], 5);
+    assert_eq!(task_c["totalFloatMinutes"], 2);
     assert_eq!(task_c["isCritical"], false);
 }

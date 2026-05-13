@@ -7,10 +7,19 @@ export interface VirtualWindow {
   startIndex: number;
   /** Last task index to render (inclusive) */
   endIndex: number;
-  /** translateY offset for the rendered slice (px) */
+  /** translateY offset for the rendered slice (px) — alias: startOffset */
   offsetY: number;
   /** Total content height (px) — used for phantom spacer */
   totalHeight: number;
+}
+
+/**
+ * Canonical vertical scroll position, floored to an integer pixel.
+ * Both table (body.scrollTop) and canvas (ctx.translate) MUST use this
+ * to prevent sub-pixel drift between panes during live scrolling.
+ */
+export function canonicalScrollTop(raw: number): number {
+  return Math.floor(raw);
 }
 
 /**

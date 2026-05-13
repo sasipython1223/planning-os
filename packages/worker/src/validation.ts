@@ -1,4 +1,4 @@
-import type { Assignment, ConstraintType, Dependency, DependencyType, Resource, Task } from "protocol";
+import type { Assignment, ConstraintType, Dependency, DependencyType, Resource, Task, WorkMinutes } from "@planner/protocol";
 import { findDependency, findResource, findTask } from "./state.js";
 
 const VALID_DEP_TYPES: ReadonlySet<DependencyType> = new Set(["FS", "SS", "FF", "SF"]);
@@ -14,20 +14,20 @@ export const validateTask = (task: Task): string | null => {
   if (task.name.trim().length === 0) {
     return "Task name must not be empty";
   }
-  if (task.duration <= 0) {
+  if (task.durationWorkMinutes <= 0) {
     return "Task duration must be greater than 0";
   }
   return null;
 };
 
-export const validateTaskUpdate = (taskId: string, updates: { name?: string; duration?: number; minEarlyStart?: number; parentId?: string | null; constraintType?: ConstraintType; constraintDate?: number | null }): string | null => {
+export const validateTaskUpdate = (taskId: string, updates: { name?: string; durationWorkMinutes?: WorkMinutes; minEarlyStartMinutes?: WorkMinutes; parentId?: string | null; constraintType?: ConstraintType; constraintDateMinutes?: WorkMinutes | null }): string | null => {
   if (updates.name !== undefined && updates.name.trim().length === 0) {
     return "Task name must not be empty";
   }
-  if (updates.duration !== undefined && updates.duration <= 0) {
+  if (updates.durationWorkMinutes !== undefined && updates.durationWorkMinutes <= 0) {
     return "Task duration must be greater than 0";
   }
-  if (updates.minEarlyStart !== undefined && updates.minEarlyStart < 0) {
+  if (updates.minEarlyStartMinutes !== undefined && updates.minEarlyStartMinutes < 0) {
     return "minEarlyStart must not be negative";
   }
   if (updates.constraintType !== undefined) {
@@ -37,8 +37,8 @@ export const validateTaskUpdate = (taskId: string, updates: { name?: string; dur
     // Dated constraint without a date is allowed — diagnosed, not rejected.
     // The kernel safely treats missing constraintDate as unconstrained.
   }
-  if (updates.constraintDate !== undefined && updates.constraintDate != null) {
-    if (updates.constraintDate < 0) {
+  if (updates.constraintDateMinutes !== undefined && updates.constraintDateMinutes != null) {
+    if (updates.constraintDateMinutes < 0) {
       return "constraintDate must not be negative";
     }
     // If setting a date without also setting type, check existing type
@@ -84,17 +84,17 @@ export const validateDependency = (dep: Dependency): string | null => {
   if (!VALID_DEP_TYPES.has(dep.type)) {
     return `Invalid dependency type: ${dep.type}`;
   }
-  if (!Number.isInteger(dep.lag)) {
+  if (!Number.isInteger(dep.lagWorkMinutes)) {
     return "Lag must be an integer";
   }
   return null;
 };
 
-export const validateDependencyUpdate = (updates: { type?: DependencyType; lag?: number }): string | null => {
+export const validateDependencyUpdate = (updates: { type?: DependencyType; lagWorkMinutes?: WorkMinutes }): string | null => {
   if (updates.type !== undefined && !VALID_DEP_TYPES.has(updates.type)) {
     return `Invalid dependency type: ${updates.type}`;
   }
-  if (updates.lag !== undefined && !Number.isInteger(updates.lag)) {
+  if (updates.lagWorkMinutes !== undefined && !Number.isInteger(updates.lagWorkMinutes)) {
     return "Lag must be an integer";
   }
   return null;

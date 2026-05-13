@@ -3,7 +3,11 @@ import { useUIStore, type BottomTab } from '../../store/uiStore';
 const TABS: { key: BottomTab; label: string }[] = [
   { key: 'task-details', label: 'Task Details' },
   { key: 'histogram', label: 'Histogram' },
+  { key: 'float-path', label: 'Float Paths' },
+  { key: 'driving-logic', label: 'Driving Logic' },
   { key: 'logs', label: 'Logs' },
+  { key: 'ai-review', label: 'AI Review' },
+  { key: 'dashboard', label: 'Dashboard' },
 ];
 
 export function DrawerTabBar() {

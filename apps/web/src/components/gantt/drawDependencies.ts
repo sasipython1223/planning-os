@@ -1,4 +1,4 @@
-import type { Dependency, DependencyType, ScheduleResultMap } from "protocol";
+import type { Dependency, DependencyType, ScheduleResultMap } from "@planner/protocol";
 import { COLORS } from "./ganttConstants";
 import type { TaskGeometry } from "./ganttGeometry";
 
@@ -63,7 +63,7 @@ export function drawDependencies(
   visibleBottom: number,
   scheduleResults?: ScheduleResultMap,
 ): void {
-  ctx.lineWidth = 2;
+  const baseLineWidth = 1.25;
 
   dependencies.forEach((dep) => {
     const predGeom = geometryMap.get(dep.predId);
@@ -83,6 +83,9 @@ export function drawDependencies(
       ? scheduleResults[dep.predId]?.isCritical && scheduleResults[dep.succId]?.isCritical
       : false;
     const lineColor = isCritLine ? COLORS.critical : COLORS.dependency;
+    ctx.save();
+    ctx.lineWidth = isCritLine ? 1.5 : baseLineWidth;
+    ctx.globalAlpha = isCritLine ? 0.85 : 0.55;
     ctx.strokeStyle = lineColor;
     ctx.fillStyle = lineColor;
 
@@ -108,5 +111,6 @@ export function drawDependencies(
     ctx.stroke();
 
     drawArrowhead(ctx, x2, y2, arrowDir === "right" ? "right" : "left");
+    ctx.restore();
   });
 }

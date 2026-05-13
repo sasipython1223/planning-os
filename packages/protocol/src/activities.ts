@@ -16,6 +16,7 @@
  */
 
 import type { DomainEntityId, DurationStrategy } from "./domain.js";
+import type { WorkMinutes } from "./types.js";
 
 // ─── Constraint Types ───────────────────────────────────────────────
 
@@ -36,7 +37,7 @@ export type ActivityConstraintType =
 export type AuthoredDependencyLink = {
   readonly predecessorActivityId: DomainEntityId;
   readonly type: "FS" | "SS" | "FF" | "SF";
-  readonly lagDays: number;
+  readonly lagWorkMinutes: WorkMinutes;
 };
 
 /**
@@ -60,8 +61,8 @@ export type AuthoredActivity = {
   readonly dependencies: readonly AuthoredDependencyLink[];
   /** Optional constraint type forwarded to the solver. */
   readonly constraintType?: ActivityConstraintType;
-  /** Optional constraint date as day-offset from project start. */
-  readonly constraintDate?: number | null;
+  /** Optional constraint offset in work minutes from project start. */
+  readonly constraintDateMinutes?: WorkMinutes | null;
 };
 
 // ─── Generated Activity ─────────────────────────────────────────────
@@ -82,14 +83,14 @@ export type GeneratedActivity = {
   /** The authored activity this was derived from. */
   readonly sourceAuthoredActivityId: DomainEntityId;
   readonly name: string;
-  /** Resolved concrete duration in working days. */
-  readonly durationDays: number;
+  /** Resolved concrete duration in work minutes. */
+  readonly durationWorkMinutes: WorkMinutes;
   /** The kind of strategy that produced this duration, for traceability. */
   readonly resolvedStrategyKind: DurationStrategy["kind"];
   /** Zone ID for traceability. */
   readonly zoneId: DomainEntityId;
   readonly constraintType?: ActivityConstraintType;
-  readonly constraintDate?: number | null;
+  readonly constraintDateMinutes?: WorkMinutes | null;
 };
 
 /**
@@ -99,5 +100,5 @@ export type GeneratedDependency = {
   readonly predecessorId: DomainEntityId;
   readonly successorId: DomainEntityId;
   readonly type: "FS" | "SS" | "FF" | "SF";
-  readonly lagDays: number;
+  readonly lagWorkMinutes: WorkMinutes;
 };

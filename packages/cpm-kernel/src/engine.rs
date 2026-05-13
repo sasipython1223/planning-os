@@ -221,7 +221,7 @@ pub fn calculate_schedule(
 
         for &(pred, ref edge) in &graph.predecessors[node] {
             let anchor = pred_anchor_forward(edge.dep_type, early_start[pred], early_finish[pred]);
-            let constrained = step_forward_lag(anchor, edge.lag, &blocked);
+            let constrained = step_forward_lag(anchor, edge.lag_work_minutes, &blocked);
 
             if constrains_succ_start(edge.dep_type) {
                 if constrained > max_constrained_es {
@@ -235,43 +235,43 @@ pub fn calculate_schedule(
             }
         }
 
-        let raw_es = std::cmp::max(max_constrained_es, graph.min_early_start[node]);
+        let raw_es = std::cmp::max(max_constrained_es, graph.min_early_start_minutes[node]);
 
         if has_ef_constraint {
             // Derive ES from the EF constraint
-            let ef_derived_es = retreat_working(max_constrained_ef, graph.durations[node], &blocked);
+            let ef_derived_es = retreat_working(max_constrained_ef, graph.duration_work_minutes[node], &blocked);
             let es = snap_forward(std::cmp::max(raw_es, ef_derived_es), &blocked);
             early_start[node] = es;
-            let ef = advance_working(es, graph.durations[node], &blocked);
+            let ef = advance_working(es, graph.duration_work_minutes[node], &blocked);
             early_finish[node] = std::cmp::max(ef, max_constrained_ef);
         } else {
             early_start[node] = snap_forward(raw_es, &blocked);
-            early_finish[node] = advance_working(early_start[node], graph.durations[node], &blocked);
+            early_finish[node] = advance_working(early_start[node], graph.duration_work_minutes[node], &blocked);
         }
 
         // ── Apply forward-driving constraints ────────────────────
         match graph.constraint_type[node] {
             ConstraintType::SNET => {
-                if let Some(cd) = graph.constraint_date[node] {
+                if let Some(cd) = graph.constraint_date_minutes[node] {
                     let cd_u = cd.max(0) as u32;
                     if cd_u > early_start[node] {
                         early_start[node] = snap_forward(cd_u, &blocked);
-                        early_finish[node] = advance_working(early_start[node], graph.durations[node], &blocked);
+                        early_finish[node] = advance_working(early_start[node], graph.duration_work_minutes[node], &blocked);
                     }
                 }
             }
             ConstraintType::MSO => {
-                if let Some(cd) = graph.constraint_date[node] {
+                if let Some(cd) = graph.constraint_date_minutes[node] {
                     let cd_u = cd.max(0) as u32;
                     early_start[node] = snap_forward(cd_u, &blocked);
-                    early_finish[node] = advance_working(early_start[node], graph.durations[node], &blocked);
+                    early_finish[node] = advance_working(early_start[node], graph.duration_work_minutes[node], &blocked);
                 }
             }
             ConstraintType::MFO => {
-                if let Some(cd) = graph.constraint_date[node] {
+                if let Some(cd) = graph.constraint_date_minutes[node] {
                     let cd_u = cd.max(0) as u32;
                     early_finish[node] = cd_u;
-                    early_start[node] = retreat_working(early_finish[node], graph.durations[node], &blocked);
+                    early_start[node] = retreat_working(early_finish[node], graph.duration_work_minutes[node], &blocked);
                 }
             }
             _ => {} // ASAP, ALAP, FNLT: no forward-pass change
@@ -321,7 +321,7 @@ pub fn calculate_schedule(
                 if constrains_succ_start(edge.dep_type) {
                     // FS or SS: constrains successor start → backward from succ late_start
                     let succ_late_boundary = late_start[succ];
-                    let anchor = step_backward_lag(succ_late_boundary, edge.lag, &blocked);
+                    let anchor = step_backward_lag(succ_late_boundary, edge.lag_work_minutes, &blocked);
 
                     match edge.dep_type {
                         DepType::FS => {
@@ -340,7 +340,7 @@ pub fn calculate_schedule(
                 } else {
                     // FF or SF: constrains successor finish → backward from succ late_finish
                     let succ_late_boundary = late_finish[succ];
-                    let anchor = step_backward_lag(succ_late_boundary, edge.lag, &blocked);
+                    let anchor = step_backward_lag(succ_late_boundary, edge.lag_work_minutes, &blocked);
 
                     match edge.dep_type {
                         DepType::FF => {
@@ -365,41 +365,41 @@ pub fn calculate_schedule(
             }
 
             // Derive LS from LF
-            late_start[node] = retreat_working(late_finish[node], graph.durations[node], &blocked);
+            late_start[node] = retreat_working(late_finish[node], graph.duration_work_minutes[node], &blocked);
 
             // If there's also an LS constraint from SS/SF edges, apply minimum
             if has_ls_constraint && min_constrained_ls < late_start[node] {
                 late_start[node] = snap_backward(min_constrained_ls, &blocked);
                 // Recompute LF to preserve task duration (avoid elastic late dates)
-                late_finish[node] = advance_working(late_start[node], graph.durations[node], &blocked);
+                late_finish[node] = advance_working(late_start[node], graph.duration_work_minutes[node], &blocked);
             }
         } else {
-            late_start[node] = retreat_working(late_finish[node], graph.durations[node], &blocked);
+            late_start[node] = retreat_working(late_finish[node], graph.duration_work_minutes[node], &blocked);
         }
 
         // ── Apply backward-driving constraints ───────────────────
         match graph.constraint_type[node] {
             ConstraintType::FNLT => {
-                if let Some(cd) = graph.constraint_date[node] {
+                if let Some(cd) = graph.constraint_date_minutes[node] {
                     let cd_u = cd.max(0) as u32;
                     if cd_u < late_finish[node] {
                         late_finish[node] = cd_u;
-                        late_start[node] = retreat_working(late_finish[node], graph.durations[node], &blocked);
+                        late_start[node] = retreat_working(late_finish[node], graph.duration_work_minutes[node], &blocked);
                     }
                 }
             }
             ConstraintType::MFO => {
-                if let Some(cd) = graph.constraint_date[node] {
+                if let Some(cd) = graph.constraint_date_minutes[node] {
                     let cd_u = cd.max(0) as u32;
                     late_finish[node] = cd_u;
-                    late_start[node] = retreat_working(late_finish[node], graph.durations[node], &blocked);
+                    late_start[node] = retreat_working(late_finish[node], graph.duration_work_minutes[node], &blocked);
                 }
             }
             ConstraintType::MSO => {
-                if let Some(cd) = graph.constraint_date[node] {
+                if let Some(cd) = graph.constraint_date_minutes[node] {
                     let cd_u = cd.max(0) as u32;
                     late_start[node] = snap_forward(cd_u, &blocked);
-                    late_finish[node] = advance_working(late_start[node], graph.durations[node], &blocked);
+                    late_finish[node] = advance_working(late_start[node], graph.duration_work_minutes[node], &blocked);
                 }
             }
             _ => {} // ASAP, ALAP, SNET: no backward-pass change
@@ -426,11 +426,11 @@ pub fn calculate_schedule(
 
         results.push(ScheduleResult {
             task_id: graph.node_to_id[i].clone(),
-            early_start: early_start[i],
-            early_finish: early_finish[i],
-            late_start: late_start[i],
-            late_finish: late_finish[i],
-            total_float,
+            early_start_minutes: early_start[i],
+            early_finish_minutes: early_finish[i],
+            late_start_minutes: late_start[i],
+            late_finish_minutes: late_finish[i],
+            total_float_minutes: total_float,
             is_critical,
         });
     }

@@ -1,26 +1,30 @@
-import type { BaselineMap, Dependency, ScheduleResultMap, Task } from "protocol";
+import type { BaselineMap, Dependency, ScheduleResultMap, VisibleRow, WorkMinutes } from "@planner/protocol";
+import { MINUTES_PER_DAY } from "@planner/protocol";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef } from "react";
 import type { Selection } from "../../App";
+import type { VirtualWindow } from "../../hooks/useVirtualWindow";
 import type { DragState } from "./dragPreview";
 import { emptyDrag, previewDuration, previewEarlyStart } from "./dragPreview";
 import type { DurationOverrides, PositionOverrides } from "./drawGantt";
 import { drawGantt } from "./drawGantt";
-import { DAY_WIDTH, getDensityConstants } from "./ganttConstants";
+import { getDensityConstants } from "./ganttConstants";
 import { computeTaskGeometry } from "./ganttGeometry";
 import { cursorForZone, hitTestBar, hitTestDependency } from "./hitTest";
 import type { LinkDragState } from "./linkDrag";
 import { emptyLinkDrag } from "./linkDrag";
 import { emptyPan } from "./panDrag";
+import type { TimescaleModel } from "./timescaleModel";
 import type { Viewport } from "./viewportTypes";
 
 interface GanttCanvasProps {
-  tasks: Task[];
+  tasks: VisibleRow[];
   scheduleResults: ScheduleResultMap;
   dependencies: Dependency[];
   viewport: Viewport;
+  virtualWindow: VirtualWindow;
   onUpdateDuration: (taskId: string, newDuration: number) => void;
-  onUpdateTask: (taskId: string, updates: { minEarlyStart?: number }) => void;
+  onUpdateTask: (taskId: string, updates: { minEarlyStartMinutes?: WorkMinutes }) => void;
   onAddDependency: (predId: string, succId: string) => void;
   hScrollRef: RefObject<HTMLDivElement | null>;
   vScrollRef: RefObject<HTMLDivElement | null>;
@@ -29,6 +33,8 @@ interface GanttCanvasProps {
   onSelect: (sel: Selection) => void;
   nonWorkingDays: ReadonlySet<number>;
   baselines: BaselineMap;
+  showDependencies: boolean;
+  timescaleModel: TimescaleModel;
 }
 
 /**
@@ -41,6 +47,7 @@ export function GanttCanvas({
   scheduleResults,
   dependencies,
   viewport,
+  virtualWindow,
   onUpdateDuration,
   onUpdateTask,
   onAddDependency,
@@ -51,6 +58,8 @@ export function GanttCanvas({
   onSelect,
   nonWorkingDays,
   baselines,
+  showDependencies,
+  timescaleModel,
 }: GanttCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number>(0);
@@ -77,11 +86,33 @@ export function GanttCanvas({
       canvas.style.height = `${viewportHeight}px`;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
+      const liveViewport: Viewport = viewport;
+      const liveVirtualWindow = virtualWindow;
       const activeLinkDrag = linkDragRef.current.active ? linkDragRef.current : undefined;
-      drawGantt(ctx, tasks, scheduleResults, dependencies, viewport, overrides, posOverrides, activeLinkDrag, projectStartDate, selection, nonWorkingDays, baselines);
+      drawGantt(
+        ctx,
+        tasks,
+        scheduleResults,
+        dependencies,
+        liveViewport,
+        timescaleModel,
+        overrides,
+        posOverrides,
+        activeLinkDrag,
+        projectStartDate,
+        selection,
+        nonWorkingDays,
+        baselines,
+        showDependencies,
+        liveVirtualWindow,
+      );
     },
-    [tasks, scheduleResults, dependencies, viewport, projectStartDate, nonWorkingDays, baselines],
+    [tasks, scheduleResults, dependencies, viewport, timescaleModel, projectStartDate, selection, nonWorkingDays, baselines, showDependencies, virtualWindow],
   );
+
+  // Stable ref to latest redraw (so the scroll listener doesn't depend on redraw identity)
+  const redrawRef = useRef(redraw);
+  redrawRef.current = redraw;
 
   // Normal data-driven redraw
   useEffect(() => {
@@ -89,6 +120,19 @@ export function GanttCanvas({
     rafRef.current = requestAnimationFrame(() => redraw());
     return () => cancelAnimationFrame(rafRef.current);
   }, [redraw]);
+
+  // Continuous scroll-driven canvas redraw — listens on the scroll track directly
+  // so the canvas repaints on every scroll pixel without needing React re-renders.
+  useEffect(() => {
+    const el = vScrollRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = requestAnimationFrame(() => redrawRef.current());
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [vScrollRef]);
 
   // --- coordinate helpers ---
   const toWorld = useCallback(
@@ -107,14 +151,14 @@ export function GanttCanvas({
   const buildOverrides = useCallback((): DurationOverrides | undefined => {
     const d = dragRef.current;
     if (!d.active || d.mode !== "right-resize") return undefined;
-    return new Map([[d.taskId, previewDuration(d)]]);
-  }, []);
+    return new Map([[d.taskId, previewDuration(d, timescaleModel)]]);
+  }, [timescaleModel]);
 
   const buildPositionOverrides = useCallback((): PositionOverrides | undefined => {
     const d = dragRef.current;
     if (!d.active || d.mode !== "move") return undefined;
-    return new Map([[d.taskId, previewEarlyStart(d)]]);
-  }, []);
+    return new Map([[d.taskId, previewEarlyStart(d, timescaleModel)]]);
+  }, [timescaleModel]);
 
   // --- mouse handlers ---
 
@@ -122,14 +166,15 @@ export function GanttCanvas({
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       const { worldX, worldY } = toWorld(e);
       mouseDownWorldRef.current = { x: worldX, y: worldY };
-      const hit = hitTestBar(worldX, worldY, tasks, scheduleResults);
+      const hit = hitTestBar(worldX, worldY, tasks, scheduleResults, timescaleModel);
 
       if (hit.zone === "link-node" && hit.taskId) {
         const task = tasks[hit.rowIndex];
         const schedule = scheduleResults[task.id];
         if (!schedule) return;
         const { rowHeight, barHeight, barVerticalPadding } = getDensityConstants();
-        const barRight = schedule.earlyStart * DAY_WIDTH + (schedule.earlyFinish - schedule.earlyStart) * DAY_WIDTH;
+        const span = timescaleModel.spanToX(schedule.earlyStartMinutes, schedule.earlyFinishMinutes);
+        const barRight = span.x + span.width;
         const barCenterY = hit.rowIndex * rowHeight + barVerticalPadding + barHeight / 2;
         linkDragRef.current = {
           active: true,
@@ -153,7 +198,7 @@ export function GanttCanvas({
           mode: "right-resize",
           initialWorldX: worldX,
           currentWorldX: worldX,
-          initialDuration: task.duration,
+          initialDuration: task.durationWorkMinutes / MINUTES_PER_DAY,
           initialEarlyStart: 0,
         };
         return;
@@ -170,8 +215,8 @@ export function GanttCanvas({
           mode: "move",
           initialWorldX: worldX,
           currentWorldX: worldX,
-          initialDuration: task.duration,
-          initialEarlyStart: schedule.earlyStart,
+          initialDuration: task.durationWorkMinutes / MINUTES_PER_DAY,
+          initialEarlyStart: schedule.earlyStartMinutes,
         };
         return;
       }
@@ -190,7 +235,7 @@ export function GanttCanvas({
         if (canvas) canvas.style.cursor = "grabbing";
       }
     },
-    [toWorld, tasks, scheduleResults, hScrollRef, vScrollRef],
+    [toWorld, tasks, scheduleResults, timescaleModel, hScrollRef, vScrollRef],
   );
 
   const handleMouseMove = useCallback(
@@ -207,7 +252,7 @@ export function GanttCanvas({
         linkDrag.currentWorldY = worldY;
 
         // Target detection: reuse O(1) hit test
-        const hit = hitTestBar(worldX, worldY, tasks, scheduleResults);
+        const hit = hitTestBar(worldX, worldY, tasks, scheduleResults, timescaleModel);
         linkDrag.targetTaskId =
           hit.taskId && hit.taskId !== linkDrag.sourceTaskId && hit.zone !== "background"
             ? hit.taskId
@@ -243,10 +288,10 @@ export function GanttCanvas({
       }
 
       // Normal hover hit-test
-      const hit = hitTestBar(worldX, worldY, tasks, scheduleResults);
+      const hit = hitTestBar(worldX, worldY, tasks, scheduleResults, timescaleModel);
       canvas.style.cursor = cursorForZone(hit.zone);
     },
-    [toWorld, tasks, scheduleResults, redraw, buildOverrides, buildPositionOverrides, hScrollRef, vScrollRef],
+    [toWorld, tasks, scheduleResults, timescaleModel, redraw, buildOverrides, buildPositionOverrides, hScrollRef, vScrollRef],
   );
 
   const finishDrag = useCallback((e?: React.MouseEvent<HTMLCanvasElement>) => {
@@ -263,7 +308,7 @@ export function GanttCanvas({
       // Stationary background click → select summary task or clear selection
       if (!wasDrag && e) {
         const { worldX, worldY } = toWorld(e);
-        const hit = hitTestBar(worldX, worldY, tasks, scheduleResults);
+        const hit = hitTestBar(worldX, worldY, tasks, scheduleResults, timescaleModel);
         if (hit.taskId) {
           onSelect({ type: "task", id: hit.taskId });
         } else {
@@ -295,7 +340,7 @@ export function GanttCanvas({
       const taskId = drag.taskId;
 
       if (drag.mode === "right-resize") {
-        const newDuration = previewDuration(drag);
+        const newDuration = previewDuration(drag, timescaleModel);
         const changed = newDuration !== drag.initialDuration;
         dragRef.current = emptyDrag();
         cancelAnimationFrame(rafRef.current);
@@ -305,13 +350,13 @@ export function GanttCanvas({
         }
       } else {
         // mode === "move"
-        const newEarlyStart = previewEarlyStart(drag);
+        const newEarlyStart = previewEarlyStart(drag, timescaleModel);
         const changed = newEarlyStart !== drag.initialEarlyStart;
         dragRef.current = emptyDrag();
         cancelAnimationFrame(rafRef.current);
         rafRef.current = requestAnimationFrame(() => redraw());
         if (changed) {
-          onUpdateTask(taskId, { minEarlyStart: newEarlyStart });
+          onUpdateTask(taskId, { minEarlyStartMinutes: (newEarlyStart * MINUTES_PER_DAY) as WorkMinutes });
         }
       }
       return;
@@ -323,14 +368,14 @@ export function GanttCanvas({
     const { worldX, worldY } = toWorld(e);
 
     // Check bar hit (includes summary tasks which return background with taskId)
-    const hit = hitTestBar(worldX, worldY, tasks, scheduleResults);
+    const hit = hitTestBar(worldX, worldY, tasks, scheduleResults, timescaleModel);
     if (hit.taskId) {
       onSelect({ type: "task", id: hit.taskId });
       return;
     }
 
     // Check dependency hit
-    const geometryMap = computeTaskGeometry(tasks, scheduleResults);
+    const geometryMap = computeTaskGeometry(tasks, scheduleResults, timescaleModel);
     const depId = hitTestDependency(worldX, worldY, dependencies, geometryMap);
     if (depId) {
       onSelect({ type: "dependency", id: depId });
@@ -339,7 +384,7 @@ export function GanttCanvas({
 
     // Background — clear
     onSelect(null);
-  }, [redraw, onUpdateDuration, onUpdateTask, onAddDependency, onSelect, toWorld, tasks, scheduleResults, dependencies]);
+  }, [redraw, onUpdateDuration, onUpdateTask, onAddDependency, onSelect, toWorld, tasks, scheduleResults, dependencies, timescaleModel]);
 
   const handleMouseUp = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => finishDrag(e), [finishDrag]);
   const handleMouseLeave = useCallback(() => {

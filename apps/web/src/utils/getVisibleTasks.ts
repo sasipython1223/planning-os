@@ -1,4 +1,4 @@
-import type { Task } from "protocol";
+import type { Task } from "@planner/protocol";
 
 /**
  * Pure flat projection: returns tasks visible after collapsing.

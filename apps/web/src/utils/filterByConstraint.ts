@@ -1,4 +1,4 @@
-import type { ConstraintType, Task } from "protocol";
+import type { ConstraintType, Task } from "@planner/protocol";
 
 export type ConstraintFilter =
   | "all"
@@ -11,11 +11,11 @@ export type ConstraintFilter =
  * "all" → pass-through. "constrained" → has non-ASAP constraint.
  * "unconstrained" → ASAP or absent. Specific type → exact match.
  */
-export function filterByConstraint(
-  tasks: readonly Task[],
+export function filterByConstraint<T extends Task>(
+  tasks: readonly T[],
   filter: ConstraintFilter,
-): Task[] {
-  if (filter === "all") return tasks as Task[];
+): T[] {
+  if (filter === "all") return tasks as T[];
 
   if (filter === "constrained") {
     return tasks.filter(

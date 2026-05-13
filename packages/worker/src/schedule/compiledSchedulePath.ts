@@ -23,14 +23,19 @@
  * as the sole entry point into the solver.
  */
 
-import type { AssumptionSet, AuthoredActivity } from "protocol";
-import type { ScheduleRequest } from "protocol/kernel";
+import type { AssumptionSet, AuthoredActivity } from "@planner/protocol";
+import type { ScheduleRequest } from "@planner/protocol/kernel";
 import { compile } from "../compilerService.js";
+import type { IEngineCoordinateTranslator } from "./IEngineCoordinateTranslator.js";
 import { mapCompiledGraphToRequest } from "./mapCompiledGraph.js";
 
 /**
  * Execute the full domain-compiled scheduling pipeline:
  * compile → map → ScheduleRequest.
+ *
+ * Phase D6a: accepts a translator so that the compiled path uses the
+ * same input translation seam as the legacy buildScheduleRequest path.
+ * The translator is constructed by the engine adapter per scheduling run.
  *
  * Returns both the ScheduleRequest (for solver consumption) and the
  * intermediate CompiledScheduleGraph (for traceability / diagnostics).
@@ -42,8 +47,9 @@ export const buildCompiledScheduleRequest = (
   assumptionSet: AssumptionSet,
   authoredActivities: readonly AuthoredActivity[],
   nonWorkingDays: readonly number[],
+  translator: IEngineCoordinateTranslator,
 ): { request: ScheduleRequest; compiledAt: string } => {
   const graph = compile(assumptionSet, authoredActivities, nonWorkingDays);
-  const request = mapCompiledGraphToRequest(graph);
+  const request = mapCompiledGraphToRequest(graph, translator);
   return { request, compiledAt: graph.compiledAt };
 };
