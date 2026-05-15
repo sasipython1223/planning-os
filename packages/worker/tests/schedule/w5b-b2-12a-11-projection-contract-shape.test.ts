@@ -1,42 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { projectScheduleResult } from "../../src/schedule/ProjectionAdapter.js";
 
-const MINUTES_PER_DAY = 480;
-
-type FutureProjectionContractInput = {
-  totalFloatMinutes: number;
-  freeFloatMinutes?: number;
-  minutesPerDay?: number;
-};
-
-type FutureProjectionContractOutput = {
-  totalFloatMinutes: number;
-  totalFloatWorkdays: number;
-  freeFloatMinutes?: number;
-  freeFloatWorkdays?: number;
-};
-
-/**
- * Test-only helper for milestone W5B-B2.12A.11.
- *
- * This intentionally models the intended future ProjectionAdapter output contract
- * shape without changing any production adapter or protocol code.
- */
-function projectFutureContractShape(input: FutureProjectionContractInput): FutureProjectionContractOutput {
-  const minutesPerDay = input.minutesPerDay ?? MINUTES_PER_DAY;
-
-  return {
-    totalFloatMinutes: input.totalFloatMinutes,
-    totalFloatWorkdays: input.totalFloatMinutes / minutesPerDay,
-    ...(input.freeFloatMinutes === undefined
-      ? {}
-      : {
-          freeFloatMinutes: input.freeFloatMinutes,
-          freeFloatWorkdays: input.freeFloatMinutes / minutesPerDay,
-        }),
-  };
-}
-
-describe("W5B-B2.12A.11 — ProjectionAdapter future contract shape (test-only)", () => {
+describe("W5B-B2.12A.11 — ProjectionAdapter future contract shape (production adapter)", () => {
   it("documents boundary minute values for projected workdays", () => {
     const boundaryCases = [
       { minutes: 479, expectedWorkdays: 479 / 480 },
@@ -47,7 +12,7 @@ describe("W5B-B2.12A.11 — ProjectionAdapter future contract shape (test-only)"
     ];
 
     for (const testCase of boundaryCases) {
-      const projected = projectFutureContractShape({ totalFloatMinutes: testCase.minutes });
+      const projected = projectScheduleResult({ totalFloat: testCase.minutes });
 
       expect(projected.totalFloatMinutes).toBe(testCase.minutes);
       expect(projected.totalFloatWorkdays).toBe(testCase.expectedWorkdays);
@@ -55,9 +20,10 @@ describe("W5B-B2.12A.11 — ProjectionAdapter future contract shape (test-only)"
   });
 
   it("keeps canonical *Minutes values separate from projected *Workdays values", () => {
-    const projected = projectFutureContractShape({ totalFloatMinutes: 481 });
+    const projected = projectScheduleResult({ totalFloat: 481 });
 
     expect(projected).toStrictEqual({
+      totalFloat: 481,
       totalFloatMinutes: 481,
       totalFloatWorkdays: 481 / 480,
     });
@@ -66,39 +32,35 @@ describe("W5B-B2.12A.11 — ProjectionAdapter future contract shape (test-only)"
   });
 
   it("does not mutate input facts while deriving projected workday values", () => {
-    const input: FutureProjectionContractInput = {
-      totalFloatMinutes: 481,
-      freeFloatMinutes: 961,
-      minutesPerDay: MINUTES_PER_DAY,
+    const input = {
+      totalFloat: 481,
+      taskId: "A",
+      isCritical: false,
     };
 
     const inputSnapshot = structuredClone(input);
-    const projected = projectFutureContractShape(input);
+    const projected = projectScheduleResult(input);
 
     expect(input).toStrictEqual(inputSnapshot);
     expect(projected.totalFloatMinutes).toBe(481);
     expect(projected.totalFloatWorkdays).toBe(481 / 480);
-    expect(projected.freeFloatMinutes).toBe(961);
-    expect(projected.freeFloatWorkdays).toBe(961 / 480);
+    expect(projected.totalFloat).toBe(481);
+    expect(projected.taskId).toBe("A");
+    expect(projected.isCritical).toBe(false);
   });
 
-  it("documents freeFloat pairing as a future contract expectation only", () => {
-    const projected = projectFutureContractShape({
-      totalFloatMinutes: 480,
-      freeFloatMinutes: 479,
-    });
+  it("documents that freeFloat projection pairing remains a follow-up", () => {
+    const projected = projectScheduleResult({ totalFloat: 480 });
 
-    expect(projected).toMatchObject({
-      totalFloatMinutes: 480,
-      totalFloatWorkdays: 1,
-      freeFloatMinutes: 479,
-      freeFloatWorkdays: 479 / 480,
-    });
+    expect(projected.totalFloatMinutes).toBe(480);
+    expect(projected.totalFloatWorkdays).toBe(1);
+    expect("freeFloatMinutes" in projected).toBe(false);
+    expect("freeFloatWorkdays" in projected).toBe(false);
   });
 
   it("documents that projected workdays are derived display values, not authoritative inputs", () => {
     const canonicalMinutes = 481;
-    const projected = projectFutureContractShape({ totalFloatMinutes: canonicalMinutes });
+    const projected = projectScheduleResult({ totalFloat: canonicalMinutes });
 
     const simulatedAuthoritativeInput = projected.totalFloatMinutes;
 
