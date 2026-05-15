@@ -38,9 +38,9 @@ The layers carry the following responsibilities for numeric values:
 
 Prior milestone B2.12A.8.2 established empirically that:
 
-- The Real-WASM boundary preserves integer minutes exactly.
+- The Rust-WASM boundary preserves integer minutes exactly.
 - The `481`-minute value remains exact at the WASM boundary.
-- `TemporalScheduleTranslator` keeps integer float minutes.
+- `TemporalScheduleTranslator` keeps integer minutes.
 - `ProjectionAdapter` converts using `minutes / minutesPerDay` where `minutesPerDay = 480`.
 - `481 / 480` produces `1.00208333…`.
 - No production code was changed by B2.12A.8.2.
