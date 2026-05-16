@@ -108,7 +108,7 @@ jobs:
           """
 
           def sanitize_text(value: str, limit: int):
-              """Normalize line endings, strip unsafe control chars, and enforce a max length."""
+              """Normalize line endings, strip unsafe control chars, and return (cleaned_text, was_truncated)."""
               normalized = (value or "").replace("\r\n", "\n").replace("\r", "\n").replace("\x00", "")
               cleaned = "".join(ch if ch in "\n\t" or ord(ch) >= 32 else " " for ch in normalized)
               truncated = len(cleaned) > limit
@@ -116,7 +116,8 @@ jobs:
                   cleaned = cleaned[:limit]
               return cleaned.strip(), truncated
 
-          def make_json_request(url: str, *, method: str = "GET", token: Optional[str] = None, payload: Optional[dict] = None, timeout: int = GITHUB_TIMEOUT_SECONDS):
+          def make_json_request(url: str, *, method: str = "GET", token: Optional[str] = None, payload: Optional[dict] = None, timeout: int = GITHUB_TIMEOUT_SECONDS, extra_headers: Optional[dict] = None):
+              """Send an HTTP request, return parsed JSON, and raise RuntimeError on HTTP failures."""
               data = None
               headers = {
                   "Accept": "application/vnd.github+json",
@@ -127,6 +128,8 @@ jobs:
               if payload is not None:
                   data = json.dumps(payload).encode("utf-8")
                   headers["Content-Type"] = "application/json; charset=utf-8"
+              if extra_headers:
+                  headers.update(extra_headers)
 
               request = urllib.request.Request(url, data=data, headers=headers, method=method)
               try:
@@ -188,13 +191,14 @@ jobs:
 
           gemini_url = (
               "https://generativelanguage.googleapis.com/v1beta/models/"
-              f"{urllib.parse.quote(GEMINI_MODEL)}:generateContent?key={urllib.parse.quote(gemini_api_key)}"
+              f"{urllib.parse.quote(GEMINI_MODEL)}:generateContent"
           )
           gemini_response = make_json_request(
               gemini_url,
               method="POST",
               payload=gemini_payload,
               timeout=GEMINI_TIMEOUT_SECONDS,
+              extra_headers={"x-goog-api-key": gemini_api_key, "Accept": "application/json"},
           )
 
           candidates = gemini_response.get("candidates") or []
