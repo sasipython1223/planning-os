@@ -23,6 +23,43 @@ export const COLUMN_SCHEMA = [
 
 export const TABLE_WIDTH = COLUMN_SCHEMA.reduce((sum, c) => sum + c.width, 0);
 
+type WorkerTaskUpdate = {
+  name?: string;
+  duration?: number;
+  constraintType?: ConstraintType;
+  constraintDate?: number | null;
+};
+
+type DisplayFloatFields = {
+  totalFloat?: number;
+  totalFloatMinutes?: number;
+  totalFloatWorkdays?: number;
+  freeFloat?: number;
+  freeFloatMinutes?: number;
+  freeFloatWorkdays?: number;
+};
+
+export function toWorkerTaskUpdate(updates: WorkerTaskUpdate & DisplayFloatFields): WorkerTaskUpdate {
+  const { totalFloat, totalFloatMinutes, totalFloatWorkdays, freeFloat, freeFloatMinutes, freeFloatWorkdays, ...workerUpdate } = updates;
+  void totalFloat;
+  void totalFloatMinutes;
+  void totalFloatWorkdays;
+  void freeFloat;
+  void freeFloatMinutes;
+  void freeFloatWorkdays;
+  return workerUpdate;
+}
+
+type ScheduleDisplayResult = ScheduleResultMap[string] & DisplayFloatFields;
+
+export function getDisplayTotalFloat(schedule: ScheduleDisplayResult | undefined): number | string {
+  if (!schedule) return "—";
+  if (typeof schedule.totalFloatWorkdays === "number" && Number.isFinite(schedule.totalFloatWorkdays)) {
+    return schedule.totalFloatWorkdays;
+  }
+  return schedule.totalFloat;
+}
+
 const SEVERITY_ICON: Record<DiagnosticSeverity, { symbol: string; color: string }> = {
   error:   { symbol: "●", color: "#c62828" },
   warning: { symbol: "●", color: "#ef6c00" },
@@ -34,7 +71,7 @@ interface TaskTableProps {
   scheduleResults: ScheduleResultMap;
   variances: VarianceMap;
   diagnosticsMap?: DiagnosticsMap;
-  onUpdateTask: (taskId: string, updates: { name?: string; duration?: number; constraintType?: ConstraintType; constraintDate?: number | null }) => void;
+  onUpdateTask: (taskId: string, updates: WorkerTaskUpdate) => void;
   scrollTop: number;
   viewportHeight: number;
   projectStartDate: string;
@@ -162,7 +199,7 @@ export function TaskTable({
             {colGroup}
             <tbody>
               {visibleTasks.map((task) => {
-                const schedule = scheduleResults[task.id];
+                const schedule = scheduleResults[task.id] as ScheduleDisplayResult | undefined;
                 const variance = variances[task.id];
                 const isSelected = task.id === selectedTaskId;
                 const badge = constraintBadgeStyle(task.constraintType);
@@ -230,7 +267,7 @@ export function TaskTable({
                         )}
                         <EditableCell
                           value={task.name}
-                          onCommit={(v) => onUpdateTask(task.id, { name: v })}
+                          onCommit={(v) => onUpdateTask(task.id, toWorkerTaskUpdate({ name: v }))}
                         >
                           <strong style={task.isSummary ? { fontStyle: "italic" } : undefined}>{task.name}</strong>
                           {schedule?.isCritical && (
@@ -275,7 +312,7 @@ export function TaskTable({
                           onCommit={(v) => {
                             const n = Number(v);
                             if (!Number.isFinite(n) || n <= 0 || Math.round(n) !== n) return;
-                            onUpdateTask(task.id, { duration: n });
+                            onUpdateTask(task.id, toWorkerTaskUpdate({ duration: n }));
                           }}
                         >
                           <span>{task.duration}d</span>
@@ -295,7 +332,7 @@ export function TaskTable({
                     </td>
                     <td style={{ ...cellBase, textAlign: "center" }}>
                       <div style={{ ...cellContentBase, justifyContent: "center" }}>
-                        {schedule?.totalFloat ?? "—"}
+                        {getDisplayTotalFloat(schedule)}
                       </div>
                     </td>
                     <td style={{ ...cellBase, textAlign: "center" }}>
@@ -308,10 +345,10 @@ export function TaskTable({
                             onChange={(e) => {
                               const ct = e.target.value as ConstraintType;
                               const isDated = ct === "SNET" || ct === "FNLT" || ct === "MSO" || ct === "MFO";
-                              onUpdateTask(task.id, {
+                              onUpdateTask(task.id, toWorkerTaskUpdate({
                                 constraintType: ct,
                                 ...(!isDated ? { constraintDate: null } : {}),
-                              });
+                              }));
                             }}
                             onClick={(e) => e.stopPropagation()}
                             style={{ width: "100%", fontSize: "0.8em", border: "none", background: "transparent", cursor: "pointer" }}
@@ -336,7 +373,7 @@ export function TaskTable({
                             onCommit={(v) => {
                               const n = Number(v);
                               if (!Number.isFinite(n) || n < 0 || Math.round(n) !== n) return;
-                              onUpdateTask(task.id, { constraintDate: n });
+                              onUpdateTask(task.id, toWorkerTaskUpdate({ constraintDate: n }));
                             }}
                           >
                             <span>{task.constraintDate ?? ""}</span>
