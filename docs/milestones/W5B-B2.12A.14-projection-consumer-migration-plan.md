@@ -131,6 +131,7 @@ The following test requirements must be satisfied before or with implementation 
    - Confirm paired raw-minute and display-workday fields expected by migration phases.
 2. **Boundary conversion tests**
    - Cover `479`, `480`, `481`, `960`, `961` minute cases with exact division behavior.
+   - Rationale for these values: they bracket one-day and two-day `minutesPerDay=480` boundaries (just below, exact boundary, and just above), where unit/projection mistakes are most likely.
 3. **Immutability tests**
    - Ensure projection/consumer paths do not mutate authoritative source objects.
 4. **Worker diagnostics raw-minute tests**
@@ -170,6 +171,7 @@ Forbidden files for B2.12A.15:
 Protocol/types handling for B2.12A.15:
 
 - If protocol/type changes are discovered as mandatory for safe worker migration, stop and raise scope decision before editing `packages/protocol/**`.
+- Escalation path: open a follow-up milestone issue describing the required protocol/type change, link it to B2.12A.15, and wait for explicit human approval before any protocol file edits.
 
 ## 12. Stop Conditions
 
@@ -188,7 +190,7 @@ For B2.12A.14:
 
 - AI003 remains blocked.
 - No code migration performed.
-- No production behaviour changed.
+- No production behavior changed.
 - No protocol/type change.
 - No Worker change.
 - No UI change.
