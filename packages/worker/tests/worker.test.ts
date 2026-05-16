@@ -3446,6 +3446,32 @@ describe("mergeResultDiagnostics", () => {
     expect(map["t1"]).toBeUndefined();
   });
 
+  it("prefers totalFloatMinutes over legacy totalFloat when available", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "SNET", constraintDate: 10 }];
+    const sr: ScheduleResultMap = {
+      t1: {
+        ...mkResult(3),
+        totalFloatMinutes: -2,
+        totalFloatWorkdays: 0.5,
+      } as ScheduleResultMap["string"] & { totalFloatMinutes: number; totalFloatWorkdays: number },
+    };
+    const map = mergeResultDiagnostics(tasks, sr, {});
+    expect(map["t1"]).toContain("GENERATING_NEGATIVE_FLOAT");
+  });
+
+  it("does not use derived workday float values for diagnostics logic", () => {
+    const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "SNET", constraintDate: 10 }];
+    const sr: ScheduleResultMap = {
+      t1: {
+        ...mkResult(3),
+        totalFloatMinutes: 3,
+        totalFloatWorkdays: -0.25,
+      } as ScheduleResultMap["string"] & { totalFloatMinutes: number; totalFloatWorkdays: number },
+    };
+    const map = mergeResultDiagnostics(tasks, sr, {});
+    expect(map["t1"]).toBeUndefined();
+  });
+
   it("does not emit when constraintDate is missing", () => {
     const tasks: Task[] = [{ id: "t1", name: "T1", duration: 5, depth: 0, isSummary: false, constraintType: "SNET" }];
     const sr: ScheduleResultMap = { t1: mkResult(-2) };
