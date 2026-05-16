@@ -7,9 +7,9 @@ import type { ConstraintDiagnosticCode, ConstraintType, DiagnosticsMap, Schedule
  */
 
 const DATED_TYPES: ReadonlySet<ConstraintType> = new Set(["SNET", "FNLT", "MSO", "MFO"]);
-type ResultWithOptionalMinuteFloat = ScheduleResultMap[string] & { totalFloatMinutes?: number };
+type ResultWithMinuteFloat = ScheduleResultMap[string] & { totalFloatMinutes?: number };
 
-const getTotalFloatMinutes = (result: ResultWithOptionalMinuteFloat): number =>
+const getTotalFloatMinutes = (result: ResultWithMinuteFloat): number =>
   typeof result.totalFloatMinutes === "number"
     ? result.totalFloatMinutes
     : result.totalFloat;

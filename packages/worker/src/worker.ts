@@ -40,8 +40,8 @@ const emit = (message: WorkerMessage): void => {
  * Returns true if scheduling succeeded, false if it failed.
  */
 const CALENDAR_HORIZON = 3650; // ~10 years
-type ScheduleEntryWithOptionalMinuteFloat = ScheduleResultMap[string] & { totalFloatMinutes?: number };
-const getTotalFloatMinutes = (entry: ScheduleEntryWithOptionalMinuteFloat): number =>
+type ScheduleEntryWithMinuteFloat = ScheduleResultMap[string] & { totalFloatMinutes?: number };
+const getTotalFloatMinutes = (entry: ScheduleEntryWithMinuteFloat): number =>
   typeof entry.totalFloatMinutes === "number"
     ? entry.totalFloatMinutes
     : entry.totalFloat;
@@ -127,7 +127,7 @@ const runSchedulingAndEmitState = (): boolean => {
       EF: s.earlyFinish,
       LS: s.lateStart,
       LF: s.lateFinish,
-      TFm: getTotalFloatMinutes(s),
+      TF: getTotalFloatMinutes(s),
       isCritical: s.isCritical,
     })));
 

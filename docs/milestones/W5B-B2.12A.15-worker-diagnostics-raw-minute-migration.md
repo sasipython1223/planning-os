@@ -73,7 +73,7 @@ Commands run:
 
 Results:
 
-- `vitest run`: pass (`9` files, `387` tests).
+- `vitest run`: pass (`9` files, `389` tests).
 - `vitest run tests/worker.test.ts`: pass (`269` tests).
 - `tsc --noEmit`: fails due to pre-existing environment/type issues not introduced by this milestone:
   - DOM globals in `src/import/parsers/mspParser.ts`
