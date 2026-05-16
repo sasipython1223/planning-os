@@ -91,6 +91,7 @@ button:focus-visible {
   border-bottom: 1px solid var(--border-default, #ccc);
   background: linear-gradient(180deg, #fbfdff 0%, var(--bg-secondary, #f5f5f5) 100%);
   font-size: 13px;
+  font-family: Arial, sans-serif;
 }
 
 .topbar-title {
@@ -114,6 +115,7 @@ button:focus-visible {
   border-bottom: 1px solid var(--border-default, #ccc);
   background: var(--bg-surface, #fafafa);
   font-size: 12px;
+  font-family: Arial, sans-serif;
 }
 
 .shell-toolbar-segment {
@@ -131,6 +133,7 @@ button:focus-visible {
   color: var(--text-primary, #34506b);
   font-size: 12px;
   line-height: 24px;
+  cursor: pointer;
 }
 
 .shell-toolbar-btn:hover {
@@ -164,4 +167,5 @@ button:focus-visible {
   background: var(--bg-primary, #fff);
   color: var(--text-primary, #34506b);
   font-size: 12px;
+  cursor: pointer;
 }
