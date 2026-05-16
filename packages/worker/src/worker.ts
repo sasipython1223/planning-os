@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 
-import type { BaselineMap, Command, ScheduleResultMap, WorkerMessage } from "protocol";
+import type { BaselineMap, Command, WorkerMessage } from "protocol";
 import type { ScheduleError } from "protocol/kernel";
 import { generateNonWorkingDays } from "./calendar.js";
 import type { CommandEnvelope, DispatchOutcome } from "./commandEnvelope.js";
@@ -13,6 +13,7 @@ import type { PersistedState } from "./persistence.js";
 import { loadPersistedState, migratePersistedState, savePersistedState } from "./persistence.js";
 import { computeResourceHistogram } from "./resourceHistogram.js";
 import { rollupSummarySchedules } from "./rollupSummaries.js";
+import { getTotalFloatMinutesForComparison } from "./floatMinutes.js";
 import { applyScheduleResult } from "./schedule/applyScheduleResult.js";
 import { buildScheduleRequest } from "./schedule/buildScheduleRequest.js";
 import { buildCompiledScheduleRequest } from "./schedule/compiledSchedulePath.js";
@@ -40,11 +41,6 @@ const emit = (message: WorkerMessage): void => {
  * Returns true if scheduling succeeded, false if it failed.
  */
 const CALENDAR_HORIZON = 3650; // ~10 years
-type ScheduleEntryWithMinuteFloat = ScheduleResultMap[string] & { totalFloatMinutes?: number };
-const getTotalFloatMinutes = (entry: ScheduleEntryWithMinuteFloat): number =>
-  typeof entry.totalFloatMinutes === "number"
-    ? entry.totalFloatMinutes
-    : entry.totalFloat;
 
 const runSchedulingAndEmitState = (): boolean => {
   // Recompute hierarchy metadata before scheduling
@@ -127,7 +123,7 @@ const runSchedulingAndEmitState = (): boolean => {
       EF: s.earlyFinish,
       LS: s.lateStart,
       LF: s.lateFinish,
-      TF: getTotalFloatMinutes(s),
+      TF: getTotalFloatMinutesForComparison(s),
       isCritical: s.isCritical,
     })));
 
