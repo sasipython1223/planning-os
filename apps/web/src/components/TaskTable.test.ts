@@ -40,7 +40,7 @@ describe("W5B-B2.12A.17 — TaskTable float display migration", () => {
     expect(displayed).toBe(-2);
   });
 
-  it("returns em dash when schedule result is unavailable", () => {
+  it("returns placeholder dash when schedule result is unavailable", () => {
     expect(getDisplayTotalFloat(undefined)).toBe("—");
   });
 });

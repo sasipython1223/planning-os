@@ -40,14 +40,12 @@ type DisplayFloatFields = {
 };
 
 export function toWorkerTaskUpdate(updates: WorkerTaskUpdate & DisplayFloatFields): WorkerTaskUpdate {
-  const { totalFloat, totalFloatMinutes, totalFloatWorkdays, freeFloat, freeFloatMinutes, freeFloatWorkdays, ...workerUpdate } = updates;
-  void totalFloat;
-  void totalFloatMinutes;
-  void totalFloatWorkdays;
-  void freeFloat;
-  void freeFloatMinutes;
-  void freeFloatWorkdays;
-  return workerUpdate;
+  return {
+    ...(updates.name !== undefined ? { name: updates.name } : {}),
+    ...(updates.duration !== undefined ? { duration: updates.duration } : {}),
+    ...(updates.constraintType !== undefined ? { constraintType: updates.constraintType } : {}),
+    ...(updates.constraintDate !== undefined ? { constraintDate: updates.constraintDate } : {}),
+  };
 }
 
 type ScheduleDisplayResult = ScheduleResultMap[string] & DisplayFloatFields;
