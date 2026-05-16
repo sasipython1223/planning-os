@@ -105,6 +105,7 @@ jobs:
           """
 
           def sanitize_text(value: str, limit: int):
+              """Normalize line endings, strip unsafe control chars, and enforce a max length."""
               normalized = (value or "").replace("\r\n", "\n").replace("\r", "\n").replace("\x00", "")
               cleaned = "".join(ch if ch in "\n\t" or ord(ch) >= 32 else " " for ch in normalized)
               truncated = len(cleaned) > limit
@@ -112,7 +113,7 @@ jobs:
                   cleaned = cleaned[:limit]
               return cleaned.strip(), truncated
 
-          def request_json(url: str, *, method: str = "GET", token: str | None = None, payload: dict | None = None):
+          def send_json_request(url: str, *, method: str = "GET", token: str | None = None, payload: dict | None = None):
               data = None
               headers = {
                   "Accept": "application/vnd.github+json",
@@ -143,7 +144,7 @@ jobs:
           github_api_url = os.environ["GITHUB_API_URL"].rstrip("/")
           gemini_api_key = os.environ["GEMINI_API_KEY"]
 
-          issue = request_json(
+          issue = send_json_request(
               f"{github_api_url}/repos/{repository}/issues/{issue_number}",
               token=github_token,
           )
@@ -185,7 +186,7 @@ jobs:
               "https://generativelanguage.googleapis.com/v1beta/models/"
               f"{urllib.parse.quote(GEMINI_MODEL)}:generateContent?key={urllib.parse.quote(gemini_api_key)}"
           )
-          gemini_response = request_json(
+          gemini_response = send_json_request(
               gemini_url,
               method="POST",
               payload=gemini_payload,
@@ -226,7 +227,7 @@ jobs:
                   ]
               )
 
-          request_json(
+          send_json_request(
               f"{github_api_url}/repos/{repository}/issues/{issue_number}/comments",
               method="POST",
               token=github_token,
