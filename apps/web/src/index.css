@@ -80,3 +80,92 @@ button:focus-visible {
 .histogram-chart-viewport {
   scrollbar-width: none; /* Firefox */
 }
+
+.topbar {
+  height: 36px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border-default, #ccc);
+  background: linear-gradient(180deg, #fbfdff 0%, var(--bg-secondary, #f5f5f5) 100%);
+  font-size: 13px;
+  font-family: Arial, sans-serif;
+}
+
+.topbar-title {
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--text-primary, #2b3b4b);
+}
+
+.topbar-status {
+  font-size: 11px;
+  color: var(--text-secondary, #5f7286);
+}
+
+.shell-toolbar {
+  height: 36px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border-default, #ccc);
+  background: var(--bg-surface, #fafafa);
+  font-size: 12px;
+  font-family: Arial, sans-serif;
+}
+
+.shell-toolbar-segment {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.shell-toolbar-btn {
+  height: 26px;
+  border: 1px solid var(--border-default, #ccc);
+  border-radius: 6px;
+  padding: 0 10px;
+  background: var(--bg-primary, #fff);
+  color: var(--text-primary, #34506b);
+  font-size: 12px;
+  line-height: 24px;
+  cursor: pointer;
+}
+
+.shell-toolbar-btn:hover {
+  border-color: #9fb4ca;
+  background: #f2f7fd;
+}
+
+.shell-toolbar-btn.is-active {
+  color: #0f4f93;
+  border-color: #7fa8d2;
+  background: #e9f3ff;
+}
+
+.shell-toolbar-sep {
+  width: 1px;
+  height: 18px;
+  background: #cad5e1;
+}
+
+.shell-toolbar-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary, #5f7286);
+}
+
+.shell-toolbar-select {
+  height: 26px;
+  border: 1px solid var(--border-default, #ccc);
+  border-radius: 6px;
+  background: var(--bg-primary, #fff);
+  color: var(--text-primary, #34506b);
+  font-size: 12px;
+  cursor: pointer;
+}

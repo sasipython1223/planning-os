@@ -13,63 +13,28 @@ export function Toolbar() {
   const setConstraintFilter = useUIStore((s) => s.setConstraintFilter);
 
   return (
-    <div
-      style={{
-        height: 36,
-        flexShrink: 0,
-        display: 'flex',
-        alignItems: 'center',
-        paddingLeft: 16,
-        gap: 8,
-        borderBottom: '1px solid var(--border-default, #ccc)',
-        background: 'var(--bg-surface, #fafafa)',
-        fontFamily: 'Arial, sans-serif',
-        fontSize: 12,
-      }}
-    >
+    <div className="shell-toolbar">
+      <div className="shell-toolbar-segment">
       <button
         onClick={() => isOpen && activeTab === 'histogram' ? toggle(false) : setActiveTab('histogram')}
-        style={{
-          padding: '4px 10px',
-          fontSize: 12,
-          fontFamily: 'inherit',
-          cursor: 'pointer',
-          background: isOpen && activeTab === 'histogram' ? 'var(--bg-primary, #fff)' : 'transparent',
-          border: '1px solid var(--border-default, #ccc)',
-          borderRadius: 4,
-        }}
+        className={`shell-toolbar-btn${isOpen && activeTab === 'histogram' ? ' is-active' : ''}`}
       >
         Histogram
       </button>
       <button
         onClick={() => isOpen && activeTab === 'logs' ? toggle(false) : setActiveTab('logs')}
-        style={{
-          padding: '4px 10px',
-          fontSize: 12,
-          fontFamily: 'inherit',
-          cursor: 'pointer',
-          background: isOpen && activeTab === 'logs' ? 'var(--bg-primary, #fff)' : 'transparent',
-          border: '1px solid var(--border-default, #ccc)',
-          borderRadius: 4,
-        }}
+        className={`shell-toolbar-btn${isOpen && activeTab === 'logs' ? ' is-active' : ''}`}
       >
         Logs
       </button>
-      <span style={{ marginLeft: 8, color: '#888' }}>|</span>
-      <label style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 4 }}>
-        <span style={{ color: '#666' }}>Constraint</span>
+      </div>
+      <span className="shell-toolbar-sep" />
+      <label className="shell-toolbar-filter">
+        <span>Constraint</span>
         <select
           value={constraintFilter}
           onChange={(e) => setConstraintFilter(e.target.value as ConstraintFilter)}
-          style={{
-            fontSize: 12,
-            fontFamily: 'inherit',
-            padding: '2px 4px',
-            border: '1px solid var(--border-default, #ccc)',
-            borderRadius: 4,
-            background: 'transparent',
-            cursor: 'pointer',
-          }}
+          className="shell-toolbar-select"
         >
           <option value="all">All</option>
           <option value="constrained">Constrained</option>
