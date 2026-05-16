@@ -52,7 +52,7 @@ jobs:
           import json
           import os
           import sys
-          from typing import Optional
+          from typing import Any, Dict, Optional
           import urllib.error
           import urllib.parse
           import urllib.request
@@ -60,6 +60,7 @@ jobs:
           GITHUB_TIMEOUT_SECONDS = 30
           GEMINI_TIMEOUT_SECONDS = 60
           MAX_ISSUE_BODY_CHARS = 50000
+          MAX_REVIEW_TEXT_CHARS = 60000
           MAX_TITLE_CHARS = 500
           GEMINI_MODEL = "gemini-2.5-flash"
 
@@ -111,12 +112,13 @@ jobs:
               """Normalize line endings, strip unsafe control chars, and return (cleaned_text, was_truncated)."""
               normalized = (value or "").replace("\r\n", "\n").replace("\r", "\n").replace("\x00", "")
               cleaned = "".join(ch if ch in "\n\t" or ord(ch) >= 32 else " " for ch in normalized)
+              cleaned = cleaned.strip()
               truncated = len(cleaned) > limit
               if truncated:
-                  cleaned = cleaned[:limit]
-              return cleaned.strip(), truncated
+                  cleaned = cleaned[:limit].rstrip()
+              return cleaned, truncated
 
-          def make_json_request(url: str, *, method: str = "GET", token: Optional[str] = None, payload: Optional[dict] = None, timeout: int = GITHUB_TIMEOUT_SECONDS, extra_headers: Optional[dict] = None):
+          def make_json_request(url: str, *, method: str = "GET", token: Optional[str] = None, payload: Optional[Dict[str, Any]] = None, timeout: int = GITHUB_TIMEOUT_SECONDS, extra_headers: Optional[Dict[str, Any]] = None):
               """Send an HTTP request, return parsed JSON, and raise RuntimeError on HTTP failures."""
               data = None
               headers = {
@@ -214,7 +216,7 @@ jobs:
                   raise RuntimeError(f"Gemini response blocked: {block_reason}")
               raise RuntimeError("Gemini returned no review text.")
 
-          review_text, review_truncated = sanitize_text(review_text, 60000)
+          review_text, review_truncated = sanitize_text(review_text, MAX_REVIEW_TEXT_CHARS)
 
           comment_lines = [
               COMMENT_HEADER.strip(),
