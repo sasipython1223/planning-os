@@ -94,6 +94,7 @@ Discovered but not currently projected in production schedule output:
 Recommended staged strategy:
 
 1. **Soft deprecation (documentation + inventory freeze)**
+   - Inventory freeze means: do not introduce any new runtime reads/writes that depend on legacy float aliases.
    - Mark `totalFloat` and `freeFloat` aliases as deprecated in milestone docs and migration guidance.
    - Keep runtime compatibility unchanged.
 2. **Compatibility window (evidence gathering)**
@@ -146,7 +147,7 @@ No removal should proceed without this test matrix green in CI.
 
 If future removal causes breakage:
 
-1. re-enable legacy field compatibility aliases in projection/adapter boundary in a hotfix branch
+1. in a future approved removal milestone rollback, re-enable legacy field compatibility aliases in projection/adapter boundary in a hotfix branch
 2. restore fallback read paths in affected consumers
 3. redeploy only after regression tests and compatibility checks pass
 
