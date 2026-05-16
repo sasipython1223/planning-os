@@ -52,10 +52,13 @@ jobs:
           import json
           import os
           import sys
+          from typing import Optional
           import urllib.error
           import urllib.parse
           import urllib.request
 
+          GITHUB_TIMEOUT_SECONDS = 30
+          GEMINI_TIMEOUT_SECONDS = 60
           MAX_ISSUE_BODY_CHARS = 50000
           MAX_TITLE_CHARS = 500
           GEMINI_MODEL = "gemini-2.5-flash"
@@ -113,7 +116,7 @@ jobs:
                   cleaned = cleaned[:limit]
               return cleaned.strip(), truncated
 
-          def make_json_request(url: str, *, method: str = "GET", token: str | None = None, payload: dict | None = None):
+          def make_json_request(url: str, *, method: str = "GET", token: Optional[str] = None, payload: Optional[dict] = None, timeout: int = GITHUB_TIMEOUT_SECONDS):
               data = None
               headers = {
                   "Accept": "application/vnd.github+json",
@@ -127,8 +130,7 @@ jobs:
 
               request = urllib.request.Request(url, data=data, headers=headers, method=method)
               try:
-                  # 120 seconds gives the manual dry-run enough time for GitHub and Gemini round trips without leaving the job hanging indefinitely.
-                  with urllib.request.urlopen(request, timeout=120) as response:
+                  with urllib.request.urlopen(request, timeout=timeout) as response:
                       return json.loads(response.read().decode("utf-8"))
               except urllib.error.HTTPError as exc:
                   details = exc.read().decode("utf-8", errors="replace")
@@ -148,6 +150,7 @@ jobs:
           issue = make_json_request(
               f"{github_api_url}/repos/{repository}/issues/{issue_number}",
               token=github_token,
+              timeout=GITHUB_TIMEOUT_SECONDS,
           )
 
           issue_title, title_truncated = sanitize_text(issue.get("title") or "(untitled issue)", MAX_TITLE_CHARS)
@@ -191,6 +194,7 @@ jobs:
               gemini_url,
               method="POST",
               payload=gemini_payload,
+              timeout=GEMINI_TIMEOUT_SECONDS,
           )
 
           candidates = gemini_response.get("candidates") or []
@@ -233,6 +237,7 @@ jobs:
               method="POST",
               token=github_token,
               payload={"body": "\n".join(comment_lines)},
+              timeout=GITHUB_TIMEOUT_SECONDS,
           )
 
           print(f"Posted advisory dry-run Gemini review comment to issue #{issue_number}.")
