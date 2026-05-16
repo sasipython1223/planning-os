@@ -1,4 +1,5 @@
 import type { ConstraintDiagnosticCode, ConstraintType, DiagnosticsMap, ScheduleResultMap, Task } from "protocol";
+import { getTotalFloatMinutesForComparison } from "./floatMinutes.js";
 
 /**
  * Constraint diagnostics — input-only (Category A) and result-derived (Category B).
@@ -7,12 +8,6 @@ import type { ConstraintDiagnosticCode, ConstraintType, DiagnosticsMap, Schedule
  */
 
 const DATED_TYPES: ReadonlySet<ConstraintType> = new Set(["SNET", "FNLT", "MSO", "MFO"]);
-type ResultWithMinuteFloat = ScheduleResultMap[string] & { totalFloatMinutes?: number };
-
-const getTotalFloatMinutes = (result: ResultWithMinuteFloat): number =>
-  typeof result.totalFloatMinutes === "number"
-    ? result.totalFloatMinutes
-    : result.totalFloat;
 
 export function computeConstraintDiagnostics(tasks: readonly Task[]): DiagnosticsMap {
   const map: DiagnosticsMap = {};
@@ -62,7 +57,7 @@ export function mergeResultDiagnostics(
     const result = scheduleResults[task.id];
     if (!result) continue;
 
-    if (getTotalFloatMinutes(result) < 0) {
+    if (getTotalFloatMinutesForComparison(result) < 0) {
       const existing = map[task.id] ?? [];
       map[task.id] = [...existing, "GENERATING_NEGATIVE_FLOAT"];
     }
