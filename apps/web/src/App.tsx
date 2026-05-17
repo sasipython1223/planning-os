@@ -31,6 +31,11 @@ interface WorkspaceAction {
   tone?: "primary" | "quiet";
 }
 
+interface WorkspaceActionGroup {
+  key: string;
+  buttons: WorkspaceAction[];
+}
+
 export function buildWorkspaceShellMetrics(args: {
   taskCount: number;
   visibleTaskCount: number;
@@ -570,10 +575,10 @@ export default function App() {
     disabled: !workerReady,
     onClick: () => fileInputRef.current?.click(),
   };
-  const workspaceActionGroups: WorkspaceAction[][] = [
-    [addTaskAction, linkLastTwoAction],
-    [setBaselineAction, clearBaselineAction],
-    [importAction, undoAction, redoAction],
+  const workspaceActionGroups: WorkspaceActionGroup[] = [
+    { key: "task-operations", buttons: [addTaskAction, linkLastTwoAction] },
+    { key: "baseline-operations", buttons: [setBaselineAction, clearBaselineAction] },
+    { key: "history-and-import", buttons: [importAction, undoAction, redoAction] },
   ];
   const renderWorkspaceActionButton = (action: WorkspaceAction, compact = false) => (
     <button
@@ -643,12 +648,12 @@ export default function App() {
                   ))}
                 </select>
               </label>
-              {workspaceActionGroups[0].map((action) => renderWorkspaceActionButton(action))}
+              {workspaceActionGroups[0].buttons.map((action) => renderWorkspaceActionButton(action))}
             </div>
 
             <div className="planner-command-group">
-              {workspaceActionGroups[1].map((action) => renderWorkspaceActionButton(action))}
-              {workspaceActionGroups[2].slice(1).map((action) => renderWorkspaceActionButton(action))}
+              {workspaceActionGroups[1].buttons.map((action) => renderWorkspaceActionButton(action))}
+              {workspaceActionGroups[2].buttons.slice(1).map((action) => renderWorkspaceActionButton(action))}
             </div>
 
             <div className="planner-command-group">
@@ -721,9 +726,9 @@ export default function App() {
             </div>
 
             <div className="planner-action-rail" aria-label="Workspace actions">
-              {workspaceActionGroups.map((group, index) => (
-                <div key={index} className="planner-action-group">
-                  {group.map((action) => renderWorkspaceActionButton(action, true))}
+              {workspaceActionGroups.map((group) => (
+                <div key={group.key} className="planner-action-group">
+                  {group.buttons.map((action) => renderWorkspaceActionButton(action, true))}
                 </div>
               ))}
             </div>
