@@ -28,7 +28,7 @@ Compared visible product behavior/appearance for:
 - Current localhost baseline: `http://127.0.0.1:5173`
 - Visual/product reference: `backup/wip-before-ai-workflow-2026-05-13`
 - WIP localhost reference: `http://127.0.0.1:5174`
-- WIP reference served from temporary worktree at `/tmp/planning-os-wip`
+- WIP reference served from temporary worktree at `/tmp/planning-os-wip` (created with `git worktree add /tmp/planning-os-wip origin/backup/wip-before-ai-workflow-2026-05-13`)
 
 # 4. Screenshot / Localhost Evidence Used
 
