@@ -6,6 +6,7 @@ interface ProjectStatusStripProps {
   warningCount: number;
   viewState: 'empty' | 'preview' | 'loaded';
   workerReady: boolean;
+  ganttScrollInfo?: string;
 }
 
 export function ProjectStatusStrip({
@@ -16,6 +17,7 @@ export function ProjectStatusStrip({
   warningCount,
   viewState,
   workerReady,
+  ganttScrollInfo,
 }: ProjectStatusStripProps) {
   return (
     <div className="r3-project-status-strip" role="status" aria-live="polite">
@@ -26,6 +28,7 @@ export function ProjectStatusStrip({
       <span>Warnings: {warningCount}</span>
       <span>View: {viewState}</span>
       <span>Worker: {workerReady ? 'Ready' : 'Starting'}</span>
+      {ganttScrollInfo && <span>Gantt: {ganttScrollInfo}</span>}
     </div>
   );
 }

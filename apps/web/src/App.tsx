@@ -70,8 +70,8 @@ export default function App() {
   const [diagnosticsMap, setDiagnosticsMap] = useState<DiagnosticsMap>({});
   const [selectedResourceId, setSelectedResourceId] = useState<string | null>(null);
   const [isInspectorOpen, setInspectorOpen] = useState(false);
-  const [, setGanttScrollLeft] = useState(0);
-  const [, setGanttPaneWidth] = useState(0);
+  const [ganttScrollLeft, setGanttScrollLeft] = useState(0);
+  const [ganttPaneWidth, setGanttPaneWidth] = useState(0);
   const ganttScrollElRef = useRef<HTMLDivElement | null>(null);
   const [importPreview, setImportPreview] = useState<ImportPreviewData | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -410,15 +410,15 @@ export default function App() {
     }
   }, [resources, selectedResourceId]);
 
-  const handleGanttScrollLeftChange = useCallback((sl: number, pw: number) => {
-    setGanttScrollLeft(sl);
-    setGanttPaneWidth(pw);
-  }, []);
-
   const selectedResource = useMemo(
     () => resources.find(r => r.id === selectedResourceId) ?? null,
     [resources, selectedResourceId],
   );
+
+  const handleGanttScrollLeftChange = useCallback((nextGanttScrollLeft: number, nextGanttPaneWidth: number) => {
+    setGanttScrollLeft(nextGanttScrollLeft);
+    setGanttPaneWidth(nextGanttPaneWidth);
+  }, []);
   const workspaceShellView = useMemo(
     () => deriveWorkspaceShellView({ hasImportPreview: importPreview !== null, hasTasks: tasks.length > 0 }),
     [importPreview, tasks.length],
@@ -508,6 +508,7 @@ export default function App() {
               warningCount={warningCount}
               viewState={workspaceShellView}
               workerReady={workerReady}
+              ganttScrollInfo={`scroll:${Math.round(ganttScrollLeft)} width:${Math.round(ganttPaneWidth)}`}
             />
           }
         >
