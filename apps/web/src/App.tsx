@@ -683,7 +683,7 @@ export default function App() {
                   title="Add Task"
                   aria-label="Add Task"
                 >
-                  ＋
+                  +
                 </button>
                 <button
                   type="button"
@@ -693,7 +693,7 @@ export default function App() {
                   title="Link Last Two"
                   aria-label="Link Last Two"
                 >
-                  🔗
+                  Ln
                 </button>
               </div>
 
@@ -706,7 +706,7 @@ export default function App() {
                   title="Set Baseline"
                   aria-label="Set Baseline"
                 >
-                  ⚑
+                  SB
                 </button>
                 <button
                   type="button"
@@ -716,7 +716,7 @@ export default function App() {
                   title="Clear Baseline"
                   aria-label="Clear Baseline"
                 >
-                  ⌧
+                  CB
                 </button>
               </div>
 
@@ -729,7 +729,7 @@ export default function App() {
                   title="Import"
                   aria-label="Import"
                 >
-                  ⇩
+                  Im
                 </button>
                 <button
                   type="button"
@@ -739,7 +739,7 @@ export default function App() {
                   title="Undo"
                   aria-label="Undo"
                 >
-                  ↶
+                  Un
                 </button>
                 <button
                   type="button"
@@ -749,7 +749,7 @@ export default function App() {
                   title="Redo"
                   aria-label="Redo"
                 >
-                  ↷
+                  Re
                 </button>
               </div>
             </div>
