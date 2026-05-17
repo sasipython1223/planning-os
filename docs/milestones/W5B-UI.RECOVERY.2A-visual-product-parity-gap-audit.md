@@ -39,6 +39,8 @@ Evidence captured during this audit:
 - Structured UI control/text extraction: `/tmp/w5b-ui-parity-observation.txt`
 - Screenshot color-density comparison: `/tmp/w5b-ui-screenshot-metrics.txt`
 
+Note: `/tmp/*` evidence artifacts are transient audit captures from this run and are not intended as permanent repository artifacts.
+
 Observed command-surface delta from captured evidence:
 
 - Main: 9 visible top-level buttons (`Histogram`, `Logs`, `Add Task`, `Link Last Two`, `Set Baseline`, `Clear Baseline`, `Undo`, `Redo`, `Import…`)
@@ -129,10 +131,13 @@ Recommended follow-up issue set (product-state focused):
 
 1. `W5B-UI.RECOVERY.2B — XER Import Workflow Visual/UX Recovery`
 2. `W5B-UI.RECOVERY.2C — Menu/Toolbar Product Parity Recovery`
-3. `W5B-UI.RECOVERY.2E — TaskTable/WBS Visual Hierarchy Parity`
-4. `W5B-UI.RECOVERY.2F — Gantt Bar Visibility & Split Parity`
-5. `W5B-UI.RECOVERY.2G — Side Panel Visibility Parity`
-6. `W5B-UI.RECOVERY.2I — Data-State Visual Confirmation Slice`
+3. `W5B-UI.RECOVERY.2D — Workspace Shell Composition Parity`
+4. `W5B-UI.RECOVERY.2E — TaskTable/WBS Visual Hierarchy Parity`
+5. `W5B-UI.RECOVERY.2F — Gantt Bar Visibility & Split Parity`
+6. `W5B-UI.RECOVERY.2G — Side Panel Visibility Parity`
+7. `W5B-UI.RECOVERY.2H — Bottom Drawer Visual Alignment`
+8. `W5B-UI.RECOVERY.2I — Data-State Visual Confirmation Slice`
+9. `W5B-UI.RECOVERY.2J — Critical Command Surface Completion`
 
 Each follow-up should require same-viewport screenshot evidence against WIP baseline and product-visible acceptance criteria.
 
