@@ -575,10 +575,27 @@ export default function App() {
     disabled: !workerReady,
     onClick: () => fileInputRef.current?.click(),
   };
+  const taskActionGroup: WorkspaceActionGroup = {
+    key: "task-operations",
+    buttons: [addTaskAction, linkLastTwoAction],
+  };
+  const baselineActionGroup: WorkspaceActionGroup = {
+    key: "baseline-operations",
+    buttons: [setBaselineAction, clearBaselineAction],
+  };
+  const importActionGroup: WorkspaceActionGroup = {
+    key: "import-operations",
+    buttons: [importAction],
+  };
+  const historyActionGroup: WorkspaceActionGroup = {
+    key: "history-operations",
+    buttons: [undoAction, redoAction],
+  };
   const workspaceActionGroups: WorkspaceActionGroup[] = [
-    { key: "task-operations", buttons: [addTaskAction, linkLastTwoAction] },
-    { key: "baseline-operations", buttons: [setBaselineAction, clearBaselineAction] },
-    { key: "history-and-import", buttons: [importAction, undoAction, redoAction] },
+    taskActionGroup,
+    baselineActionGroup,
+    importActionGroup,
+    historyActionGroup,
   ];
   const renderWorkspaceActionButton = (action: WorkspaceAction, compact = false) => (
     <button
@@ -648,12 +665,12 @@ export default function App() {
                   ))}
                 </select>
               </label>
-              {workspaceActionGroups[0].buttons.map((action) => renderWorkspaceActionButton(action))}
+              {taskActionGroup.buttons.map((action) => renderWorkspaceActionButton(action))}
             </div>
 
             <div className="planner-command-group">
-              {workspaceActionGroups[1].buttons.map((action) => renderWorkspaceActionButton(action))}
-              {workspaceActionGroups[2].buttons.slice(1).map((action) => renderWorkspaceActionButton(action))}
+              {baselineActionGroup.buttons.map((action) => renderWorkspaceActionButton(action))}
+              {historyActionGroup.buttons.map((action) => renderWorkspaceActionButton(action))}
             </div>
 
             <div className="planner-command-group">
@@ -664,7 +681,7 @@ export default function App() {
                 style={{ display: "none" }}
                 onChange={handleImportFileSelect}
               />
-              {renderWorkspaceActionButton(importAction)}
+              {importActionGroup.buttons.map((action) => renderWorkspaceActionButton(action))}
               {resources.length > 0 && (
                 <label className="planner-command-field">
                   <span className="planner-command-label">Histogram</span>
