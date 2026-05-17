@@ -22,6 +22,15 @@ export interface WorkspaceShellMetric {
   value: string | number;
 }
 
+interface WorkspaceAction {
+  key: string;
+  label: string;
+  compactLabel: string;
+  disabled: boolean;
+  onClick: () => void;
+  tone?: "primary" | "quiet";
+}
+
 export function buildWorkspaceShellMetrics(args: {
   taskCount: number;
   visibleTaskCount: number;
@@ -47,6 +56,13 @@ export function buildWorkspaceShellMetrics(args: {
 
 export function getWorkspaceWorkerBadge(workerReady: boolean): string {
   return workerReady ? "Worker ready" : "Worker starting";
+}
+
+function getWorkspaceActionClass(action: WorkspaceAction, compact = false): string {
+  const toneClass = action.tone === "primary" ? "toolbar-btn-primary" : "toolbar-btn-quiet";
+  return compact
+    ? `toolbar-btn ${toneClass} toolbar-btn-icon planner-action-btn`
+    : `toolbar-btn ${toneClass}`;
 }
 
 function makeId() {
@@ -504,6 +520,74 @@ export default function App() {
   const getTaskName = (id: string): string => {
     return tasks.find(t => t.id === id)?.name || id;
   };
+  const addTaskAction: WorkspaceAction = {
+    key: "add-task",
+    label: "Add Task",
+    compactLabel: "+",
+    disabled: !canAdd,
+    onClick: handleAdd,
+    tone: "primary",
+  };
+  const linkLastTwoAction: WorkspaceAction = {
+    key: "link-last-two",
+    label: "Link Last Two",
+    compactLabel: "Ln",
+    disabled: tasks.length < 2,
+    onClick: handleLinkLastTwo,
+  };
+  const setBaselineAction: WorkspaceAction = {
+    key: "set-baseline",
+    label: "Set Baseline",
+    compactLabel: "SB",
+    disabled: !workerReady || Object.keys(scheduleResults).length === 0,
+    onClick: () => workerRef.current?.postMessage({ type: "SNAPSHOT_BASELINE", v: 1, reqId: makeId() }),
+  };
+  const clearBaselineAction: WorkspaceAction = {
+    key: "clear-baseline",
+    label: "Clear Baseline",
+    compactLabel: "CB",
+    disabled: !workerReady || Object.keys(baselines).length === 0,
+    onClick: () => workerRef.current?.postMessage({ type: "CLEAR_BASELINE", v: 1, reqId: makeId() }),
+  };
+  const undoAction: WorkspaceAction = {
+    key: "undo",
+    label: "Undo",
+    compactLabel: "Un",
+    disabled: !canUndo,
+    onClick: () => workerRef.current?.postMessage({ type: "UNDO", v: 1, reqId: makeId() }),
+  };
+  const redoAction: WorkspaceAction = {
+    key: "redo",
+    label: "Redo",
+    compactLabel: "Re",
+    disabled: !canRedo,
+    onClick: () => workerRef.current?.postMessage({ type: "REDO", v: 1, reqId: makeId() }),
+  };
+  const importAction: WorkspaceAction = {
+    key: "import",
+    label: "Import…",
+    compactLabel: "Im",
+    disabled: !workerReady,
+    onClick: () => fileInputRef.current?.click(),
+  };
+  const workspaceActionGroups: WorkspaceAction[][] = [
+    [addTaskAction, linkLastTwoAction],
+    [setBaselineAction, clearBaselineAction],
+    [importAction, undoAction, redoAction],
+  ];
+  const renderWorkspaceActionButton = (action: WorkspaceAction, compact = false) => (
+    <button
+      key={`${action.key}-${compact ? "compact" : "full"}`}
+      type="button"
+      onClick={action.onClick}
+      disabled={action.disabled}
+      className={getWorkspaceActionClass(action, compact)}
+      title={action.label}
+      aria-label={action.label}
+    >
+      {compact ? action.compactLabel : action.label}
+    </button>
+  );
 
   return (
     <WorkspaceContainer>
@@ -559,43 +643,12 @@ export default function App() {
                   ))}
                 </select>
               </label>
-              <button onClick={handleAdd} disabled={!canAdd} className="toolbar-btn toolbar-btn-primary">
-                Add Task
-              </button>
-              <button onClick={handleLinkLastTwo} disabled={tasks.length < 2} className="toolbar-btn toolbar-btn-quiet">
-                Link Last Two
-              </button>
+              {workspaceActionGroups[0].map((action) => renderWorkspaceActionButton(action))}
             </div>
 
             <div className="planner-command-group">
-              <button
-                onClick={() => workerRef.current?.postMessage({ type: "SNAPSHOT_BASELINE", v: 1, reqId: makeId() })}
-                disabled={!workerReady || Object.keys(scheduleResults).length === 0}
-                className="toolbar-btn toolbar-btn-quiet"
-              >
-                Set Baseline
-              </button>
-              <button
-                onClick={() => workerRef.current?.postMessage({ type: "CLEAR_BASELINE", v: 1, reqId: makeId() })}
-                disabled={!workerReady || Object.keys(baselines).length === 0}
-                className="toolbar-btn toolbar-btn-quiet"
-              >
-                Clear Baseline
-              </button>
-              <button
-                onClick={() => workerRef.current?.postMessage({ type: "UNDO", v: 1, reqId: makeId() })}
-                disabled={!canUndo}
-                className="toolbar-btn toolbar-btn-quiet"
-              >
-                Undo
-              </button>
-              <button
-                onClick={() => workerRef.current?.postMessage({ type: "REDO", v: 1, reqId: makeId() })}
-                disabled={!canRedo}
-                className="toolbar-btn toolbar-btn-quiet"
-              >
-                Redo
-              </button>
+              {workspaceActionGroups[1].map((action) => renderWorkspaceActionButton(action))}
+              {workspaceActionGroups[2].slice(1).map((action) => renderWorkspaceActionButton(action))}
             </div>
 
             <div className="planner-command-group">
@@ -606,13 +659,7 @@ export default function App() {
                 style={{ display: "none" }}
                 onChange={handleImportFileSelect}
               />
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={!workerReady}
-                className="toolbar-btn toolbar-btn-quiet"
-              >
-                Import…
-              </button>
+              {renderWorkspaceActionButton(importAction)}
               {resources.length > 0 && (
                 <label className="planner-command-field">
                   <span className="planner-command-label">Histogram</span>
@@ -674,84 +721,11 @@ export default function App() {
             </div>
 
             <div className="planner-action-rail" aria-label="Workspace actions">
-              <div className="planner-action-group">
-                <button
-                  type="button"
-                  onClick={handleAdd}
-                  disabled={!canAdd}
-                  className="toolbar-btn toolbar-btn-primary toolbar-btn-icon planner-action-btn"
-                  title="Add Task"
-                  aria-label="Add Task"
-                >
-                  +
-                </button>
-                <button
-                  type="button"
-                  onClick={handleLinkLastTwo}
-                  disabled={tasks.length < 2}
-                  className="toolbar-btn toolbar-btn-quiet toolbar-btn-icon planner-action-btn"
-                  title="Link Last Two"
-                  aria-label="Link Last Two"
-                >
-                  Ln
-                </button>
-              </div>
-
-              <div className="planner-action-group">
-                <button
-                  type="button"
-                  onClick={() => workerRef.current?.postMessage({ type: "SNAPSHOT_BASELINE", v: 1, reqId: makeId() })}
-                  disabled={!workerReady || Object.keys(scheduleResults).length === 0}
-                  className="toolbar-btn toolbar-btn-quiet toolbar-btn-icon planner-action-btn"
-                  title="Set Baseline"
-                  aria-label="Set Baseline"
-                >
-                  SB
-                </button>
-                <button
-                  type="button"
-                  onClick={() => workerRef.current?.postMessage({ type: "CLEAR_BASELINE", v: 1, reqId: makeId() })}
-                  disabled={!workerReady || Object.keys(baselines).length === 0}
-                  className="toolbar-btn toolbar-btn-quiet toolbar-btn-icon planner-action-btn"
-                  title="Clear Baseline"
-                  aria-label="Clear Baseline"
-                >
-                  CB
-                </button>
-              </div>
-
-              <div className="planner-action-group">
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={!workerReady}
-                  className="toolbar-btn toolbar-btn-quiet toolbar-btn-icon planner-action-btn"
-                  title="Import"
-                  aria-label="Import"
-                >
-                  Im
-                </button>
-                <button
-                  type="button"
-                  onClick={() => workerRef.current?.postMessage({ type: "UNDO", v: 1, reqId: makeId() })}
-                  disabled={!canUndo}
-                  className="toolbar-btn toolbar-btn-quiet toolbar-btn-icon planner-action-btn"
-                  title="Undo"
-                  aria-label="Undo"
-                >
-                  Un
-                </button>
-                <button
-                  type="button"
-                  onClick={() => workerRef.current?.postMessage({ type: "REDO", v: 1, reqId: makeId() })}
-                  disabled={!canRedo}
-                  className="toolbar-btn toolbar-btn-quiet toolbar-btn-icon planner-action-btn"
-                  title="Redo"
-                  aria-label="Redo"
-                >
-                  Re
-                </button>
-              </div>
+              {workspaceActionGroups.map((group, index) => (
+                <div key={index} className="planner-action-group">
+                  {group.map((action) => renderWorkspaceActionButton(action, true))}
+                </div>
+              ))}
             </div>
 
             {/* Shared vertical scroll track — single owner of vertical scrollTop */}
