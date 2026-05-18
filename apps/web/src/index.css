@@ -292,3 +292,501 @@ button:focus-visible {
   background: #f9fbfe;
   font-size: 12px;
 }
+
+/* ─── R4: Import Workflow UX ───────────────────────────────────────── */
+
+/* CommandToolbar import group */
+.r4-toolbar-import-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.r4-toolbar-workspace-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-left: auto;
+  padding-left: 8px;
+  border-left: 1px solid #d5dbe3;
+}
+
+/* Import button — primary action */
+.r4-import-btn {
+  height: 26px;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid #2563a8;
+  border-radius: 5px;
+  background: #1a56db;
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.r4-import-btn:hover:not(:disabled) {
+  background: #1648c4;
+}
+
+.r4-import-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Load to Workspace button */
+.r4-load-btn {
+  height: 26px;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border: none;
+  border-radius: 5px;
+  background: #16a34a;
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.r4-load-btn:hover:not(:disabled) {
+  background: #15803d;
+}
+
+.r4-load-btn:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+}
+
+/* Cancel preview button */
+.r4-cancel-btn {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+  border: 1px solid #d5dbe3;
+  border-radius: 5px;
+  background: #fff;
+  color: #5f7286;
+  cursor: pointer;
+}
+
+.r4-cancel-btn:hover {
+  border-color: #b0bec5;
+  color: #34506b;
+}
+
+/* Format badge */
+.r4-import-format-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  border-radius: 4px;
+  background: #e8f0fe;
+  color: #1a56db;
+  border: 1px solid #bfcdf6;
+  white-space: nowrap;
+}
+
+/* Import status indicator */
+.r4-import-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.r4-import-status--idle {
+  color: #5f7286;
+}
+
+.r4-import-status--ready {
+  color: #166534;
+  background: #dcfce7;
+  border: 1px solid #bbf7d0;
+}
+
+.r4-import-status--warnings {
+  color: #92400e;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+}
+
+.r4-import-status--failed {
+  color: #991b1b;
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+}
+
+/* Count badges inside status */
+.r4-import-count {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 0 5px;
+  border-radius: 3px;
+}
+
+.r4-import-count--error {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.r4-import-count--warning {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+/* ─── R4: Empty workspace improvements ──────────────────────────────── */
+
+.r3-empty-workspace {
+  margin: auto;
+  max-width: 520px;
+  text-align: center;
+  padding: 32px 24px;
+  border: 1px dashed #b8c7d8;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.r4-empty-workspace-icon {
+  font-size: 36px;
+  margin-bottom: 12px;
+}
+
+.r4-empty-workspace-heading {
+  margin: 0 0 8px;
+  font-size: 18px;
+  color: #1e3a5f;
+}
+
+.r4-empty-workspace-description {
+  margin: 0 0 20px;
+  font-size: 13px;
+  color: #5f7286;
+  line-height: 1.5;
+}
+
+.r4-empty-import-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  padding: 0 20px;
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
+  border-radius: 6px;
+  background: #1a56db;
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.15s;
+  margin-bottom: 16px;
+}
+
+.r4-empty-import-btn:hover {
+  background: #1648c4;
+}
+
+.r4-empty-workspace-formats {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.r4-format-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 11px;
+  background: #f0f4f9;
+  color: #34506b;
+  border: 1px solid #d5dbe3;
+}
+
+/* ─── R4: Import preview panel ───────────────────────────────────────── */
+
+.r4-import-preview-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  max-width: 600px;
+  width: 100%;
+  background: #fff;
+  border: 1px solid #d5dbe3;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.r4-import-preview-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 20px;
+  border-bottom: 1px solid #d5dbe3;
+  background: #f8fbff;
+}
+
+.r4-import-preview-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #1e3a5f;
+}
+
+.r4-import-preview-section {
+  padding: 14px 20px;
+  border-bottom: 1px solid #eef2f6;
+}
+
+.r4-import-preview-section:last-of-type {
+  border-bottom: none;
+}
+
+.r4-import-preview-section-title {
+  margin: 0 0 10px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #8097b1;
+}
+
+/* Detail grid for project info */
+.r4-import-detail-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 5px 14px;
+  font-size: 13px;
+}
+
+.r4-detail-label {
+  font-weight: 600;
+  color: #34506b;
+  white-space: nowrap;
+}
+
+.r4-detail-value {
+  color: #1e3a5f;
+}
+
+/* Schedule counts */
+.r4-import-counts {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.r4-count-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 64px;
+}
+
+.r4-count-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: #1a56db;
+  line-height: 1.1;
+}
+
+.r4-count-label {
+  font-size: 11px;
+  color: #5f7286;
+  margin-top: 2px;
+}
+
+.r4-calendar-info {
+  font-size: 12px;
+  color: #5f7286;
+  margin-top: 4px;
+}
+
+/* Diagnostics summary badges */
+.r4-diagnostics-summary {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.r4-diag-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 9px;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 11px;
+}
+
+.r4-diag-badge--error {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+.r4-diag-badge--warning {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+
+.r4-diag-badge--info {
+  background: #dbeafe;
+  color: #1e40af;
+  border: 1px solid #bfdbfe;
+}
+
+/* Diagnostic list */
+.r4-diagnostics-list {
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid #eef2f6;
+  border-radius: 5px;
+  font-size: 12px;
+}
+
+.r4-diagnostic-item {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 5px 8px;
+  border-bottom: 1px solid #f3f6fa;
+}
+
+.r4-diagnostic-item:last-child {
+  border-bottom: none;
+}
+
+.r4-diag-severity {
+  font-weight: 700;
+  flex-shrink: 0;
+  min-width: 52px;
+}
+
+.r4-diag-code {
+  font-family: monospace;
+  color: #8097b1;
+  flex-shrink: 0;
+}
+
+.r4-diag-message {
+  color: #34506b;
+  word-break: break-word;
+}
+
+/* Blocked notice */
+.r4-import-blocked-notice {
+  margin: 0 20px;
+  padding: 10px 14px;
+  border-radius: 5px;
+  background: #fee2e2;
+  color: #991b1b;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid #fecaca;
+}
+
+/* Action buttons */
+.r4-import-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding: 14px 20px;
+  border-top: 1px solid #eef2f6;
+  background: #f8fbff;
+}
+
+.r4-btn {
+  height: 32px;
+  padding: 0 16px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.r4-btn--cancel {
+  border: 1px solid #d5dbe3;
+  background: #fff;
+  color: #34506b;
+}
+
+.r4-btn--cancel:hover {
+  border-color: #b0bec5;
+  background: #f0f4f9;
+}
+
+.r4-btn--load {
+  border: none;
+  background: #16a34a;
+  color: #fff;
+}
+
+.r4-btn--load:hover:not(:disabled) {
+  background: #15803d;
+}
+
+.r4-btn--load:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+}
+
+/* ─── R4: Status strip import display ──────────────────────────────── */
+
+.r4-status-import-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.r4-status-import-label {
+  font-weight: 700;
+  color: #1a56db;
+}
+
+.r4-status-ready {
+  color: #166534;
+  font-weight: 600;
+}
+
+.r4-status-warning {
+  color: #92400e;
+  font-weight: 600;
+}
+
+.r4-status-error {
+  color: #991b1b;
+  font-weight: 700;
+}
+
+.r4-status-worker {
+  margin-left: auto;
+  font-size: 11px;
+  color: #8097b1;
+}
+
+/* R4: Workspace preview panel centering */
+.r3-programme-preview-panel {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px 20px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
