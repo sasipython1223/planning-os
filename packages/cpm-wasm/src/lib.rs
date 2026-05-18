@@ -7,7 +7,7 @@ use wasm_bindgen::prelude::*;
 #[serde(rename_all = "camelCase")]
 struct ScheduleTask {
     id: String,
-    duration: u32,
+    duration_work_minutes: u32,
     #[serde(default)]
     min_early_start: u32,
     #[serde(default)]
@@ -92,7 +92,7 @@ fn parse_constraint_type(s: &str) -> cpm_kernel::ConstraintType {
 fn to_raw_task(task: &ScheduleTask) -> cpm_kernel::RawTask {
     cpm_kernel::RawTask {
         id: task.id.clone(),
-        duration: task.duration,
+        duration: task.duration_work_minutes,
         min_early_start: task.min_early_start,
         parent_id: task.parent_id.clone(),
         is_summary: task.is_summary,

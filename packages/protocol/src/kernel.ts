@@ -16,10 +16,17 @@
 
 /**
  * Minimal task input for scheduling calculation.
+ *
+ * Time fields use working-day integers as the canonical unit.
+ * `durationWorkMinutes` carries the task duration; despite the name,
+ * values are currently in working-day integers (e.g. 5 = 5 working days).
+ * A full unit migration to actual work-minutes (× MINUTES_PER_DAY) is
+ * tracked as a follow-up task.
  */
 export type ScheduleTask = {
   readonly id: string;
-  readonly duration: number;
+  /** Task duration in working-day integers (field name matches WASM binary contract). */
+  readonly durationWorkMinutes: number;
   readonly minEarlyStart: number;
   readonly parentId?: string;
   readonly isSummary: boolean;

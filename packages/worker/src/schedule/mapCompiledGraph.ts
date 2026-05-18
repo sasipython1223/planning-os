@@ -50,7 +50,7 @@ export const mapCompiledGraphToRequest = (
 ): ScheduleRequest => {
   const tasks: ScheduleTask[] = graph.activities.map((activity) => ({
     id: activity.id,
-    duration: activity.durationDays,
+    durationWorkMinutes: activity.durationDays,
     minEarlyStart: 0,
     isSummary: false,
     constraintType: activity.constraintType ?? "ASAP",

@@ -131,7 +131,7 @@ describe("Schedule Request Builder", () => {
     const request = buildScheduleRequest(tasks, dependencies, []);
 
     expect(request.tasks).toHaveLength(1);
-    expect(request.tasks[0]).toEqual({ id: "A", duration: 5, minEarlyStart: 0, parentId: undefined, isSummary: false });
+    expect(request.tasks[0]).toEqual({ id: "A", durationWorkMinutes: 5, minEarlyStart: 0, parentId: undefined, isSummary: false });
     expect(request.dependencies).toHaveLength(0);
   });
 
@@ -2285,7 +2285,7 @@ describe("Phase V.1 — Constraint Pipeline Integration", () => {
     const taskB = req.tasks.find(t => t.id === "B")!;
     expect(taskB.constraintType).toBe("SNET");
     expect(taskB.constraintDate).toBe(10);
-    expect(taskB.duration).toBe(5);
+    expect(taskB.durationWorkMinutes).toBe(5);
     expect(req.dependencies).toHaveLength(1);
   });
 
@@ -2334,7 +2334,7 @@ describe("Phase V.1 — Constraint Pipeline Integration", () => {
     expect(taskA).not.toHaveProperty("constraintType");
     expect(taskA).not.toHaveProperty("constraintDate");
     expect(taskA.id).toBe("A");
-    expect(taskA.duration).toBe(5);
+    expect(taskA.durationWorkMinutes).toBe(5);
   });
 
   it("Worker does not inject default constraintType for bare tasks", () => {
@@ -2858,7 +2858,7 @@ describe("M05 — mapCompiledGraphToRequest", () => {
     expect(request.tasks).toHaveLength(1);
     const task = request.tasks[0];
     expect(task.id).toBe("gen-1");
-    expect(task.duration).toBe(5);
+    expect(task.durationWorkMinutes).toBe(5);
     expect(task.minEarlyStart).toBe(0);
     expect(task.isSummary).toBe(false);
     expect(task.constraintType).toBe("ASAP");
@@ -3000,9 +3000,9 @@ describe("M05 — mapCompiledGraphToRequest", () => {
     expect(request.nonWorkingDays).toEqual(nwd);
 
     // Verify durations mapped correctly
-    expect(request.tasks[0].duration).toBe(10);
-    expect(request.tasks[1].duration).toBe(7);
-    expect(request.tasks[2].duration).toBe(14);
+    expect(request.tasks[0].durationWorkMinutes).toBe(10);
+    expect(request.tasks[1].durationWorkMinutes).toBe(7);
+    expect(request.tasks[2].durationWorkMinutes).toBe(14);
 
     // Verify constraint on second task
     expect(request.tasks[1].constraintType).toBe("SNET");
@@ -3138,12 +3138,12 @@ describe("M06 — buildCompiledScheduleRequest", () => {
       // Tasks
       expect(request.tasks).toHaveLength(2);
       expect(request.tasks[0].id).toBe("gen-auth-1");
-      expect(request.tasks[0].duration).toBe(10);
+      expect(request.tasks[0].durationWorkMinutes).toBe(10);
       expect(request.tasks[0].constraintType).toBe("ASAP");
       expect(request.tasks[0].constraintDate).toBeNull();
 
       expect(request.tasks[1].id).toBe("gen-auth-2");
-      expect(request.tasks[1].duration).toBe(7);
+      expect(request.tasks[1].durationWorkMinutes).toBe(7);
       expect(request.tasks[1].constraintType).toBe("SNET");
       expect(request.tasks[1].constraintDate).toBe(15);
 
@@ -3302,7 +3302,7 @@ describe("M07 — Compiled path produces valid ScheduleRequest via mode switch",
 
     expect(request.tasks).toHaveLength(1);
     expect(request.tasks[0].id).toBe("g-a1");
-    expect(request.tasks[0].duration).toBe(5);
+    expect(request.tasks[0].durationWorkMinutes).toBe(5);
     expect(request.tasks[0].isSummary).toBe(false);
 
     // Domain fields must not leak to solver
@@ -3322,7 +3322,7 @@ describe("M07 — Compiled path produces valid ScheduleRequest via mode switch",
 
     expect(request.tasks).toHaveLength(1);
     expect(request.tasks[0].id).toBe("t1");
-    expect(request.tasks[0].duration).toBe(3);
+    expect(request.tasks[0].durationWorkMinutes).toBe(3);
   });
 });
 
