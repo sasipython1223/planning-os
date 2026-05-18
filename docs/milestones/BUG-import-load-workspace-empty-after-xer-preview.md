@@ -46,7 +46,7 @@ The `ScheduleError` discriminated union (from Rust kernel via `serde(tag = "type
 
 **Root causes confirmed and fixed:**
 - **`SelfDependency`**: The XER mapper did not filter `taskPred` records where `pred_task_id === task_id`. These map to `predId === succId`. The Rust kernel rejects this unconditionally. **Fixed: filter added in xerMapper.**
-- **`DEPENDENCY_DUPLICATE`**: Duplicate `taskPred` records (same `pred_task_id`/`task_id` pair) created multiple edges with the same pred/succ. While not a direct kernel error, dedup is correct normalization. **Fixed: dedup added in xerMapper.**
+- **`DEPENDENCY_DUPLICATE`**: Exactly identical `taskPred` records (same `pred_task_id`, `task_id`, type, AND lag) created redundant edges. While not a direct kernel error, dedup of exact duplicates is correct normalization. Parallel relationships between the same pair with a different type or lag are **preserved**. **Fixed: exact-duplicate dedup added in xerMapper.**
 
 **Additional bug fixed (not scheduling failure cause):**
 - `projectStartDate` from `candidate.projectStartDate` was never applied to canonical state after import commit. **Fixed: `State.setProjectStartDate(candidate.projectStartDate)` now called in IMPORT_SCHEDULE handler.**
@@ -63,7 +63,7 @@ The `ScheduleError` discriminated union (from Rust kernel via `serde(tag = "type
 | Unsupported imported relationships | **Yes** — self-referencing predecessors (malformed XER data) were not filtered |
 | Calendars / working-time conversion | Not a failure cause — kernel clamps negative constraint dates to 0 |
 | Invalid/missing dates | Not a failure cause — undefined constraintDate maps to `None` safely |
-| Dependency normalization | **Yes** — missing self-dep and dup-dep guards |
+| Dependency normalization | **Yes** — missing self-dep and exact duplicate-dependency guards |
 | Task identity mapping | Not a failure cause — UUID generation is collision-free |
 | Empty/invalid duration values | Not a failure cause — kernel handles `u32 = 0` for summary tasks |
 | WASM/kernel limits | Not confirmed — may still apply for very large programmes; caught by try/catch |
@@ -73,7 +73,7 @@ The `ScheduleError` discriminated union (from Rust kernel via `serde(tag = "type
 
 The following normalizations are **safe without changing parser semantics**:
 - **Self-dependency filtering**: A predecessor where `pred = succ` is structurally invalid. Filtering with a `DEPENDENCY_SELF_REFERENCE` diagnostic preserves intent.
-- **Duplicate dependency deduplication**: Keeping only the first occurrence of a `predId:succId` pair is safe. The kernel's `max()` in forward/backward pass makes duplicates semantically neutral.
+- **Exact duplicate dependency deduplication**: Keeping only the first occurrence of an identical `predId:succId:type:lag` tuple is safe. Parallel relationships between the same task pair with a different type or lag are preserved and are not treated as duplicates. The kernel's `max()` in forward/backward pass makes truly identical edges semantically neutral.
 
 ### 8. Rollback Safety
 
@@ -92,10 +92,12 @@ Rollback is preserved and extended:
 |---|---|
 | `packages/protocol/src/import.ts` | Added `DEPENDENCY_SELF_REFERENCE` and `DEPENDENCY_DUPLICATE` to `ImportDiagnosticCode` union (backward-compatible) |
 | `packages/worker/src/state.ts` | Added `setProjectStartDate(date: string)` export |
-| `packages/worker/src/worker.ts` | Added `lastScheduleError` capture; enriched schedule-error audit log; IMPORT_SCHEDULE handler applies `candidate.projectStartDate`; restores `preImportStartDate` on rollback; NACK includes concrete error type + message |
-| `packages/worker/src/import/mappers/xerMapper.ts` | Added self-dependency filter (DEPENDENCY_SELF_REFERENCE diagnostic) and duplicate dependency filter (DEPENDENCY_DUPLICATE diagnostic) |
-| `packages/worker/tests/import/xerMapper.test.ts` | Added 4 tests covering self-dep filter, dup-dep filter, same-pair different-type dedup |
-| `packages/worker/tests/import/importCommit.test.ts` | Added 3 tests for `setProjectStartDate` apply and rollback round-trip |
+| `packages/worker/src/worker.ts` | Added `lastScheduleError` capture; enriched schedule-error audit log; IMPORT_SCHEDULE handler uses extracted `applyImportCandidateToState`, `rollbackImportCandidateState`, and `buildImportRollbackError`; NACK includes concrete error type + message |
+| `packages/worker/src/import/applyImportCandidate.ts` | New module: `applyImportCandidateToState`, `rollbackImportCandidateState`, `buildImportRollbackError` helper functions used by IMPORT_SCHEDULE handler |
+| `packages/worker/src/import/mappers/xerMapper.ts` | Added self-dependency filter (`DEPENDENCY_SELF_REFERENCE` diagnostic) and exact duplicate dependency filter (`DEPENDENCY_DUPLICATE` diagnostic, keyed on `predId:succId:type:lag`) |
+| `packages/worker/tests/import/xerMapper.test.ts` | Updated dedup tests: exact-dup filter, parallel-relationship preservation, exact-dup-within-parallel-set |
+| `packages/worker/tests/import/importCommit.test.ts` | Removed isolated `setProjectStartDate` tests (superseded by handler-path tests in applyImportCandidate.test.ts) |
+| `packages/worker/tests/import/applyImportCandidate.test.ts` | New: 14 handler-path tests covering projectStartDate apply on commit, projectStartDate restore on rollback, full round-trip, and NACK error reason formatting |
 | `docs/milestones/BUG-import-load-workspace-empty-after-xer-preview.md` | This document |
 
 ### Files Explicitly Not Changed
@@ -110,16 +112,16 @@ Rollback is preserved and extended:
 
 ## Tests Added / Updated
 
-Worker tests: **399 passed** (17 new tests added over pre-PR baseline of 382)
+Worker tests: **411 passed** (29 net new tests added over pre-PR baseline of 382; 11 test files)
 Web app tests: **78 passed** (unchanged)
 
 ## Validation Results
 
 ```
-pnpm --filter @planner/worker test
-→ 10 test files, 399 tests passed
+corepack pnpm -C packages/worker exec vitest run
+→ 11 test files, 411 tests passed
 
-corepack pnpm -C apps/web exec vitest run
+PNPM_ALLOW_BUILDS='@swc/core,esbuild' corepack pnpm -C apps/web exec vitest run
 → 6 test files, 78 tests passed
 ```
 
