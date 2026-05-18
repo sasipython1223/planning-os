@@ -18,6 +18,7 @@ interface CommandToolbarProps {
   importFormat?: string;
   importErrorCount?: number;
   importWarningCount?: number;
+  importCanCommit: boolean;
 }
 
 const IMPORT_STATUS_LABELS: Record<ImportStatus, string> = {
@@ -51,6 +52,7 @@ export function CommandToolbar({
   importFormat,
   importErrorCount,
   importWarningCount,
+  importCanCommit,
 }: CommandToolbarProps) {
   return (
     <div className="r3-command-toolbar">
@@ -88,8 +90,8 @@ export function CommandToolbar({
               type="button"
               className="r4-load-btn"
               onClick={onLoadToWorkspace}
-              disabled={importStatus === 'failed'}
-              title={importStatus === 'failed' ? 'Resolve import errors before loading' : 'Load this programme into the workspace'}
+              disabled={!importCanCommit}
+              title={!importCanCommit ? 'Resolve import errors before loading' : 'Load this programme into the workspace'}
             >
               ✓ Load to Workspace
             </button>

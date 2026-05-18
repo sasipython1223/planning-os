@@ -16,7 +16,7 @@ Implemented:
 - Import status indicator: idle / preview-ready / warnings / failed, derived from existing import preview diagnosticsSummary.
 - Format badge (XER / MSP-XML) in toolbar and status strip when preview is active.
 - Error and warning count badges in toolbar when preview has issues.
-- "✓ Load to Workspace" button replaces "Load to Workspace" — visible and enabled only when preview is active and no errors.
+- "✓ Load to Workspace" button in `CommandToolbar` is disabled/enabled using `importPreview.canCommit` (passed as `importCanCommit` prop) — the same authoritative `canCommit` field set by the Worker's `IMPORT_PREVIEW` message. `deriveImportStatus` is a display-only indicator and does not gate the commit action.
 - "✕ Cancel Preview" button appears in toolbar only when preview is active.
 - Better empty workspace guidance with supported format pills (XER — Primavera P6, XML — MS Project).
 - Improved import preview panel layout: Programme Details / Schedule Summary / Import Diagnostics sections, counts use "Activities" / "Relationships" terminology, "✓ Load to Workspace" button.
@@ -97,9 +97,9 @@ Derived by `deriveImportStatus()` from `importPreview.diagnosticsSummary`:
 
 ### Load to Workspace
 
-- "✓ Load to Workspace" button:
-  - Enabled: `importStatus !== 'failed'`
-  - Disabled (greyed): when `importStatus === 'failed'` (errors present)
+- "✓ Load to Workspace" button in `CommandToolbar`:
+  - Enabled/disabled using `importPreview.canCommit` (passed as `importCanCommit` prop) — the authoritative value set by the Worker.
+  - `deriveImportStatus` is a display-only status indicator; it does not gate the commit action.
   - Routes through existing `handleImportCommit` → `IMPORT_SCHEDULE` Worker command
 
 ### Cancel Preview

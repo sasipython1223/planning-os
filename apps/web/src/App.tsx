@@ -493,6 +493,9 @@ export default function App() {
   const importFormatLabel = importPreview
     ? importPreview.format === "xer" ? "XER" : "MSP-XML"
     : undefined;
+  // importCanCommit mirrors the Worker-authoritative canCommit field from the IMPORT_PREVIEW message.
+  // It gates the Load to Workspace action in CommandToolbar without duplicating commit rules in React.
+  const importCanCommit = importPreview?.canCommit ?? false;
 
   const importStatus: ImportStatus = deriveImportStatus({
     hasPreview: importPreview !== null,
@@ -523,6 +526,7 @@ export default function App() {
               importFormat={importFormatLabel}
               importErrorCount={errorCount}
               importWarningCount={warningCount}
+              importCanCommit={importCanCommit}
             />
           }
           statusStrip={
