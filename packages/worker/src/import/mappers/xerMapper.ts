@@ -254,6 +254,7 @@ export function mapXerToCanonical(data: XerData): XerMapperResult {
 
   // ── Map dependencies ──────────────────────────────────────────
   const dependencies: Dependency[] = [];
+  const seenDepPairs = new Set<string>();
 
   for (const xp of data.taskPreds) {
     const predId = xerTaskIdToCanonical.get(xp.pred_task_id);
@@ -269,6 +270,34 @@ export function mapXerToCanonical(data: XerData): XerMapperResult {
       });
       continue;
     }
+
+    // Reject self-dependency — kernel rejects these with SelfDependency error
+    if (predId === succId) {
+      diagnostics.push({
+        code: "DEPENDENCY_SELF_REFERENCE",
+        severity: "warning",
+        message: `Self-referencing dependency ignored — task ${xp.pred_task_id} references itself`,
+        sourceEntityId: xp.task_pred_id,
+        field: "pred_task_id",
+        originalValue: xp.pred_task_id,
+      });
+      continue;
+    }
+
+    // Reject duplicate dependency — same predId/succId pair already mapped
+    const depKey = `${predId}:${succId}`;
+    if (seenDepPairs.has(depKey)) {
+      diagnostics.push({
+        code: "DEPENDENCY_DUPLICATE",
+        severity: "warning",
+        message: `Duplicate dependency ignored — pred:${xp.pred_task_id} succ:${xp.task_id}`,
+        sourceEntityId: xp.task_pred_id,
+        field: "pred_task_id",
+        originalValue: xp.pred_task_id,
+      });
+      continue;
+    }
+    seenDepPairs.add(depKey);
 
     // Type mapping
     let type: DependencyType;

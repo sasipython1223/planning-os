@@ -289,4 +289,41 @@ describe("Import Commit — W.4", () => {
       expect(snapshot.tasks[0].name).toBe("Old");
     });
   });
+
+  describe("projectStartDate alignment on import commit", () => {
+    it("setProjectStartDate updates the canonical project start date", () => {
+      State.setProjectStartDate("2024-03-01");
+      expect(State.getProjectStartDate()).toBe("2024-03-01");
+    });
+
+    it("should allow restoring previous projectStartDate on rollback", () => {
+      // Simulate: pre-import date
+      State.setProjectStartDate("2026-01-01");
+      const preImportDate = State.getProjectStartDate();
+
+      // Simulate: import applies XER project start date
+      State.setProjectStartDate("2024-06-15");
+      expect(State.getProjectStartDate()).toBe("2024-06-15");
+
+      // Simulate: rollback restores pre-import date
+      State.setProjectStartDate(preImportDate);
+      expect(State.getProjectStartDate()).toBe("2026-01-01");
+    });
+
+    it("candidate projectStartDate round-trip: apply and restore", () => {
+      // Initial state
+      State.setProjectStartDate("2026-01-01");
+
+      const candidate = buildCandidate({ projectStartDate: "2023-01-01" });
+      const preImportDate = State.getProjectStartDate();
+
+      // Simulate commit: apply candidate date
+      State.setProjectStartDate(candidate.projectStartDate);
+      expect(State.getProjectStartDate()).toBe("2023-01-01");
+
+      // Simulate rollback: restore pre-import date
+      State.setProjectStartDate(preImportDate);
+      expect(State.getProjectStartDate()).toBe("2026-01-01");
+    });
+  });
 });

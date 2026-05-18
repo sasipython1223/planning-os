@@ -39,8 +39,12 @@ const emit = (message: WorkerMessage): void => {
 /**
  * Run scheduling and emit state with results.
  * Returns true if scheduling succeeded, false if it failed.
+ * On failure, the concrete ScheduleError is available via lastScheduleError.
  */
 const CALENDAR_HORIZON = 3650; // ~10 years
+
+/** Captures the most recent schedule error for diagnostics (set by runSchedulingAndEmitState). */
+let lastScheduleError: ScheduleError | null = null;
 
 const runSchedulingAndEmitState = (): boolean => {
   // Recompute hierarchy metadata before scheduling
@@ -73,6 +77,9 @@ const runSchedulingAndEmitState = (): boolean => {
   if ("type" in result && typeof result.type === "string") {
     const scheduleError = result as ScheduleError;
 
+    // Capture for callers (e.g. IMPORT_SCHEDULE NACK)
+    lastScheduleError = scheduleError;
+
     // Emit error message
     emit({
       type: "SCHEDULE_ERROR",
@@ -101,6 +108,9 @@ const runSchedulingAndEmitState = (): boolean => {
       canRedo: UndoHistory.canRedo(),
     };
     console.log("[AUDIT Worker Emit] schedule-error path", {
+      errorType: scheduleError.type,
+      errorMessage: scheduleError.message,
+      taskId: "taskId" in scheduleError ? scheduleError.taskId : undefined,
       taskCount: emptyPayload.tasks.length,
       depCount: emptyPayload.dependencies.length,
     });
@@ -108,6 +118,8 @@ const runSchedulingAndEmitState = (): boolean => {
 
     return false;
   } else {
+    // Success — clear last error
+    lastScheduleError = null;
     // Success - apply schedule result and emit state
     const scheduleResults = applyScheduleResult(result);
 
@@ -621,6 +633,7 @@ const handleCommand = (cmd: Command, envelope?: CommandEnvelope): DispatchOutcom
     // Capture pre-import snapshot for undo (full state strategy per spec §5.1)
     const preImportSnapshot = State.createSnapshot();
     const preImportBaselines = { ...State.getBaselineMap() };
+    const preImportStartDate = State.getProjectStartDate();
 
     // Replace canonical state atomically (replace-only, spec §5.2)
     State.restoreSnapshot({
@@ -631,14 +644,25 @@ const handleCommand = (cmd: Command, envelope?: CommandEnvelope): DispatchOutcom
     });
     State.setBaselineMap({}); // Imported project starts with no baseline
 
+    // Apply imported project start date so the calendar aligns with the XER data
+    if (candidate.projectStartDate) {
+      State.setProjectStartDate(candidate.projectStartDate);
+    }
+
     // Run scheduling — rollback on failure (spec §5.3)
     const success = runSchedulingAndEmitState();
     if (!success) {
+      // Capture error reason before rolling back (lastScheduleError is module-level)
+      const importScheduleError = lastScheduleError;
       // Roll back to pre-import state
       State.restoreSnapshot(preImportSnapshot);
       State.setBaselineMap(preImportBaselines);
+      State.setProjectStartDate(preImportStartDate);
       runSchedulingAndEmitState();
-      emit({ type: "NACK", v: 1, reqId: cmd.reqId, error: "Scheduling failed after import — rolled back" });
+      const errorReason = importScheduleError
+        ? `Scheduling failed after import — rolled back (${importScheduleError.type}: ${importScheduleError.message})`
+        : "Scheduling failed after import — rolled back";
+      emit({ type: "NACK", v: 1, reqId: cmd.reqId, error: errorReason });
       return "error";
     }
 
