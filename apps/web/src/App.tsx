@@ -38,6 +38,7 @@ export default function App() {
   const toggleBottomDrawer = useUIStore((s) => s.toggleBottomDrawer);
   const setStatusText = useUIStore((s) => s.setStatusText);
   const constraintFilter = useUIStore((s) => s.constraintFilter);
+  const setConstraintFilter = useUIStore((s) => s.setConstraintFilter);
   const tableWidth = useUIStore((s) => s.tableWidth);
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const mainContentRowRef = useRef<HTMLDivElement>(null);
@@ -70,8 +71,6 @@ export default function App() {
   const [diagnosticsMap, setDiagnosticsMap] = useState<DiagnosticsMap>({});
   const [selectedResourceId, setSelectedResourceId] = useState<string | null>(null);
   const [isInspectorOpen, setInspectorOpen] = useState(false);
-  const [ganttScrollLeft, setGanttScrollLeft] = useState(0);
-  const [ganttPaneWidth, setGanttPaneWidth] = useState(0);
   const ganttScrollElRef = useRef<HTMLDivElement | null>(null);
   const [importPreview, setImportPreview] = useState<ImportPreviewData | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -415,14 +414,24 @@ export default function App() {
     [resources, selectedResourceId],
   );
 
-  const handleGanttScrollLeftChange = useCallback((nextGanttScrollLeft: number, nextGanttPaneWidth: number) => {
-    setGanttScrollLeft(nextGanttScrollLeft);
-    setGanttPaneWidth(nextGanttPaneWidth);
-  }, []);
   const workspaceShellView = useMemo(
     () => deriveWorkspaceShellView({ hasImportPreview: importPreview !== null, hasTasks: tasks.length > 0 }),
     [importPreview, tasks.length],
   );
+
+  useEffect(() => {
+    const defaultsKey = "r3-shell-defaults-applied";
+    if (window.sessionStorage.getItem(defaultsKey) === "1") {
+      return;
+    }
+
+    // R3 shell baseline: start with inspector/diagnostics closed and all tasks visible.
+    // This intentionally normalizes first-render view defaults for visual QA.
+    setInspectorOpen(false);
+    toggleBottomDrawer(false);
+    setConstraintFilter("all");
+    window.sessionStorage.setItem(defaultsKey, "1");
+  }, [setInspectorOpen, toggleBottomDrawer, setConstraintFilter]);
 
   const handleSelect = useCallback((sel: Selection) => {
     setSelection(sel);
@@ -492,10 +501,12 @@ export default function App() {
               onLoadToWorkspace={handleImportCommit}
               onToggleInspector={() => setInspectorOpen((prev) => !prev)}
               onToggleDiagnostics={() => toggleBottomDrawer()}
+              onConstraintFilterChange={setConstraintFilter}
               hasPreview={importPreview !== null}
               hasLoadedData={workspaceShellView === "loaded"}
               inspectorOpen={isInspectorOpen}
               diagnosticsOpen={isBottomOpen}
+              constraintFilter={constraintFilter}
               workerReady={workerReady}
             />
           }
@@ -504,11 +515,12 @@ export default function App() {
               projectName={projectName}
               fileName={fileName}
               activityCount={tasks.length}
+              visibleActivityCount={visibleTasks.length}
               dependencyCount={dependencies.length}
               warningCount={warningCount}
+              constraintFilter={constraintFilter}
               viewState={workspaceShellView}
               workerReady={workerReady}
-              ganttScrollInfo={`scroll:${Math.round(ganttScrollLeft)} width:${Math.round(ganttPaneWidth)}`}
             />
           }
         >
@@ -626,7 +638,6 @@ export default function App() {
                         onSelect={handleSelect}
                         nonWorkingDays={nonWorkingDays}
                         baselines={baselines}
-                        onScrollLeftChange={handleGanttScrollLeftChange}
                         onHScrollMount={handleGanttHScrollMount}
                         bodyRef={ganttBodyRef}
                       />

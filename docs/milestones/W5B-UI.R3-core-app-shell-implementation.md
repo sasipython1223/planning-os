@@ -66,6 +66,7 @@ React-local UI state added/used only for shell presentation concerns:
 - workspace shell routing (`deriveWorkspaceShellView` from existing app state)
 - inspector visibility
 - diagnostics drawer visibility (existing store pathway)
+- constraint filter visibility/control in shell toolbar
 
 No duplicated authoritative schedule model was introduced.
 
@@ -103,8 +104,11 @@ Observed shell improvements:
 - loaded workspace keeps existing TaskTable + Gantt placement
 - inspector placeholder panel appears as right-side container
 - diagnostics drawer has explicit collapsed/open shell presentation
+- default first-load shell now forces Inspector closed and Diagnostics closed
+- legacy pre-R3 toolbar row (`Histogram`, `Logs`, `Constraint`) is hidden to avoid duplicate command surfaces; constraint filter control is surfaced in the R3 command toolbar
+- status strip shows `Activities: visible/total` plus active filter to explain filtered-empty views (prevents ambiguity like `Tasks > 0` with `0` visible rows)
 
-Screenshot captured: `/tmp/w5b-ui-r3-shell.png`.
+Screenshot captured: `/tmp/w5b-ui-r3-shell-followup.png`.
 
 ## 11. Stop Conditions Encountered / Not Encountered
 
