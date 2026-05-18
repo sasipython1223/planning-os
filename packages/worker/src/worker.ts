@@ -8,6 +8,11 @@ import { auditLog, createEnvelope } from "./commandEnvelope.js";
 import { computeConstraintDiagnostics, mergeResultDiagnostics } from "./constraintDiagnostics.js";
 import * as UndoHistory from "./history.js";
 import { clearPendingCandidate, getPendingCandidate } from "./import/importCandidate.js";
+import {
+    applyImportCandidateToState,
+    buildImportRollbackError,
+    rollbackImportCandidateState,
+} from "./import/applyImportCandidate.js";
 import { runImportPreview } from "./import/previewOrchestrator.js";
 import type { PersistedState } from "./persistence.js";
 import { loadPersistedState, migratePersistedState, savePersistedState } from "./persistence.js";
@@ -630,46 +635,23 @@ const handleCommand = (cmd: Command, envelope?: CommandEnvelope): DispatchOutcom
       return "nack";
     }
 
-    // Capture pre-import snapshot for undo (full state strategy per spec §5.1)
-    const preImportSnapshot = State.createSnapshot();
-    const preImportBaselines = { ...State.getBaselineMap() };
-    const preImportStartDate = State.getProjectStartDate();
-
-    // Replace canonical state atomically (replace-only, spec §5.2)
-    State.restoreSnapshot({
-      tasks: [...candidate.mappedTasks],
-      dependencies: [...candidate.mappedDependencies],
-      resources: [...candidate.mappedResources],
-      assignments: [...candidate.mappedAssignments],
-    });
-    State.setBaselineMap({}); // Imported project starts with no baseline
-
-    // Apply imported project start date so the calendar aligns with the XER data
-    if (candidate.projectStartDate) {
-      State.setProjectStartDate(candidate.projectStartDate);
-    }
+    // Capture pre-import snapshot for undo and apply candidate to canonical state
+    const capture = applyImportCandidateToState(candidate);
 
     // Run scheduling — rollback on failure (spec §5.3)
     const success = runSchedulingAndEmitState();
     if (!success) {
       // Capture error reason before rolling back (lastScheduleError is module-level)
       const importScheduleError = lastScheduleError;
-      // Roll back to pre-import state
-      State.restoreSnapshot(preImportSnapshot);
-      State.setBaselineMap(preImportBaselines);
-      State.setProjectStartDate(preImportStartDate);
+      rollbackImportCandidateState(capture);
       runSchedulingAndEmitState();
-      const rollbackMsg = "Scheduling failed after import — rolled back";
-      const errorReason = importScheduleError
-        ? `${rollbackMsg} (${importScheduleError.type}: ${importScheduleError.message})`
-        : rollbackMsg;
-      emit({ type: "NACK", v: 1, reqId: cmd.reqId, error: errorReason });
+      emit({ type: "NACK", v: 1, reqId: cmd.reqId, error: buildImportRollbackError(importScheduleError) });
       return "error";
     }
 
     // Success — push undo entry (one entry for entire import)
     const undoEntry: UndoHistory.HistoryEntry = {
-      undo: [{ type: "RESTORE_FULL_STATE", snapshot: preImportSnapshot, baselines: preImportBaselines } as unknown as Command],
+      undo: [{ type: "RESTORE_FULL_STATE", snapshot: capture.preImportSnapshot, baselines: capture.preImportBaselines } as unknown as Command],
       redo: [{ type: "RESTORE_FULL_STATE", snapshot: State.createSnapshot(), baselines: {} } as unknown as Command],
     };
     UndoHistory.pushEntry(undoEntry);

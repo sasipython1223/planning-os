@@ -254,7 +254,7 @@ export function mapXerToCanonical(data: XerData): XerMapperResult {
 
   // ── Map dependencies ──────────────────────────────────────────
   const dependencies: Dependency[] = [];
-  const seenDepPairs = new Set<string>();
+  const seenExactDeps = new Set<string>();
 
   for (const xp of data.taskPreds) {
     const predId = xerTaskIdToCanonical.get(xp.pred_task_id);
@@ -284,22 +284,7 @@ export function mapXerToCanonical(data: XerData): XerMapperResult {
       continue;
     }
 
-    // Reject duplicate dependency — same predId/succId pair already mapped
-    const depKey = `${predId}:${succId}`;
-    if (seenDepPairs.has(depKey)) {
-      diagnostics.push({
-        code: "DEPENDENCY_DUPLICATE",
-        severity: "warning",
-        message: `Duplicate dependency ignored — pred:${xp.pred_task_id} succ:${xp.task_id}`,
-        sourceEntityId: xp.task_pred_id,
-        field: "pred_task_id",
-        originalValue: xp.pred_task_id,
-      });
-      continue;
-    }
-    seenDepPairs.add(depKey);
-
-    // Type mapping
+    // Type mapping (resolved before dedup check so it forms part of the exact-match key)
     let type: DependencyType;
     const mapped = DEP_TYPE_MAP[xp.pred_type];
     if (mapped) {
@@ -317,7 +302,7 @@ export function mapXerToCanonical(data: XerData): XerMapperResult {
       });
     }
 
-    // Lag: hours → days
+    // Lag: hours → days (resolved before dedup check)
     const rawLag = parseFloat(xp.lag_hr_cnt || "0") / hoursPerDay;
     const lag = Math.round(rawLag);
     if (Math.abs(rawLag - lag) > 0.01) {
@@ -331,6 +316,22 @@ export function mapXerToCanonical(data: XerData): XerMapperResult {
         mappedValue: String(lag),
       });
     }
+
+    // Reject exact duplicate — same predId, succId, type, AND lag
+    // Parallel relationships (same pair, different type or lag) are preserved.
+    const exactKey = `${predId}:${succId}:${type}:${lag}`;
+    if (seenExactDeps.has(exactKey)) {
+      diagnostics.push({
+        code: "DEPENDENCY_DUPLICATE",
+        severity: "warning",
+        message: `Exact duplicate dependency ignored — pred:${xp.pred_task_id} succ:${xp.task_id} type:${type} lag:${lag}`,
+        sourceEntityId: xp.task_pred_id,
+        field: "pred_task_id",
+        originalValue: xp.pred_task_id,
+      });
+      continue;
+    }
+    seenExactDeps.add(exactKey);
 
     dependencies.push({
       id: generateId(),
