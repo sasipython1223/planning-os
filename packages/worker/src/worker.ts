@@ -659,9 +659,10 @@ const handleCommand = (cmd: Command, envelope?: CommandEnvelope): DispatchOutcom
       State.setBaselineMap(preImportBaselines);
       State.setProjectStartDate(preImportStartDate);
       runSchedulingAndEmitState();
+      const rollbackMsg = "Scheduling failed after import — rolled back";
       const errorReason = importScheduleError
-        ? `Scheduling failed after import — rolled back (${importScheduleError.type}: ${importScheduleError.message})`
-        : "Scheduling failed after import — rolled back";
+        ? `${rollbackMsg} (${importScheduleError.type}: ${importScheduleError.message})`
+        : rollbackMsg;
       emit({ type: "NACK", v: 1, reqId: cmd.reqId, error: errorReason });
       return "error";
     }

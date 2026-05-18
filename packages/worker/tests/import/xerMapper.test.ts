@@ -345,10 +345,9 @@ describe("XER Mapper (W.3)", () => {
       expect(diag!.sourceEntityId).toBe("TP2");
     });
 
-    it("should allow two deps between the same pair with different types (not duplicates)", () => {
-      // T1→T2 as FS and T1→T2 as SS are different dep records but same predId/succId
-      // Our dedup only checks predId:succId key, so the second would be filtered.
-      // This test validates the current normalization behavior (both same-pair deps filtered).
+    it("should filter second dependency between same task pair even when types differ (dedup by predId:succId)", () => {
+      // T1→T2 as FS and T1→T2 as SS are different dep records but same predId/succId.
+      // Dedup key is predId:succId, so the second occurrence is filtered regardless of type.
       const result = mapXerToCanonical(buildData({
         tasks: [
           { task_id: "T1", proj_id: "P1", wbs_id: "", task_name: "A", task_type: "TT_TASK", target_drtn_hr_cnt: "8", cstr_type: "", cstr_date: "" },
