@@ -107,7 +107,7 @@ No Worker/protocol/parser/product behavior change is recommended at this stage o
 
 | Checkpoint | Status in this run | Evidence |
 |---|---|---|
-| PREVIEW_IMPORT sent | Not reached | Worker not ready due wasm resolution failure |
+| PREVIEW_IMPORT sent | Not reached | Worker not ready due to wasm resolution failure |
 | IMPORT_PREVIEW received | Not reached | Same blocker |
 | IMPORT_SCHEDULE sent | Not reached | Same blocker |
 | NACK/DIFF_STATE after import commit | Not reached | Same blocker |
@@ -123,7 +123,7 @@ None used in this investigation PR.
 - `node -v` -> `v24.14.1`
 - `corepack pnpm -v` -> `11.1.2`
 - `corepack pnpm -C apps/web dev --host 127.0.0.1 --port 4173`
-- `curl http://127.0.0.1:417x/@fs/.../packages/worker/src/wasm/loadCpmWasm.ts`
+- `curl http://127.0.0.1:4173/@fs/.../packages/worker/src/wasm/loadCpmWasm.ts`
 - Dev server logs showing `Failed to resolve entry for package "cpm-wasm"`
 - `packages/cpm-wasm/package.json` points to `./pkg/cpm_wasm.js`; local `packages/cpm-wasm/pkg` missing
 
