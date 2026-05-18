@@ -16,3 +16,18 @@ export function deriveWorkspaceShellView(input: WorkspaceShellViewInput): Worksp
 
   return 'empty';
 }
+
+export type ImportStatus = 'idle' | 'preview-ready' | 'warnings' | 'failed';
+
+export interface ImportStatusInput {
+  hasPreview: boolean;
+  errorCount: number;
+  warningCount: number;
+}
+
+export function deriveImportStatus(input: ImportStatusInput): ImportStatus {
+  if (!input.hasPreview) return 'idle';
+  if (input.errorCount > 0) return 'failed';
+  if (input.warningCount > 0) return 'warnings';
+  return 'preview-ready';
+}

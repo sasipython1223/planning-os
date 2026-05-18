@@ -17,9 +17,9 @@ interface ImportPreviewPanelProps {
 }
 
 const SEVERITY_COLORS: Record<string, string> = {
-  error: "#d32f2f",
-  warning: "#ed6c02",
-  info: "#0288d1",
+  error: "#c62828",
+  warning: "#e65100",
+  info: "#01579b",
 };
 
 const SEVERITY_LABELS: Record<string, string> = {
@@ -28,118 +28,127 @@ const SEVERITY_LABELS: Record<string, string> = {
   info: "Info",
 };
 
+const FORMAT_LABELS: Record<string, string> = {
+  "xer": "Primavera P6 XER",
+  "msp-xml": "MS Project XML",
+};
+
 export function ImportPreviewPanel({ data, onImport, onCancel }: ImportPreviewPanelProps) {
   const { projectName, projectStartDate, format, summary, diagnostics, diagnosticsSummary, canCommit } = data;
 
+  const hasIssues = diagnosticsSummary.errors > 0 || diagnosticsSummary.warnings > 0 || diagnosticsSummary.infos > 0;
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16, padding: 24, maxWidth: 560, width: "100%" }}>
-      <h2 style={{ margin: 0, fontSize: 18 }}>Import Preview</h2>
-
-      {/* Project info */}
-      <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "4px 12px", fontSize: 13 }}>
-        <span style={{ fontWeight: 600 }}>Project:</span>
-        <span>{projectName}</span>
-        <span style={{ fontWeight: 600 }}>Start Date:</span>
-        <span>{projectStartDate}</span>
-        <span style={{ fontWeight: 600 }}>Format:</span>
-        <span>{format.toUpperCase()}</span>
+    <div className="r4-import-preview-panel">
+      {/* Header */}
+      <div className="r4-import-preview-header">
+        <h2 className="r4-import-preview-title">Import Preview</h2>
+        <span className="r4-import-format-badge">{FORMAT_LABELS[format] ?? format.toUpperCase()}</span>
       </div>
 
-      {/* Entity counts */}
-      <div style={{ display: "flex", gap: 16, fontSize: 13, flexWrap: "wrap" }}>
-        <span><strong>{summary.taskCount}</strong> Tasks</span>
-        <span><strong>{summary.dependencyCount}</strong> Dependencies</span>
-        <span><strong>{summary.resourceCount}</strong> Resources</span>
-        <span><strong>{summary.assignmentCount}</strong> Assignments</span>
-      </div>
-      {summary.calendarInfo && (
-        <div style={{ fontSize: 12, color: "#666" }}>Calendar: {summary.calendarInfo}</div>
-      )}
-
-      {/* Diagnostics summary */}
-      {(diagnosticsSummary.errors > 0 || diagnosticsSummary.warnings > 0 || diagnosticsSummary.infos > 0) && (
-        <div style={{ display: "flex", gap: 12, fontSize: 13 }}>
-          {diagnosticsSummary.errors > 0 && (
-            <span style={{ color: SEVERITY_COLORS.error, fontWeight: 600 }}>
-              {diagnosticsSummary.errors} error{diagnosticsSummary.errors !== 1 ? "s" : ""}
-            </span>
-          )}
-          {diagnosticsSummary.warnings > 0 && (
-            <span style={{ color: SEVERITY_COLORS.warning, fontWeight: 600 }}>
-              {diagnosticsSummary.warnings} warning{diagnosticsSummary.warnings !== 1 ? "s" : ""}
-            </span>
-          )}
-          {diagnosticsSummary.infos > 0 && (
-            <span style={{ color: SEVERITY_COLORS.info, fontWeight: 600 }}>
-              {diagnosticsSummary.infos} info{diagnosticsSummary.infos !== 1 ? "s" : ""}
-            </span>
-          )}
+      {/* Programme details */}
+      <section className="r4-import-preview-section">
+        <h3 className="r4-import-preview-section-title">Programme Details</h3>
+        <div className="r4-import-detail-grid">
+          <span className="r4-detail-label">Project Name</span>
+          <span className="r4-detail-value">{projectName}</span>
+          <span className="r4-detail-label">Start Date</span>
+          <span className="r4-detail-value">{projectStartDate}</span>
+          <span className="r4-detail-label">Source Format</span>
+          <span className="r4-detail-value">{FORMAT_LABELS[format] ?? format.toUpperCase()}</span>
         </div>
-      )}
+      </section>
 
-      {/* Diagnostic list */}
-      {diagnostics.length > 0 && (
-        <div style={{ maxHeight: 200, overflowY: "auto", border: "1px solid #ddd", borderRadius: 4, fontSize: 12 }}>
-          {diagnostics.map((d, i) => (
-            <div
-              key={`${d.code}-${d.sourceEntityId ?? ""}-${i}`}
-              style={{
-                padding: "4px 8px",
-                borderBottom: i < diagnostics.length - 1 ? "1px solid #eee" : undefined,
-                display: "flex",
-                gap: 8,
-                alignItems: "baseline",
-              }}
-            >
-              <span style={{ color: SEVERITY_COLORS[d.severity], fontWeight: 600, flexShrink: 0 }}>
-                {SEVERITY_LABELS[d.severity]}
+      {/* Schedule summary */}
+      <section className="r4-import-preview-section">
+        <h3 className="r4-import-preview-section-title">Schedule Summary</h3>
+        <div className="r4-import-counts">
+          <div className="r4-count-item">
+            <span className="r4-count-value">{summary.taskCount}</span>
+            <span className="r4-count-label">Activities</span>
+          </div>
+          <div className="r4-count-item">
+            <span className="r4-count-value">{summary.dependencyCount}</span>
+            <span className="r4-count-label">Relationships</span>
+          </div>
+          <div className="r4-count-item">
+            <span className="r4-count-value">{summary.resourceCount}</span>
+            <span className="r4-count-label">Resources</span>
+          </div>
+          <div className="r4-count-item">
+            <span className="r4-count-value">{summary.assignmentCount}</span>
+            <span className="r4-count-label">Assignments</span>
+          </div>
+        </div>
+        {summary.calendarInfo && (
+          <div className="r4-calendar-info">Calendar: {summary.calendarInfo}</div>
+        )}
+      </section>
+
+      {/* Diagnostics */}
+      {(hasIssues || diagnostics.length > 0) && (
+        <section className="r4-import-preview-section">
+          <h3 className="r4-import-preview-section-title">Import Diagnostics</h3>
+          <div className="r4-diagnostics-summary">
+            {diagnosticsSummary.errors > 0 && (
+              <span className="r4-diag-badge r4-diag-badge--error">
+                {diagnosticsSummary.errors} error{diagnosticsSummary.errors !== 1 ? 's' : ''}
               </span>
-              <span style={{ fontFamily: "monospace", color: "#888", flexShrink: 0 }}>{d.code}</span>
-              <span>{d.message}</span>
+            )}
+            {diagnosticsSummary.warnings > 0 && (
+              <span className="r4-diag-badge r4-diag-badge--warning">
+                {diagnosticsSummary.warnings} warning{diagnosticsSummary.warnings !== 1 ? 's' : ''}
+              </span>
+            )}
+            {diagnosticsSummary.infos > 0 && (
+              <span className="r4-diag-badge r4-diag-badge--info">
+                {diagnosticsSummary.infos} info{diagnosticsSummary.infos !== 1 ? 's' : ''}
+              </span>
+            )}
+          </div>
+          {diagnostics.length > 0 && (
+            <div className="r4-diagnostics-list">
+              {diagnostics.map((d, i) => (
+                <div
+                  key={`${d.code}-${d.sourceEntityId ?? ""}-${i}`}
+                  className="r4-diagnostic-item"
+                >
+                  <span className="r4-diag-severity" style={{ color: SEVERITY_COLORS[d.severity] }}>
+                    {SEVERITY_LABELS[d.severity]}
+                  </span>
+                  <span className="r4-diag-code">{d.code}</span>
+                  <span className="r4-diag-message">{d.message}</span>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          )}
+        </section>
       )}
 
-      {/* Cannot commit warning */}
+      {/* Blocked notice */}
       {!canCommit && (
-        <div style={{ color: SEVERITY_COLORS.error, fontSize: 13, fontWeight: 600 }}>
-          Import blocked — resolve errors before importing.
+        <div className="r4-import-blocked-notice">
+          ⚠ Import blocked — resolve errors before loading to workspace.
         </div>
       )}
 
-      {/* Buttons */}
-      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+      {/* Actions */}
+      <div className="r4-import-actions">
         <button
+          type="button"
+          className="r4-btn r4-btn--cancel"
           onClick={onCancel}
-          style={{
-            height: 32,
-            padding: "0 16px",
-            fontSize: 13,
-            cursor: "pointer",
-            border: "1px solid #ccc",
-            borderRadius: 4,
-            background: "#fff",
-          }}
         >
-          Cancel
+          ✕ Cancel Import
         </button>
         <button
+          type="button"
+          className="r4-btn r4-btn--load"
           onClick={onImport}
           disabled={!canCommit}
-          style={{
-            height: 32,
-            padding: "0 16px",
-            fontSize: 13,
-            cursor: canCommit ? "pointer" : "not-allowed",
-            border: "none",
-            borderRadius: 4,
-            background: canCommit ? "#1976d2" : "#bbb",
-            color: "#fff",
-            fontWeight: 600,
-          }}
+          title={canCommit ? 'Load this programme into the workspace' : 'Resolve import errors before loading'}
         >
-          Import
+          ✓ Load to Workspace
         </button>
       </div>
     </div>

@@ -11,7 +11,7 @@ import { AppShell } from "./ui/shell/AppShell";
 import { CommandToolbar } from "./ui/shell/CommandToolbar";
 import { MenuBar } from "./ui/shell/MenuBar";
 import { ProjectStatusStrip } from "./ui/shell/ProjectStatusStrip";
-import { deriveWorkspaceShellView } from "./ui/state/uiViewState";
+import { deriveWorkspaceShellView, deriveImportStatus, type ImportStatus } from "./ui/state/uiViewState";
 import { MainWorkspace } from "./ui/components/shell/MainWorkspace";
 import { WorkspaceContainer } from "./ui/components/shell/WorkspaceContainer";
 import { WorkspaceSplitter } from "./ui/components/WorkspaceSplitter";
@@ -487,8 +487,21 @@ export default function App() {
   };
 
   const warningCount = importPreview?.diagnosticsSummary.warnings ?? 0;
+  const errorCount = importPreview?.diagnosticsSummary.errors ?? 0;
   const fileName = importPreview ? `Preview (${importPreview.format.toUpperCase()})` : "—";
   const projectName = importPreview?.projectName ?? "Untitled";
+  const importFormatLabel = importPreview
+    ? importPreview.format === "xer" ? "XER" : "MSP-XML"
+    : undefined;
+  // importCanCommit mirrors the Worker-authoritative canCommit field from the IMPORT_PREVIEW message.
+  // It gates the Load to Workspace action in CommandToolbar without duplicating commit rules in React.
+  const importCanCommit = importPreview?.canCommit ?? false;
+
+  const importStatus: ImportStatus = deriveImportStatus({
+    hasPreview: importPreview !== null,
+    errorCount,
+    warningCount,
+  });
 
   return (
     <WorkspaceContainer>
@@ -499,6 +512,7 @@ export default function App() {
             <CommandToolbar
               onImport={() => fileInputRef.current?.click()}
               onLoadToWorkspace={handleImportCommit}
+              onCancelPreview={handleImportCancel}
               onToggleInspector={() => setInspectorOpen((prev) => !prev)}
               onToggleDiagnostics={() => toggleBottomDrawer()}
               onConstraintFilterChange={setConstraintFilter}
@@ -508,6 +522,11 @@ export default function App() {
               diagnosticsOpen={isBottomOpen}
               constraintFilter={constraintFilter}
               workerReady={workerReady}
+              importStatus={importStatus}
+              importFormat={importFormatLabel}
+              importErrorCount={errorCount}
+              importWarningCount={warningCount}
+              importCanCommit={importCanCommit}
             />
           }
           statusStrip={
@@ -521,6 +540,8 @@ export default function App() {
               constraintFilter={constraintFilter}
               viewState={workspaceShellView}
               workerReady={workerReady}
+              importFormat={importFormatLabel}
+              importErrorCount={errorCount}
             />
           }
         >
