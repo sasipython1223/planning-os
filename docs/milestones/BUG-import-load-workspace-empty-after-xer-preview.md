@@ -4,6 +4,8 @@
 
 This investigation was run as evidence-first (no product code changes). In the current local QA environment, the import flow cannot reach `PREVIEW_IMPORT -> IMPORT_SCHEDULE` because Worker startup fails before `WORKER_READY` due to unresolved `cpm-wasm` package entry.
 
+This is a **partial investigation finding for the Copilot sandbox environment only**. It does **not** yet prove the root cause of the user-reported localhost symptom (preview visible, then Load to Workspace does not populate TaskTable/Gantt).
+
 ## 1) Reproduction steps
 
 1. Open repo at `/home/runner/work/planning-os/planning-os`.
@@ -82,12 +84,19 @@ Not observed for import path in this environment (startup blocker before import 
 
 ## 13) Root cause classification
 
-Primary classification in this local QA run:
+### Root cause classification for Copilot investigation environment
 
-- **Environment/setup issue**
+- **Environment/setup blocker**
 - **WASM unavailable / WASM not initialized**
 
 The currently observed failure point is earlier than the reported issue path: Worker cannot initialize due to unresolved `cpm-wasm` entry.
+
+### Root cause classification for the user-reported localhost issue
+
+- **Not yet proven**
+- Requires evidence from an environment where import preview succeeds and `Load to Workspace` can be clicked.
+
+The user-reported path (preview success followed by empty TaskTable/Gantt after commit) was **not** reproduced in this run because this environment failed earlier at Worker startup.
 
 ## 14) Recommended fix scope
 
@@ -102,6 +111,19 @@ The currently observed failure point is earlier than the reported issue path: Wo
    - scheduling rollback path
 
 No Worker/protocol/parser/product behavior change is recommended at this stage of this investigation note.
+
+## Next Evidence Required From User Localhost
+
+Collect evidence from a Worker-ready localhost environment where preview is visible and `Load to Workspace` is clicked:
+
+1. Browser console logs immediately after clicking `Load to Workspace`.
+2. Whether `IMPORT_SCHEDULE` is sent.
+3. Whether `NACK` or `DIFF_STATE` is received after `IMPORT_SCHEDULE`.
+4. If `DIFF_STATE` is received, `DIFF_STATE.payload.tasks.length`.
+5. Whether React `tasks.length` updates after commit.
+6. Whether status strip/activity count changes after commit.
+
+Issue #41 should remain open until those checkpoints are captured and the preview->commit failure point is proven in that environment.
 
 ## 15) Message-path checkpoint summary (`PREVIEW_IMPORT -> ... -> TaskTable/Gantt`)
 
