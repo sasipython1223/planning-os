@@ -17,15 +17,20 @@
 /**
  * Minimal task input for scheduling calculation.
  *
- * Time fields use working-day integers as the canonical unit.
- * `durationWorkMinutes` carries the task duration; despite the name,
- * values are currently in working-day integers (e.g. 5 = 5 working days).
- * A full unit migration to actual work-minutes (× MINUTES_PER_DAY) is
- * tracked as a follow-up task.
+ * ⚠️ WASM CONTRACT NOTE: The field `durationWorkMinutes` is named to match
+ * the WASM binary contract. Currently values are in working-day integers
+ * (e.g. 5 = 5 working days), NOT actual minutes. A full unit migration
+ * (× MINUTES_PER_DAY = 480) is tracked as a follow-up task; that migration
+ * will also need to update `applyScheduleResult.ts` to divide results back
+ * to day units and wire in `ProjectionAdapter` for correct float display.
  */
 export type ScheduleTask = {
   readonly id: string;
-  /** Task duration in working-day integers (field name matches WASM binary contract). */
+  /**
+   * Task duration sent to the WASM kernel.
+   * Field name matches WASM binary contract (`durationWorkMinutes`).
+   * Current unit: working-day integers. Full minutes migration is a follow-up.
+   */
   readonly durationWorkMinutes: number;
   readonly minEarlyStart: number;
   readonly parentId?: string;
