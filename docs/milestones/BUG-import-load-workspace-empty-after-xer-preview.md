@@ -93,7 +93,7 @@ The currently observed failure point is earlier than the reported issue path: Wo
 
 ### Root cause classification for the user-reported localhost issue
 
-- **Not yet proven**
+- **Not yet proven.**
 - Requires evidence from an environment where import preview succeeds and `Load to Workspace` can be clicked.
 
 The user-reported path (preview success followed by empty TaskTable/Gantt after commit) was **not** reproduced in this run because this environment failed earlier at Worker startup.
