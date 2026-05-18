@@ -53,10 +53,10 @@ export function applyImportCandidateToState(
   const preImportStartDate = State.getProjectStartDate();
 
   State.restoreSnapshot({
-    tasks: [...candidate.mappedTasks!],
-    dependencies: [...candidate.mappedDependencies!],
-    resources: [...candidate.mappedResources!],
-    assignments: [...candidate.mappedAssignments!],
+    tasks: [...(candidate.mappedTasks ?? [])],
+    dependencies: [...(candidate.mappedDependencies ?? [])],
+    resources: [...(candidate.mappedResources ?? [])],
+    assignments: [...(candidate.mappedAssignments ?? [])],
   });
   State.setBaselineMap({}); // Imported project starts with no baseline
 
