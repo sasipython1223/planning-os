@@ -8,6 +8,11 @@ import { auditLog, createEnvelope } from "./commandEnvelope.js";
 import { computeConstraintDiagnostics, mergeResultDiagnostics } from "./constraintDiagnostics.js";
 import * as UndoHistory from "./history.js";
 import { clearPendingCandidate, getPendingCandidate } from "./import/importCandidate.js";
+import {
+    applyImportCandidateToState,
+    buildImportRollbackError,
+    rollbackImportCandidateState,
+} from "./import/applyImportCandidate.js";
 import { runImportPreview } from "./import/previewOrchestrator.js";
 import type { PersistedState } from "./persistence.js";
 import { loadPersistedState, migratePersistedState, savePersistedState } from "./persistence.js";
@@ -39,8 +44,12 @@ const emit = (message: WorkerMessage): void => {
 /**
  * Run scheduling and emit state with results.
  * Returns true if scheduling succeeded, false if it failed.
+ * On failure, the concrete ScheduleError is available via lastScheduleError.
  */
 const CALENDAR_HORIZON = 3650; // ~10 years
+
+/** Captures the most recent schedule error for diagnostics (set by runSchedulingAndEmitState). */
+let lastScheduleError: ScheduleError | null = null;
 
 const runSchedulingAndEmitState = (): boolean => {
   // Recompute hierarchy metadata before scheduling
@@ -73,6 +82,9 @@ const runSchedulingAndEmitState = (): boolean => {
   if ("type" in result && typeof result.type === "string") {
     const scheduleError = result as ScheduleError;
 
+    // Capture for callers (e.g. IMPORT_SCHEDULE NACK)
+    lastScheduleError = scheduleError;
+
     // Emit error message
     emit({
       type: "SCHEDULE_ERROR",
@@ -101,6 +113,9 @@ const runSchedulingAndEmitState = (): boolean => {
       canRedo: UndoHistory.canRedo(),
     };
     console.log("[AUDIT Worker Emit] schedule-error path", {
+      errorType: scheduleError.type,
+      errorMessage: scheduleError.message,
+      taskId: "taskId" in scheduleError ? scheduleError.taskId : undefined,
       taskCount: emptyPayload.tasks.length,
       depCount: emptyPayload.dependencies.length,
     });
@@ -108,6 +123,8 @@ const runSchedulingAndEmitState = (): boolean => {
 
     return false;
   } else {
+    // Success — clear last error
+    lastScheduleError = null;
     // Success - apply schedule result and emit state
     const scheduleResults = applyScheduleResult(result);
 
@@ -618,33 +635,23 @@ const handleCommand = (cmd: Command, envelope?: CommandEnvelope): DispatchOutcom
       return "nack";
     }
 
-    // Capture pre-import snapshot for undo (full state strategy per spec §5.1)
-    const preImportSnapshot = State.createSnapshot();
-    const preImportBaselines = { ...State.getBaselineMap() };
-
-    // Replace canonical state atomically (replace-only, spec §5.2)
-    State.restoreSnapshot({
-      tasks: [...candidate.mappedTasks],
-      dependencies: [...candidate.mappedDependencies],
-      resources: [...candidate.mappedResources],
-      assignments: [...candidate.mappedAssignments],
-    });
-    State.setBaselineMap({}); // Imported project starts with no baseline
+    // Capture pre-import snapshot for undo and apply candidate to canonical state
+    const capture = applyImportCandidateToState(candidate);
 
     // Run scheduling — rollback on failure (spec §5.3)
     const success = runSchedulingAndEmitState();
     if (!success) {
-      // Roll back to pre-import state
-      State.restoreSnapshot(preImportSnapshot);
-      State.setBaselineMap(preImportBaselines);
+      // Capture error reason before rolling back (lastScheduleError is module-level)
+      const importScheduleError = lastScheduleError;
+      rollbackImportCandidateState(capture);
       runSchedulingAndEmitState();
-      emit({ type: "NACK", v: 1, reqId: cmd.reqId, error: "Scheduling failed after import — rolled back" });
+      emit({ type: "NACK", v: 1, reqId: cmd.reqId, error: buildImportRollbackError(importScheduleError) });
       return "error";
     }
 
     // Success — push undo entry (one entry for entire import)
     const undoEntry: UndoHistory.HistoryEntry = {
-      undo: [{ type: "RESTORE_FULL_STATE", snapshot: preImportSnapshot, baselines: preImportBaselines } as unknown as Command],
+      undo: [{ type: "RESTORE_FULL_STATE", snapshot: capture.preImportSnapshot, baselines: capture.preImportBaselines } as unknown as Command],
       redo: [{ type: "RESTORE_FULL_STATE", snapshot: State.createSnapshot(), baselines: {} } as unknown as Command],
     };
     UndoHistory.pushEntry(undoEntry);

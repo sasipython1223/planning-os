@@ -5,9 +5,10 @@ use wasm_bindgen_test::*;
 
 // Test helper structs matching the boundary contract
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct TestTask {
     id: String,
-    duration: u32,
+    duration_work_minutes: u32,
 }
 
 #[derive(Serialize)]
@@ -31,15 +32,15 @@ fn test_simple_chain() {
         tasks: vec![
             TestTask {
                 id: "A".to_string(),
-                duration: 3,
+                duration_work_minutes: 3,
             },
             TestTask {
                 id: "B".to_string(),
-                duration: 5,
+                duration_work_minutes: 5,
             },
             TestTask {
                 id: "C".to_string(),
-                duration: 2,
+                duration_work_minutes: 2,
             },
         ],
         dependencies: vec![
@@ -98,15 +99,15 @@ fn test_cycle_detected() {
         tasks: vec![
             TestTask {
                 id: "A".to_string(),
-                duration: 1,
+                duration_work_minutes: 1,
             },
             TestTask {
                 id: "B".to_string(),
-                duration: 1,
+                duration_work_minutes: 1,
             },
             TestTask {
                 id: "C".to_string(),
-                duration: 1,
+                duration_work_minutes: 1,
             },
         ],
         dependencies: vec![
@@ -141,15 +142,15 @@ fn test_duplicate_task_id() {
         tasks: vec![
             TestTask {
                 id: "A".to_string(),
-                duration: 3,
+                duration_work_minutes: 3,
             },
             TestTask {
                 id: "B".to_string(),
-                duration: 5,
+                duration_work_minutes: 5,
             },
             TestTask {
                 id: "A".to_string(),
-                duration: 2,
+                duration_work_minutes: 2,
             },
         ],
         dependencies: vec![],
@@ -172,11 +173,11 @@ fn test_self_dependency() {
         tasks: vec![
             TestTask {
                 id: "A".to_string(),
-                duration: 3,
+                duration_work_minutes: 3,
             },
             TestTask {
                 id: "B".to_string(),
-                duration: 5,
+                duration_work_minutes: 5,
             },
         ],
         dependencies: vec![TestDependency {
@@ -204,7 +205,7 @@ fn test_task_not_found() {
     let request = TestRequest {
         tasks: vec![TestTask {
             id: "A".to_string(),
-            duration: 3,
+            duration_work_minutes: 3,
         }],
         dependencies: vec![TestDependency {
             pred_id: "A".to_string(),
@@ -231,15 +232,15 @@ fn test_parallel_paths_with_float() {
         tasks: vec![
             TestTask {
                 id: "A".to_string(),
-                duration: 3,
+                duration_work_minutes: 3,
             },
             TestTask {
                 id: "B".to_string(),
-                duration: 7,
+                duration_work_minutes: 7,
             },
             TestTask {
                 id: "C".to_string(),
-                duration: 2,
+                duration_work_minutes: 2,
             },
         ],
         dependencies: vec![TestDependency {

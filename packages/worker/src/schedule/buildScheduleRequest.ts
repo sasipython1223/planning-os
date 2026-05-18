@@ -14,7 +14,7 @@ export const buildScheduleRequest = (
 ): ScheduleRequest => {
   const scheduleTasks: ScheduleTask[] = tasks.map(task => ({
     id: task.id,
-    duration: task.duration,
+    durationWorkMinutes: task.duration,
     minEarlyStart: task.minEarlyStart ?? 0,
     parentId: task.parentId,
     isSummary: task.isSummary,

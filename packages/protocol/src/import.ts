@@ -49,6 +49,8 @@ export type ImportDiagnosticCode =
   | "DURATION_FRACTIONAL_ROUNDED"
   | "LAG_FRACTIONAL_ROUNDED"
   | "DEPENDENCY_TYPE_UNKNOWN"
+  | "DEPENDENCY_SELF_REFERENCE"
+  | "DEPENDENCY_DUPLICATE"
   | "CALENDAR_SIMPLIFIED"
   | "MULTI_PROJECT_XER"
   // ── Unsupported feature notices ───────────────────────────────────

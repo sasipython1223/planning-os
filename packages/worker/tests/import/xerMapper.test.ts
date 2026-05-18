@@ -303,6 +303,87 @@ describe("XER Mapper (W.3)", () => {
       const diag = result.diagnostics.find(d => d.message.includes("unknown task"));
       expect(diag).toBeDefined();
     });
+
+    it("should filter self-referencing dependency and emit DEPENDENCY_SELF_REFERENCE diagnostic", () => {
+      // pred_task_id === task_id → same canonical ID → kernel would reject as SelfDependency
+      const result = mapXerToCanonical(buildData({
+        tasks: [
+          { task_id: "T1", proj_id: "P1", wbs_id: "", task_name: "A", task_type: "TT_TASK", target_drtn_hr_cnt: "8", cstr_type: "", cstr_date: "" },
+          { task_id: "T2", proj_id: "P1", wbs_id: "", task_name: "B", task_type: "TT_TASK", target_drtn_hr_cnt: "8", cstr_type: "", cstr_date: "" },
+        ],
+        taskPreds: [
+          { task_pred_id: "TP_SELF", task_id: "T1", pred_task_id: "T1", pred_type: "PR_FS", lag_hr_cnt: "0" },
+          { task_pred_id: "TP_OK", task_id: "T2", pred_task_id: "T1", pred_type: "PR_FS", lag_hr_cnt: "0" },
+        ],
+      }));
+      // Self-dep skipped; valid dep included
+      expect(result.dependencies).toHaveLength(1);
+      expect(result.dependencies[0].predId).not.toBe(result.dependencies[0].succId);
+      const diag = result.diagnostics.find(d => d.code === "DEPENDENCY_SELF_REFERENCE");
+      expect(diag).toBeDefined();
+      expect(diag!.severity).toBe("warning");
+      expect(diag!.sourceEntityId).toBe("TP_SELF");
+    });
+
+    it("should filter exact duplicate dependency (same pred, succ, type, lag) and emit DEPENDENCY_DUPLICATE", () => {
+      // Exactly identical records (same pred, succ, type, and lag) → only first kept
+      const result = mapXerToCanonical(buildData({
+        tasks: [
+          { task_id: "T1", proj_id: "P1", wbs_id: "", task_name: "A", task_type: "TT_TASK", target_drtn_hr_cnt: "8", cstr_type: "", cstr_date: "" },
+          { task_id: "T2", proj_id: "P1", wbs_id: "", task_name: "B", task_type: "TT_TASK", target_drtn_hr_cnt: "8", cstr_type: "", cstr_date: "" },
+        ],
+        taskPreds: [
+          { task_pred_id: "TP1", task_id: "T2", pred_task_id: "T1", pred_type: "PR_FS", lag_hr_cnt: "0" },
+          { task_pred_id: "TP2", task_id: "T2", pred_task_id: "T1", pred_type: "PR_FS", lag_hr_cnt: "0" },
+        ],
+      }));
+      // Only the first occurrence is kept
+      expect(result.dependencies).toHaveLength(1);
+      const diag = result.diagnostics.find(d => d.code === "DEPENDENCY_DUPLICATE");
+      expect(diag).toBeDefined();
+      expect(diag!.severity).toBe("warning");
+      expect(diag!.sourceEntityId).toBe("TP2");
+    });
+
+    it("should preserve parallel relationships between same pair when type differs (not an exact duplicate)", () => {
+      // T1→T2 FS and T1→T2 SS are different relationships — both are legitimate scheduling constraints
+      const result = mapXerToCanonical(buildData({
+        tasks: [
+          { task_id: "T1", proj_id: "P1", wbs_id: "", task_name: "A", task_type: "TT_TASK", target_drtn_hr_cnt: "8", cstr_type: "", cstr_date: "" },
+          { task_id: "T2", proj_id: "P1", wbs_id: "", task_name: "B", task_type: "TT_TASK", target_drtn_hr_cnt: "8", cstr_type: "", cstr_date: "" },
+        ],
+        taskPreds: [
+          { task_pred_id: "TP_FS", task_id: "T2", pred_task_id: "T1", pred_type: "PR_FS", lag_hr_cnt: "0" },
+          { task_pred_id: "TP_SS", task_id: "T2", pred_task_id: "T1", pred_type: "PR_SS", lag_hr_cnt: "0" },
+        ],
+      }));
+      // Both deps preserved — different type means not an exact duplicate
+      expect(result.dependencies).toHaveLength(2);
+      expect(result.dependencies.map(d => d.type).sort()).toEqual(["FS", "SS"]);
+      // No DEPENDENCY_DUPLICATE emitted
+      expect(result.diagnostics.find(d => d.code === "DEPENDENCY_DUPLICATE")).toBeUndefined();
+    });
+
+    it("should filter exact duplicate even between parallel deps (same type and lag, second of two)", () => {
+      // Three records: FS+0 (kept), SS+0 (kept — parallel), FS+0 again (exact dup — filtered)
+      const result = mapXerToCanonical(buildData({
+        tasks: [
+          { task_id: "T1", proj_id: "P1", wbs_id: "", task_name: "A", task_type: "TT_TASK", target_drtn_hr_cnt: "8", cstr_type: "", cstr_date: "" },
+          { task_id: "T2", proj_id: "P1", wbs_id: "", task_name: "B", task_type: "TT_TASK", target_drtn_hr_cnt: "8", cstr_type: "", cstr_date: "" },
+        ],
+        taskPreds: [
+          { task_pred_id: "TP_FS1", task_id: "T2", pred_task_id: "T1", pred_type: "PR_FS", lag_hr_cnt: "0" },
+          { task_pred_id: "TP_SS",  task_id: "T2", pred_task_id: "T1", pred_type: "PR_SS", lag_hr_cnt: "0" },
+          { task_pred_id: "TP_FS2", task_id: "T2", pred_task_id: "T1", pred_type: "PR_FS", lag_hr_cnt: "0" },
+        ],
+      }));
+      // FS+0 and SS+0 preserved; second FS+0 filtered as exact duplicate
+      expect(result.dependencies).toHaveLength(2);
+      expect(result.dependencies.map(d => d.type).sort()).toEqual(["FS", "SS"]);
+      const diag = result.diagnostics.find(d => d.code === "DEPENDENCY_DUPLICATE");
+      expect(diag).toBeDefined();
+      expect(diag!.sourceEntityId).toBe("TP_FS2");
+    });
   });
 
   describe("resource mapping", () => {

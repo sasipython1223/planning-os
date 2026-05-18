@@ -27,6 +27,7 @@ export type StateSnapshot = {
 export const getTasks = (): Task[] => tasks;
 export const getDependencies = (): Dependency[] => dependencies;
 export const getProjectStartDate = (): string => projectStartDate;
+export const setProjectStartDate = (date: string): void => { projectStartDate = date; };
 export const getExcludeWeekends = (): boolean => excludeWeekends;
 export const getBaselineMap = (): BaselineMap => baselineMap;
 export const setBaselineMap = (map: BaselineMap): void => { baselineMap = map; };
