@@ -9,6 +9,8 @@ This note includes two evidence sources:
 1. Copilot sandbox environment evidence (startup blocked by missing wasm package artifact).
 2. User localhost evidence (Worker-ready preview succeeds, then import commit fails after `Load to Workspace`).
 
+Both are documented together to separate an environment-specific sandbox blocker from the actual user-reported localhost failure path.
+
 ## 1) Reproduction steps
 
 1. Open repo at `/home/runner/work/planning-os/planning-os`.
@@ -153,7 +155,7 @@ None used in this investigation PR.
 - `curl http://127.0.0.1:4173/@fs/.../packages/worker/src/wasm/loadCpmWasm.ts`
 - Dev server logs showing `Failed to resolve entry for package "cpm-wasm"`
 - `packages/cpm-wasm/package.json` points to `./pkg/cpm_wasm.js`; local `packages/cpm-wasm/pkg` missing
-- User localhost evidence provided in PR review (Worker-ready preview success + `IMPORT_SCHEDULE error` + schedule-error fallback to persisted state)
+- User localhost evidence provided in PR review from browser runtime observations (console/message-path checkpoints): Worker-ready preview success + `IMPORT_SCHEDULE error` + schedule-error fallback to persisted state
 
 ## 18) Implementation gating recommendation
 
