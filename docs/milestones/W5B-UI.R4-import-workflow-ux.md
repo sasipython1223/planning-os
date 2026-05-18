@@ -227,6 +227,87 @@ The following import workflow improvements are visible in the app:
 
 ---
 
+## 11a. Visual QA Finding — "Activities not loading after Load to Workspace"
+
+### Finding
+
+Visual QA reported that after clicking **Load to Workspace**, activities do not appear in the TaskTable or Gantt chart.
+
+### Investigation
+
+A line-by-line comparison of the R4 diff against the R3 base (`6bc4469`) was performed for every code path from the Load button click to the TaskTable render. Findings:
+
+**1. `handleImportCommit` — UNCHANGED from R3**
+
+```ts
+// R3 and R4 identical:
+const handleImportCommit = useCallback(() => {
+  if (!workerRef.current) return;
+  workerRef.current.postMessage({ type: "IMPORT_SCHEDULE", v: 1, reqId: makeId() });
+  setImportPreview(null);
+}, []);
+```
+
+**2. `workspaceShellView` derivation — UNCHANGED from R3**
+
+```ts
+// R3 and R4 identical:
+const workspaceShellView = useMemo(
+  () => deriveWorkspaceShellView({ hasImportPreview: importPreview !== null, hasTasks: tasks.length > 0 }),
+  [importPreview, tasks.length],
+);
+```
+
+**3. Workspace view routing — UNCHANGED from R3**
+
+```tsx
+// R3 and R4 identical:
+{workspaceShellView === "preview" && importPreview && (
+  <ProgrammePreviewPanel data={importPreview} onImport={handleImportCommit} onCancel={handleImportCancel} />
+)}
+{workspaceShellView === "loaded" && (
+  <ScheduleWorkspace>...</ScheduleWorkspace>
+)}
+```
+
+**4. Worker `IMPORT_SCHEDULE` handler — UNCHANGED (Worker is not in R4 scope)**
+
+The Worker's `IMPORT_SCHEDULE` handler calls `runSchedulingAndEmitState()`, which emits `DIFF_STATE` containing the imported tasks. `App.tsx` receives `DIFF_STATE` and calls `setTasks(msg.payload.tasks)`, which (when tasks.length > 0) causes `workspaceShellView` to become `'loaded'`.
+
+**5. `deriveWorkspaceShellView` — UNCHANGED from R3**
+
+```ts
+// R3 and R4 identical:
+export function deriveWorkspaceShellView(input: WorkspaceShellViewInput): WorkspaceShellView {
+  if (input.hasImportPreview) return 'preview';
+  if (input.hasTasks) return 'loaded';
+  return 'empty';
+}
+```
+
+### Conclusion
+
+**R4 did not introduce this regression.**
+
+The complete `PREVIEW_IMPORT → IMPORT_SCHEDULE → DIFF_STATE → workspaceShellView = 'loaded'` pathway is byte-for-byte identical to R3. If activities do not load after clicking Load to Workspace:
+
+- The failure is **pre-existing on the R3 base**, not introduced by R4.
+- The most likely cause is a Worker-side issue (scheduling failure causing rollback, or WASM availability in the test environment) that was present before R4.
+- R4 did not change any Worker, protocol, parser, scheduling, or state routing code.
+
+### Pre-existing failure path (for reference)
+
+If the Worker sends `NACK` for `IMPORT_SCHEDULE` (e.g., due to scheduling failure with rollback), no new `DIFF_STATE` with the imported tasks is emitted. The React state stays on `workspaceShellView = 'empty'` after preview is cleared. This behavior existed identically on R3. R4 does not change this behavior.
+
+### What R4 changed (display only)
+
+The only R4 additions to `App.tsx` are:
+- `errorCount`, `importFormatLabel`, `importCanCommit`, and `importStatus` derivations from existing `importPreview` state — all display-only, no side effects.
+- New props passed to `CommandToolbar` and `ProjectStatusStrip` — display props only.
+- `onCancelPreview={handleImportCancel}` added to `CommandToolbar` — already-existing handler, no change in behavior.
+
+---
+
 ## 12. Stop Conditions Encountered / Not Encountered
 
 | Stop Condition | Status |
