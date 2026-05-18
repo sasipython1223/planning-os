@@ -2,15 +2,25 @@ import type { Assignment, BaselineMap, Dependency, DependencyType, DiagnosticsMa
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GanttPane } from "./components/gantt/GanttPane";
 import { HistogramPane } from "./components/HistogramPane";
-import { ImportPreviewPanel, type ImportPreviewData } from "./components/ImportPreviewPanel";
+import type { ImportPreviewData } from "./components/ImportPreviewPanel";
 import { TaskDetailsPanel } from "./components/TaskDetailsPanel";
 import { TaskTable } from "./components/TaskTable";
-import { BottomDrawer } from "./ui/components/drawer/BottomDrawer";
+import { BottomDiagnosticsDrawer } from "./ui/panels/BottomDiagnosticsDrawer";
+import { InspectorPanel } from "./ui/panels/InspectorPanel";
+import { AppShell } from "./ui/shell/AppShell";
+import { CommandToolbar } from "./ui/shell/CommandToolbar";
+import { MenuBar } from "./ui/shell/MenuBar";
+import { ProjectStatusStrip } from "./ui/shell/ProjectStatusStrip";
+import { deriveWorkspaceShellView } from "./ui/state/uiViewState";
 import { MainWorkspace } from "./ui/components/shell/MainWorkspace";
 import { WorkspaceContainer } from "./ui/components/shell/WorkspaceContainer";
 import { WorkspaceSplitter } from "./ui/components/WorkspaceSplitter";
 import { HEADER_METRICS } from "./ui/config/themeConfig";
 import { useDensityMetrics, useUIStore } from "./ui/store/uiStore";
+import { EmptyWorkspace } from "./ui/workspace/EmptyWorkspace";
+import { ProgrammePreviewPanel } from "./ui/workspace/ProgrammePreviewPanel";
+import { ScheduleWorkspace } from "./ui/workspace/ScheduleWorkspace";
+import { WorkspaceLayout } from "./ui/workspace/WorkspaceLayout";
 import { filterByConstraint } from "./utils/filterByConstraint";
 import { getVisibleTasks } from "./utils/getVisibleTasks";
 import { computeTimelineGeometry } from "./utils/timelineGeometry";
@@ -25,8 +35,10 @@ export default function App() {
   const { rowHeight } = useDensityMetrics();
   const isBottomOpen = useUIStore((s) => s.isBottomOpen);
   const activeBottomTab = useUIStore((s) => s.activeBottomTab);
+  const toggleBottomDrawer = useUIStore((s) => s.toggleBottomDrawer);
   const setStatusText = useUIStore((s) => s.setStatusText);
   const constraintFilter = useUIStore((s) => s.constraintFilter);
+  const setConstraintFilter = useUIStore((s) => s.setConstraintFilter);
   const tableWidth = useUIStore((s) => s.tableWidth);
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const mainContentRowRef = useRef<HTMLDivElement>(null);
@@ -58,8 +70,7 @@ export default function App() {
   const [resourceHistogram, setResourceHistogram] = useState<ResourceHistogram>({});
   const [diagnosticsMap, setDiagnosticsMap] = useState<DiagnosticsMap>({});
   const [selectedResourceId, setSelectedResourceId] = useState<string | null>(null);
-  const [ganttScrollLeft, setGanttScrollLeft] = useState(0);
-  const [ganttPaneWidth, setGanttPaneWidth] = useState(0);
+  const [isInspectorOpen, setInspectorOpen] = useState(false);
   const ganttScrollElRef = useRef<HTMLDivElement | null>(null);
   const [importPreview, setImportPreview] = useState<ImportPreviewData | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -398,15 +409,29 @@ export default function App() {
     }
   }, [resources, selectedResourceId]);
 
-  const handleGanttScrollLeftChange = useCallback((sl: number, pw: number) => {
-    setGanttScrollLeft(sl);
-    setGanttPaneWidth(pw);
-  }, []);
-
   const selectedResource = useMemo(
     () => resources.find(r => r.id === selectedResourceId) ?? null,
     [resources, selectedResourceId],
   );
+
+  const workspaceShellView = useMemo(
+    () => deriveWorkspaceShellView({ hasImportPreview: importPreview !== null, hasTasks: tasks.length > 0 }),
+    [importPreview, tasks.length],
+  );
+
+  useEffect(() => {
+    const defaultsKey = "r3-shell-defaults-applied";
+    if (window.sessionStorage.getItem(defaultsKey) === "1") {
+      return;
+    }
+
+    // R3 shell baseline: start with inspector/diagnostics closed and all tasks visible.
+    // This intentionally normalizes first-render view defaults for visual QA.
+    setInspectorOpen(false);
+    toggleBottomDrawer(false);
+    setConstraintFilter("all");
+    window.sessionStorage.setItem(defaultsKey, "1");
+  }, [setInspectorOpen, toggleBottomDrawer, setConstraintFilter]);
 
   const handleSelect = useCallback((sel: Selection) => {
     setSelection(sel);
@@ -461,156 +486,191 @@ export default function App() {
     return tasks.find(t => t.id === id)?.name || id;
   };
 
+  const warningCount = importPreview?.diagnosticsSummary.warnings ?? 0;
+  const fileName = importPreview ? `Preview (${importPreview.format.toUpperCase()})` : "—";
+  const projectName = importPreview?.projectName ?? "Untitled";
+
   return (
     <WorkspaceContainer>
       <MainWorkspace>
-        <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, minWidth: 0, fontFamily: "Arial, sans-serif" }}>
-          {/* Compressed controls header */}
-          <div style={{ padding: '4px 8px', borderBottom: '1px solid #ccc', background: '#f5f5f5', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'nowrap', overflowX: 'auto', overflowY: 'hidden', scrollbarWidth: 'none', flexShrink: 0 }}>
-              <input
-                value={taskName}
-                onChange={(e) => setTaskName(e.target.value)}
-                placeholder="Task name"
-                style={{ height: 28, padding: '0 6px', flex: '0 1 200px', minWidth: 100, boxSizing: 'border-box', fontSize: 12 }}
-              />
-              <select
-                value={selectedParentId}
-                onChange={(e) => setSelectedParentId(e.target.value)}
-                style={{ height: 28, fontSize: 12 }}
-              >
-                <option value="">(no parent)</option>
-                {tasks.map((t) => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
-                ))}
-              </select>
-              <button onClick={handleAdd} disabled={!canAdd} style={{ height: 28, padding: '0 10px', fontSize: 12, whiteSpace: 'nowrap' }}>
-                Add Task
-              </button>
-              <button onClick={handleLinkLastTwo} disabled={tasks.length < 2} style={{ height: 28, padding: '0 10px', fontSize: 12, whiteSpace: 'nowrap' }}>
-                Link Last Two
-              </button>
-              <button
-                onClick={() => workerRef.current?.postMessage({ type: "SNAPSHOT_BASELINE", v: 1, reqId: makeId() })}
-                disabled={!workerReady || Object.keys(scheduleResults).length === 0}
-                style={{ height: 28, padding: '0 10px', fontSize: 12, whiteSpace: 'nowrap' }}
-              >
-                Set Baseline
-              </button>
-              <button
-                onClick={() => workerRef.current?.postMessage({ type: "CLEAR_BASELINE", v: 1, reqId: makeId() })}
-                disabled={!workerReady || Object.keys(baselines).length === 0}
-                style={{ height: 28, padding: '0 10px', fontSize: 12, whiteSpace: 'nowrap' }}
-              >
-                Clear Baseline
-              </button>
-              <button
-                onClick={() => workerRef.current?.postMessage({ type: "UNDO", v: 1, reqId: makeId() })}
-                disabled={!canUndo}
-                style={{ height: 28, padding: '0 10px', fontSize: 12 }}
-              >
-                Undo
-              </button>
-              <button
-                onClick={() => workerRef.current?.postMessage({ type: "REDO", v: 1, reqId: makeId() })}
-                disabled={!canRedo}
-                style={{ height: 28, padding: '0 10px', fontSize: 12 }}
-              >
-                Redo
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xer,.xml"
-                style={{ display: "none" }}
-                onChange={handleImportFileSelect}
-              />
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={!workerReady}
-                style={{ height: 28, padding: '0 10px', fontSize: 12, whiteSpace: 'nowrap' }}
-              >
-                Import…
-              </button>
-              {resources.length > 0 && (
-                <select
-                  value={selectedResourceId ?? ""}
-                  onChange={(e) => setSelectedResourceId(e.target.value || null)}
-                  style={{ height: 28, fontSize: 12 }}
-                >
-                  {resources.map((r) => (
-                    <option key={r.id} value={r.id}>{r.name}</option>
-                  ))}
-                </select>
-              )}
-          </div>
-
-          {/* Main content: table + gantt + shared vertical scroll track */}
-          <div ref={mainContentRowRef} style={{ display: "flex", flex: 1, overflow: "hidden" }} onWheel={handleWheel}>
-            {/* Left upper pane — fixed width from tableWidth, full height */}
-            <div ref={tableContainerRef} style={{ width: tableWidth, flexShrink: 0, display: "flex", flexDirection: "column", height: "100%" }}>
-            <TaskTable
-              tasks={visibleTasks}
-              scheduleResults={scheduleResults}
-              variances={variances}
-              diagnosticsMap={diagnosticsMap}
-              onUpdateTask={handleUpdateTask}
-              scrollTop={scrollTop}
-              viewportHeight={viewportHeight}
-              projectStartDate={projectStartDate}
-              selectedTaskId={selection?.type === "task" ? selection.id : null}
-              onSelectTask={(id) => handleSelect({ type: "task", id })}
-              collapsedIds={collapsedIds}
-              onToggleCollapse={handleToggleCollapse}
-              bodyRef={tableBodyRef}
+        <AppShell
+          menuBar={<MenuBar />}
+          commandBar={
+            <CommandToolbar
+              onImport={() => fileInputRef.current?.click()}
+              onLoadToWorkspace={handleImportCommit}
+              onToggleInspector={() => setInspectorOpen((prev) => !prev)}
+              onToggleDiagnostics={() => toggleBottomDrawer()}
+              onConstraintFilterChange={setConstraintFilter}
+              hasPreview={importPreview !== null}
+              hasLoadedData={workspaceShellView === "loaded"}
+              inspectorOpen={isInspectorOpen}
+              diagnosticsOpen={isBottomOpen}
+              constraintFilter={constraintFilter}
+              workerReady={workerReady}
             />
-            </div>
-            <WorkspaceSplitter tableRef={tableContainerRef} containerRef={mainContentRowRef} lowerAxisRef={histogramAxisRef} />
-            {/* Right pane: Gantt only (histogram moved to BottomDrawer) */}
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden" }}>
-              <GanttPane
-                tasks={visibleTasks}
-                scheduleResults={scheduleResults}
-                dependencies={dependencies}
-                scrollTop={scrollTop}
-                viewportHeight={viewportHeight}
-                onUpdateDuration={handleUpdateDuration}
-                onUpdateTask={handleUpdateTask}
-                onAddDependency={handleAddDependency}
-                vScrollRef={scrollTrackRef}
-                timeline={timeline}
-                selection={selection}
-                onSelect={handleSelect}
-                nonWorkingDays={nonWorkingDays}
-                baselines={baselines}
-                onScrollLeftChange={handleGanttScrollLeftChange}
-                onHScrollMount={handleGanttHScrollMount}
-                bodyRef={ganttBodyRef}
-              />
-            </div>
+          }
+          statusStrip={
+            <ProjectStatusStrip
+              projectName={projectName}
+              fileName={fileName}
+              activityCount={tasks.length}
+              visibleActivityCount={visibleTasks.length}
+              dependencyCount={dependencies.length}
+              warningCount={warningCount}
+              constraintFilter={constraintFilter}
+              viewState={workspaceShellView}
+              workerReady={workerReady}
+            />
+          }
+        >
+          <WorkspaceLayout
+            showInspector={isInspectorOpen && workspaceShellView === "loaded"}
+            inspector={<InspectorPanel />}
+          >
+            {workspaceShellView === "empty" && (
+              <EmptyWorkspace onImport={() => fileInputRef.current?.click()} />
+            )}
 
-            {/* Shared vertical scroll track — single owner of vertical scrollTop */}
-            <div
-              ref={scrollTrackRef}
-              onScroll={handleScrollTrack}
-              style={{
-                width: 17,
-                overflowY: "auto",
-                overflowX: "hidden",
-                flexShrink: 0,
-                marginTop: HEADER_METRICS.totalHeight,
-              }}
-            >
-              <div style={{ width: 1, height: phantomHeight }} />
-            </div>
-          </div>
+            {workspaceShellView === "preview" && importPreview && (
+              <ProgrammePreviewPanel data={importPreview} onImport={handleImportCommit} onCancel={handleImportCancel} />
+            )}
 
+            {workspaceShellView === "loaded" && (
+              <ScheduleWorkspace>
+                <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, minWidth: 0, fontFamily: "Arial, sans-serif" }}>
+                  <div style={{ padding: '4px 8px', borderBottom: '1px solid #ccc', background: '#f5f5f5', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'nowrap', overflowX: 'auto', overflowY: 'hidden', scrollbarWidth: 'none', flexShrink: 0 }}>
+                    <input
+                      value={taskName}
+                      onChange={(e) => setTaskName(e.target.value)}
+                      placeholder="Task name"
+                      style={{ height: 28, padding: '0 6px', flex: '0 1 200px', minWidth: 100, boxSizing: 'border-box', fontSize: 12 }}
+                    />
+                    <select
+                      value={selectedParentId}
+                      onChange={(e) => setSelectedParentId(e.target.value)}
+                      style={{ height: 28, fontSize: 12 }}
+                    >
+                      <option value="">(no parent)</option>
+                      {tasks.map((t) => (
+                        <option key={t.id} value={t.id}>{t.name}</option>
+                      ))}
+                    </select>
+                    <button onClick={handleAdd} disabled={!canAdd} style={{ height: 28, padding: '0 10px', fontSize: 12, whiteSpace: 'nowrap' }}>
+                      Add Task
+                    </button>
+                    <button onClick={handleLinkLastTwo} disabled={tasks.length < 2} style={{ height: 28, padding: '0 10px', fontSize: 12, whiteSpace: 'nowrap' }}>
+                      Link Last Two
+                    </button>
+                    <button
+                      onClick={() => workerRef.current?.postMessage({ type: "SNAPSHOT_BASELINE", v: 1, reqId: makeId() })}
+                      disabled={!workerReady || Object.keys(scheduleResults).length === 0}
+                      style={{ height: 28, padding: '0 10px', fontSize: 12, whiteSpace: 'nowrap' }}
+                    >
+                      Set Baseline
+                    </button>
+                    <button
+                      onClick={() => workerRef.current?.postMessage({ type: "CLEAR_BASELINE", v: 1, reqId: makeId() })}
+                      disabled={!workerReady || Object.keys(baselines).length === 0}
+                      style={{ height: 28, padding: '0 10px', fontSize: 12, whiteSpace: 'nowrap' }}
+                    >
+                      Clear Baseline
+                    </button>
+                    <button
+                      onClick={() => workerRef.current?.postMessage({ type: "UNDO", v: 1, reqId: makeId() })}
+                      disabled={!canUndo}
+                      style={{ height: 28, padding: '0 10px', fontSize: 12 }}
+                    >
+                      Undo
+                    </button>
+                    <button
+                      onClick={() => workerRef.current?.postMessage({ type: "REDO", v: 1, reqId: makeId() })}
+                      disabled={!canRedo}
+                      style={{ height: 28, padding: '0 10px', fontSize: 12 }}
+                    >
+                      Redo
+                    </button>
+                    {resources.length > 0 && (
+                      <select
+                        value={selectedResourceId ?? ""}
+                        onChange={(e) => setSelectedResourceId(e.target.value || null)}
+                        style={{ height: 28, fontSize: 12 }}
+                      >
+                        {resources.map((r) => (
+                          <option key={r.id} value={r.id}>{r.name}</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
 
-        </div>
+                  <div ref={mainContentRowRef} style={{ display: "flex", flex: 1, overflow: "hidden" }} onWheel={handleWheel}>
+                    <div ref={tableContainerRef} style={{ width: tableWidth, flexShrink: 0, display: "flex", flexDirection: "column", height: "100%" }}>
+                      <TaskTable
+                        tasks={visibleTasks}
+                        scheduleResults={scheduleResults}
+                        variances={variances}
+                        diagnosticsMap={diagnosticsMap}
+                        onUpdateTask={handleUpdateTask}
+                        scrollTop={scrollTop}
+                        viewportHeight={viewportHeight}
+                        projectStartDate={projectStartDate}
+                        selectedTaskId={selection?.type === "task" ? selection.id : null}
+                        onSelectTask={(id) => handleSelect({ type: "task", id })}
+                        collapsedIds={collapsedIds}
+                        onToggleCollapse={handleToggleCollapse}
+                        bodyRef={tableBodyRef}
+                      />
+                    </div>
+                    <WorkspaceSplitter tableRef={tableContainerRef} containerRef={mainContentRowRef} lowerAxisRef={histogramAxisRef} />
+                    <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden" }}>
+                      <GanttPane
+                        tasks={visibleTasks}
+                        scheduleResults={scheduleResults}
+                        dependencies={dependencies}
+                        scrollTop={scrollTop}
+                        viewportHeight={viewportHeight}
+                        onUpdateDuration={handleUpdateDuration}
+                        onUpdateTask={handleUpdateTask}
+                        onAddDependency={handleAddDependency}
+                        vScrollRef={scrollTrackRef}
+                        timeline={timeline}
+                        selection={selection}
+                        onSelect={handleSelect}
+                        nonWorkingDays={nonWorkingDays}
+                        baselines={baselines}
+                        onHScrollMount={handleGanttHScrollMount}
+                        bodyRef={ganttBodyRef}
+                      />
+                    </div>
+
+                    <div
+                      ref={scrollTrackRef}
+                      onScroll={handleScrollTrack}
+                      style={{
+                        width: 17,
+                        overflowY: "auto",
+                        overflowX: "hidden",
+                        flexShrink: 0,
+                        marginTop: HEADER_METRICS.totalHeight,
+                      }}
+                    >
+                      <div style={{ width: 1, height: phantomHeight }} />
+                    </div>
+                  </div>
+                </div>
+              </ScheduleWorkspace>
+            )}
+          </WorkspaceLayout>
+        </AppShell>
       </MainWorkspace>
 
-      {/* Bottom drawer — push layout, sibling of MainWorkspace */}
-      {isBottomOpen && (
-        <BottomDrawer>
+      <BottomDiagnosticsDrawer
+        isOpen={isBottomOpen}
+        onToggle={() => toggleBottomDrawer()}
+      >
+        <div style={{ padding: "6px 10px", borderBottom: "1px solid #d5dbe3", fontSize: 12, fontWeight: 600 }}>
+          Diagnostics Drawer
+        </div>
           {activeBottomTab === 'task-details' ? (
             <TaskDetailsPanel
               dependencies={dependencies}
@@ -654,36 +714,15 @@ export default function App() {
               axisPaneRef={histogramAxisRef}
             />
           )}
-        </BottomDrawer>
-      )}
-      {/* Import preview overlay */}
-      {importPreview && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.4)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-          }}
-          onClick={handleImportCancel}
-        >
-          <div
-            style={{
-              background: "#fff",
-              borderRadius: 8,
-              boxShadow: "0 4px 24px rgba(0,0,0,0.2)",
-              maxHeight: "80vh",
-              overflowY: "auto",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <ImportPreviewPanel data={importPreview} onImport={handleImportCommit} onCancel={handleImportCancel} />
-          </div>
-        </div>
-      )}
+      </BottomDiagnosticsDrawer>
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".xer,.xml"
+        style={{ display: "none" }}
+        onChange={handleImportFileSelect}
+      />
     </WorkspaceContainer>
   );
 }

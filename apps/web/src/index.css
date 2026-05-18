@@ -106,16 +106,7 @@ button:focus-visible {
 }
 
 .shell-toolbar {
-  height: 36px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 14px;
-  border-bottom: 1px solid var(--border-default, #ccc);
-  background: var(--bg-surface, #fafafa);
-  font-size: 12px;
-  font-family: Arial, sans-serif;
+  display: none;
 }
 
 .shell-toolbar-segment {
@@ -168,4 +159,136 @@ button:focus-visible {
   color: var(--text-primary, #34506b);
   font-size: 12px;
   cursor: pointer;
+}
+
+.r3-app-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  background: #f7f9fc;
+}
+
+.r3-app-shell-workspace {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+}
+
+.r3-menu-bar {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding: 4px 8px;
+  border-bottom: 1px solid #d5dbe3;
+  background: #ffffff;
+}
+
+.r3-menu-button {
+  border: 1px solid transparent;
+  background: transparent;
+  color: #2b3b4b;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.r3-menu-button:hover {
+  border-color: #d5dbe3;
+  background: #f3f7fc;
+}
+
+.r3-command-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid #d5dbe3;
+  background: #f8fbff;
+}
+
+.r3-command-toolbar-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #34506b;
+}
+
+.r3-project-status-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: #34506b;
+  border-bottom: 1px solid #d5dbe3;
+  background: #ffffff;
+}
+
+.r3-workspace-layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.r3-workspace-main {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+}
+
+.r3-workspace-inspector {
+  width: 260px;
+  border-left: 1px solid #d5dbe3;
+  background: #fcfdff;
+}
+
+.r3-empty-workspace {
+  margin: auto;
+  max-width: 520px;
+  text-align: center;
+  padding: 24px;
+  border: 1px dashed #b8c7d8;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.r3-programme-preview-panel {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 20px;
+}
+
+.r3-schedule-workspace {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.r3-inspector-panel {
+  padding: 12px;
+  font-size: 12px;
+  color: #3d5166;
+}
+
+.r3-inspector-panel h3 {
+  margin: 0 0 8px;
+}
+
+.r3-diagnostics-collapsed {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-top: 1px solid #d5dbe3;
+  background: #f9fbfe;
+  font-size: 12px;
 }
