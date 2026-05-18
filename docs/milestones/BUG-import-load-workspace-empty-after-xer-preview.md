@@ -4,7 +4,10 @@
 
 This investigation was run as evidence-first (no product code changes). In the current local QA environment, the import flow cannot reach `PREVIEW_IMPORT -> IMPORT_SCHEDULE` because Worker startup fails before `WORKER_READY` due to unresolved `cpm-wasm` package entry.
 
-This is a **partial investigation finding for the Copilot sandbox environment only**. It does **not** yet prove the root cause of the user-reported localhost symptom (preview visible, then Load to Workspace does not populate TaskTable/Gantt).
+This note includes two evidence sources:
+
+1. Copilot sandbox environment evidence (startup blocked by missing wasm package artifact).
+2. User localhost evidence (Worker-ready preview succeeds, then import commit fails after `Load to Workspace`).
 
 ## 1) Reproduction steps
 
@@ -93,48 +96,50 @@ The currently observed failure point is earlier than the reported issue path: Wo
 
 ### Root cause classification for the user-reported localhost issue
 
-- **Not yet proven.**
-- Requires evidence from an environment where import preview succeeds and `Load to Workspace` can be clicked.
+- **Worker scheduling failure after `IMPORT_SCHEDULE`.**
+- **`IMPORT_SCHEDULE` returns `error`.**
+- **Imported programme is not committed because scheduling fails/rolls back.**
+- **TaskTable/Gantt do not populate because imported non-empty state is never successfully emitted/committed.**
 
-The user-reported path (preview success followed by empty TaskTable/Gantt after commit) was **not** reproduced in this run because this environment failed earlier at Worker startup.
+User-localhost evidence now confirms the failure point is after preview and inside the Worker scheduling/commit path.
 
 ## 14) Recommended fix scope
 
-**Environment/setup-level** first:
+**Worker-level, evidence-driven scope**:
 
-1. Ensure `packages/cpm-wasm/pkg` exists before running web QA (or ensure the equivalent generated artifact is available to Vite resolution).
-2. Re-run the exact UI reproduction after WASM availability is restored.
-3. Only if the original symptom still reproduces (preview succeeds but load does not populate), proceed with targeted instrumentation of:
-   - `IMPORT_SCHEDULE` dispatch
-   - post-commit `NACK` vs `DIFF_STATE`
-   - `DIFF_STATE.payload.tasks.length`
-   - scheduling rollback path
+1. Inspect `IMPORT_SCHEDULE` handler behavior for imported programmes.
+2. Inspect `runSchedulingAndEmitState()` error path and rollback/emit behavior.
+3. Capture and classify the concrete `schedule-error path` / `IMPORT_SCHEDULE error` reason.
+4. Verify whether failure is triggered by unsupported imported relationships, calendar/resource data, invalid task dates, dependency normalization edge cases, or wasm/kernel limits.
+5. Keep TaskTable/Gantt unchanged until Worker emits a successful non-empty post-commit workspace state.
 
 No Worker/protocol/parser/product behavior change is recommended at this stage of this investigation note.
 
-## Next Evidence Required From User Localhost
+## User Localhost Evidence — Worker-ready preview succeeds, commit fails
 
-Collect evidence from a Worker-ready localhost environment where preview is visible and `Load to Workspace` is clicked:
+- Worker ready: **yes**.
+- `PREVIEW_IMPORT` ack observed: **yes**.
+- Import preview data is non-empty (example): **`taskCount: 3062`, `depCount: 5024`**.
+- User clicks `Load to Workspace`: **yes**.
+- `IMPORT_SCHEDULE` result: **`error`**.
+- Worker `schedule-error path` observed for imported programme counts: **`taskCount: 3062`, `depCount: 5024`**.
+- Worker emits/restores persisted fallback state after failure (example): **`taskCount: 6`, `depCount: 0`**.
+- Status strip after commit remains: **`Tasks: 6 | Deps: 0 | Scheduled: 0 | Worker: Ready`**.
+- Preview disappears after `Load to Workspace`: **yes**.
+- TaskTable/Gantt remain unchanged because imported programme is not committed to workspace state.
 
-1. Browser console logs immediately after clicking `Load to Workspace`.
-2. Whether `IMPORT_SCHEDULE` is sent.
-3. Whether `NACK` or `DIFF_STATE` is received after `IMPORT_SCHEDULE`.
-4. If `DIFF_STATE` is received, `DIFF_STATE.payload.tasks.length`.
-5. Whether React `tasks.length` updates after commit.
-6. Whether status strip/activity count changes after commit.
-
-Issue #41 should remain open until those checkpoints are captured and the preview->commit failure point is proven in that environment.
+Issue #41 should remain open, and follow-up should target Worker scheduling failure analysis in a Worker-ready environment.
 
 ## 15) Message-path checkpoint summary (`PREVIEW_IMPORT -> ... -> TaskTable/Gantt`)
 
-| Checkpoint | Status in this run | Evidence |
+| Checkpoint | Copilot sandbox evidence | User localhost evidence |
 |---|---|---|
-| PREVIEW_IMPORT sent | Not reached | Worker not ready due to wasm resolution failure |
-| IMPORT_PREVIEW received | Not reached | Same blocker |
-| IMPORT_SCHEDULE sent | Not reached | Same blocker |
-| NACK/DIFF_STATE after import commit | Not reached | Same blocker |
-| React tasks update | Not reached | Same blocker |
-| TaskTable/Gantt render imported tasks | Not reached | Same blocker |
+| PREVIEW_IMPORT sent | Not reached (worker startup blocked) | Reached, ack observed |
+| IMPORT_PREVIEW received | Not reached (same blocker) | Reached, non-empty programme shown |
+| IMPORT_SCHEDULE sent | Not reached (same blocker) | Sent after `Load to Workspace` |
+| NACK/DIFF_STATE after import commit | Not reached (same blocker) | `IMPORT_SCHEDULE error` + schedule-error path observed |
+| React tasks update | Not reached (same blocker) | Remains persisted fallback state (`tasks: 6`) |
+| TaskTable/Gantt render imported tasks | Not reached (same blocker) | No imported render because commit fails/rolls back |
 
 ## 16) Temporary instrumentation usage
 
@@ -148,7 +153,8 @@ None used in this investigation PR.
 - `curl http://127.0.0.1:4173/@fs/.../packages/worker/src/wasm/loadCpmWasm.ts`
 - Dev server logs showing `Failed to resolve entry for package "cpm-wasm"`
 - `packages/cpm-wasm/package.json` points to `./pkg/cpm_wasm.js`; local `packages/cpm-wasm/pkg` missing
+- User localhost evidence provided in PR review (Worker-ready preview success + `IMPORT_SCHEDULE error` + schedule-error fallback to persisted state)
 
 ## 18) Implementation gating recommendation
 
-Do **not** implement product fix for TaskTable/Gantt population until environment-level wasm initialization is corrected and the original preview->commit symptom is re-verified under a worker-ready run.
+Do **not** implement TaskTable/Gantt product changes first; prioritize diagnosing and fixing Worker scheduling failure after `IMPORT_SCHEDULE` in a Worker-ready run.
