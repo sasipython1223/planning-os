@@ -2,7 +2,7 @@
 
 ## Investigation scope and outcome
 
-This investigation was run as evidence-first (no product code changes). In the current local QA environment, the import flow cannot reach `PREVIEW_IMPORT -> IMPORT_SCHEDULE` because Worker startup fails before `WORKER_READY` due unresolved `cpm-wasm` package entry.
+This investigation was run as evidence-first (no product code changes). In the current local QA environment, the import flow cannot reach `PREVIEW_IMPORT -> IMPORT_SCHEDULE` because Worker startup fails before `WORKER_READY` due to unresolved `cpm-wasm` package entry.
 
 ## 1) Reproduction steps
 
@@ -87,7 +87,7 @@ Primary classification in this local QA run:
 - **Environment/setup issue**
 - **WASM unavailable / WASM not initialized**
 
-The currently observed failure point is earlier than the reported issue path: Worker cannot initialize due unresolved `cpm-wasm` entry.
+The currently observed failure point is earlier than the reported issue path: Worker cannot initialize due to unresolved `cpm-wasm` entry.
 
 ## 14) Recommended fix scope
 
