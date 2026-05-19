@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { getDisplayTotalFloat, toWorkerTaskUpdate } from "./TaskTable";
+import {
+  getDisplayTotalFloat,
+  getTaskIndentPx,
+  getTaskRowKind,
+  TASK_TABLE_INDENT_WIDTH,
+  TASK_TABLE_MAX_INDENT_DEPTH,
+  toWorkerTaskUpdate,
+} from "./TaskTable";
 
 describe("W5B-B2.12A.17 — TaskTable float display migration", () => {
   it("prefers totalFloatWorkdays for UI display when available", () => {
@@ -65,5 +72,27 @@ describe("W5B-B2.12A.17 — read-only UI safeguards", () => {
     expect(update).not.toHaveProperty("freeFloatWorkdays");
     expect(update).not.toHaveProperty("freeFloatMinutes");
     expect(update).not.toHaveProperty("freeFloat");
+  });
+});
+
+describe("W5B-UI.R5A — TaskTable WBS display helpers", () => {
+  it("uses existing hierarchy depth for safe indentation", () => {
+    expect(getTaskIndentPx(0)).toBe(0);
+    expect(getTaskIndentPx(3)).toBe(3 * TASK_TABLE_INDENT_WIDTH);
+  });
+
+  it("clamps invalid or excessive hierarchy depth for display only", () => {
+    expect(getTaskIndentPx(undefined)).toBe(0);
+    expect(getTaskIndentPx(null)).toBe(0);
+    expect(getTaskIndentPx(Number.NaN)).toBe(0);
+    expect(getTaskIndentPx(-4)).toBe(0);
+    expect(getTaskIndentPx(TASK_TABLE_MAX_INDENT_DEPTH + 20)).toBe(
+      TASK_TABLE_MAX_INDENT_DEPTH * TASK_TABLE_INDENT_WIDTH,
+    );
+  });
+
+  it("classifies rows using existing summary metadata only", () => {
+    expect(getTaskRowKind({ isSummary: true })).toBe("summary");
+    expect(getTaskRowKind({ isSummary: false })).toBe("activity");
   });
 });
