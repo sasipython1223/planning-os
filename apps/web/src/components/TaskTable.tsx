@@ -162,6 +162,37 @@ export function TaskTable({
   };
   const thStyle: CSSProperties = { ...thBase, textAlign: "left" };
   const thCenterStyle: CSSProperties = { ...thBase, textAlign: "center" };
+  const summaryMarkerStyle: CSSProperties = {
+    width: 3,
+    height: 18,
+    marginRight: 6,
+    borderRadius: 2,
+    background: "#4f7eac",
+    flexShrink: 0,
+  };
+  const summaryBadgeStyle: CSSProperties = {
+    marginLeft: 7,
+    padding: "1px 5px",
+    border: "1px solid #bed0e3",
+    borderRadius: 4,
+    background: "#f7fbff",
+    color: "#456a8d",
+    fontSize: 9,
+    fontWeight: 700,
+    letterSpacing: "0.05em",
+    lineHeight: 1.3,
+    flexShrink: 0,
+  };
+  const toggleStyle: CSSProperties = {
+    width: 14,
+    marginRight: 5,
+    flexShrink: 0,
+    cursor: "pointer",
+    color: "#315f8d",
+    fontSize: 11,
+    lineHeight: 1,
+    userSelect: "none",
+  };
 
   return (
     /* Single scroll owner — overflowX:auto here, scrollbar pinned to pane bottom */
@@ -252,15 +283,18 @@ export function TaskTable({
                   lineHeight: 1.2,
                   boxSizing: "border-box",
                 };
+                const taskLabelStyle: CSSProperties = isSummaryRow
+                  ? { color: "#1e3a5f", fontStyle: "normal", fontWeight: 700, letterSpacing: "0.01em" }
+                  : { color: "#26394d", fontWeight: 500 };
 
                 return (
                   <tr
                     key={task.id}
-                    className={`task-table-row task-table-row--${rowKind}${isSelected ? " task-table-row--selected" : ""}${schedule?.isCritical ? " task-table-row--critical" : ""}`}
                     onClick={() => onSelectTask(task.id)}
                     style={{
                       height: ROW_HEIGHT,
                       background: rowBg,
+                      color: isSummaryRow ? "#1e3a5f" : undefined,
                       cursor: "pointer",
                     }}
                   >
@@ -272,26 +306,23 @@ export function TaskTable({
                       )}
                     </td>
                     <td style={cellBase}>
-                      <div
-                        className={`task-table-task-name task-table-task-name--${rowKind}`}
-                        style={{ ...cellContentBase, paddingLeft: getTaskIndentPx(task.depth) }}
-                      >
+                      <div style={{ ...cellContentBase, paddingLeft: getTaskIndentPx(task.depth), minWidth: 0 }}>
                         {task.isSummary && (
                           <span
-                            className="task-table-toggle"
                             onClick={(e) => { e.stopPropagation(); onToggleCollapse(task.id); }}
+                            style={toggleStyle}
                             title={collapsedIds.has(task.id) ? "Expand summary row" : "Collapse summary row"}
                           >
                             {collapsedIds.has(task.id) ? "▶" : "▼"}
                           </span>
                         )}
-                        {isSummaryRow && <span className="task-table-summary-marker" aria-hidden="true" />}
+                        {isSummaryRow && <span style={summaryMarkerStyle} aria-hidden="true" />}
                         <EditableCell
                           value={task.name}
                           onCommit={(v) => onUpdateTask(task.id, toWorkerTaskUpdate({ name: v }))}
                         >
-                          <strong className={`task-table-task-label task-table-task-label--${rowKind}`}>{task.name}</strong>
-                          {isSummaryRow && <span className="task-table-summary-badge">WBS</span>}
+                          <strong style={taskLabelStyle}>{task.name}</strong>
+                          {isSummaryRow && <span style={summaryBadgeStyle}>WBS</span>}
                           {schedule?.isCritical && (
                             <span
                               style={{
