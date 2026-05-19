@@ -56,7 +56,16 @@ export default function App() {
   const [viewportHeight, setViewportHeight] = useState(0);
   const [projectStartDate, setProjectStartDate] = useState<string>(new Date().toISOString().slice(0, 10));
   const [selection, setSelection] = useState<Selection>(null);
-  const scrollTrackRef = useRef<HTMLDivElement>(null);
+  const scrollTrackRef = useRef<HTMLDivElement | null>(null);
+  // Re-run measurement when the scroll track actually attaches to the DOM.
+  // The scroll track is only mounted while workspaceShellView === "loaded",
+  // so a callback ref is required — a one-shot useEffect with [] deps would
+  // run before the element exists and never re-run after import commit.
+  const [scrollTrackEl, setScrollTrackEl] = useState<HTMLDivElement | null>(null);
+  const handleScrollTrackRef = useCallback((el: HTMLDivElement | null) => {
+    scrollTrackRef.current = el;
+    setScrollTrackEl(el);
+  }, []);
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [selectedParentId, setSelectedParentId] = useState<string>("");
   const [nonWorkingDays, setNonWorkingDays] = useState<ReadonlySet<number>>(new Set());
@@ -193,9 +202,15 @@ export default function App() {
   }, []);
 
   // Measure the scroll track viewport height (= visible body area)
+  // Depends on `scrollTrackEl` (set via callback ref) so the observer attaches
+  // both on initial mount AND when the scroll track first appears after the
+  // workspace transitions from "empty"/"preview" to "loaded" post-import.
   useEffect(() => {
-    const el = scrollTrackRef.current;
-    if (!el) return;
+    const el = scrollTrackEl;
+    if (!el) {
+      setViewportHeight(0);
+      return;
+    }
 
     const measure = () => setViewportHeight(el.clientHeight);
     measure();
@@ -203,7 +218,7 @@ export default function App() {
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [scrollTrackEl]);
 
   useEffect(() => {
     const worker = new Worker(
@@ -665,7 +680,7 @@ export default function App() {
                     </div>
 
                     <div
-                      ref={scrollTrackRef}
+                      ref={handleScrollTrackRef}
                       onScroll={handleScrollTrack}
                       style={{
                         width: 17,

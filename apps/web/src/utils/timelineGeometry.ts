@@ -28,10 +28,30 @@ export interface TimelineGeometry {
   projectStartDate: string;
 }
 
-/** Parse YYYY-MM-DD to UTC epoch ms. Pure integer math, no Date objects. */
+/**
+ * Parse an ISO-style date string to a UTC epoch ms.
+ *
+ * Accepts the strict canonical form `YYYY-MM-DD` and the common XER /
+ * Primavera form `YYYY-MM-DD HH:MM[:SS]` (the date portion before the first
+ * space is used). Falls back to today's UTC midnight if the input is missing
+ * or unparseable so the timeline geometry never propagates `NaN` widths or
+ * pixel offsets (which would break Gantt/Histogram rendering downstream).
+ * Pure integer math, no Date objects beyond the fallback path.
+ */
 function parseUTCMs(isoDate: string): number {
-  const [y, m, d] = isoDate.split("-").map(Number);
-  return Date.UTC(y, m - 1, d);
+  const datePart = (isoDate ?? "").split(/[ T]/, 1)[0];
+  const parts = datePart.split("-");
+  if (parts.length === 3) {
+    const y = Number(parts[0]);
+    const m = Number(parts[1]);
+    const d = Number(parts[2]);
+    if (Number.isFinite(y) && Number.isFinite(m) && Number.isFinite(d)) {
+      const ms = Date.UTC(y, m - 1, d);
+      if (!Number.isNaN(ms)) return ms;
+    }
+  }
+  const now = new Date();
+  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
 }
 
 /**

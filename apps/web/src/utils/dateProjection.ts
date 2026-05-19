@@ -6,10 +6,30 @@
 
 const MS_PER_DAY = 86_400_000;
 
-/** Parse an ISO date string (YYYY-MM-DD) to a UTC midnight Date. */
+/**
+ * Parse an ISO date string to a UTC midnight Date.
+ *
+ * Accepts the strict canonical form `YYYY-MM-DD` and the common XER /
+ * Primavera form `YYYY-MM-DD HH:MM[:SS]` (the date portion before the first
+ * space is used). Falls back to today's UTC midnight if the input is missing
+ * or unparseable so downstream date math never propagates `NaN` into the UI
+ * (which previously surfaced as "undefined NaN" in the Gantt timescale).
+ */
 function parseUTC(isoDate: string): Date {
-  const [y, m, d] = isoDate.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d));
+  const datePart = (isoDate ?? "").split(/[ T]/, 1)[0];
+  const parts = datePart.split("-");
+  if (parts.length === 3) {
+    const y = Number(parts[0]);
+    const m = Number(parts[1]);
+    const d = Number(parts[2]);
+    if (Number.isFinite(y) && Number.isFinite(m) && Number.isFinite(d)) {
+      const ms = Date.UTC(y, m - 1, d);
+      if (!Number.isNaN(ms)) return new Date(ms);
+    }
+  }
+  // Fallback: today at UTC midnight (keeps the timescale rendering valid).
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 }
 
 /** Add integer days to a UTC Date, returning a new Date. */
