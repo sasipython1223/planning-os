@@ -2,7 +2,7 @@
 
 ## 1. Executive Summary
 
-R5A implements a narrow UI-only refinement to the imported programme TaskTable. The change improves WBS / summary row readability, hierarchy indentation safety, and summary/activity row distinction while preserving the current Worker-authoritative scheduling architecture.
+R5A implements a narrow UI-only refinement to the imported programme TaskTable. The change improves WBS / summary row readability, hierarchy indentation safety, parent-before-child hierarchy display ordering, and summary/activity row distinction while preserving the current Worker-authoritative scheduling architecture.
 
 This PR implements only the first R5 slice:
 
@@ -32,8 +32,9 @@ R5A scope implemented:
 
 - Use existing `task.depth` for hierarchy indentation.
 - Use existing `task.isSummary` for summary/WBS-style row distinction.
+- Use existing `task.parentId` for UI-only parent-before-child hierarchy display projection.
 - Improve summary/activity row visual distinction.
-- Preserve imported row order.
+- Preserve Worker/import data authority while improving display order.
 - Preserve current TaskTable virtualization behavior.
 - Preserve Gantt rendering behavior.
 - Keep React as display/projection only.
@@ -81,6 +82,14 @@ Finding:
 
 Human planning-scope approval and implementation approval were recorded in #48 before this implementation request.
 
+Human localhost QA then identified one blocker in the first implementation pass:
+
+```text
+Summary bars appeared on top and activity rows appeared at the bottom, regardless of WBS ownership.
+```
+
+This was traced to the existing XER import shape where WBS summary tasks are created first and activities are appended later. The fix is kept in the UI projection layer by ordering existing `parentId` relationships for display only.
+
 ---
 
 ## 7. Optional Copilot Pre-Review Result
@@ -94,6 +103,8 @@ PR #49 was created as a plan-only pre-implementation PR. It was closed unmerged 
 ```text
 apps/web/src/components/TaskTable.tsx
 apps/web/src/components/TaskTable.test.ts
+apps/web/src/utils/getVisibleTasks.ts
+apps/web/src/utils/getVisibleTasks.test.ts
 docs/milestones/W5B-UI.R5-tasktable-wbs-professional-view.md
 ```
 
@@ -133,6 +144,7 @@ Confirmed:
 - No hierarchy inference from dependencies was added.
 - No import/load protocol behavior was changed.
 - No Gantt behavior was changed.
+- UI projection uses existing `parentId`, `depth`, and `isSummary` metadata only.
 
 ---
 
@@ -142,10 +154,11 @@ Implemented behavior:
 
 - Existing `task.depth` is used through `getTaskIndentPx()` for safe display indentation.
 - Existing `task.isSummary` is used through `getTaskRowKind()` for summary/activity classification.
+- Existing `task.parentId` is used by `orderTasksForHierarchyDisplay()` to project rows in parent-before-child display order.
 - Summary rows receive distinct row background and border treatment.
 - Summary rows retain collapse/expand affordance.
-- Activity rows retain normal display behavior.
-- Imported order is not changed.
+- Activity rows appear under their corresponding WBS/summary context where `parentId` metadata exists.
+- Worker/import order is not mutated.
 
 ---
 
@@ -153,7 +166,7 @@ Implemented behavior:
 
 `getTaskIndentPx()` defensively handles invalid, missing, negative, or excessive depth values for display safety only.
 
-This is not hierarchy reconstruction. It only prevents unsafe visual indentation values from reaching the DOM.
+`orderTasksForHierarchyDisplay()` treats tasks with missing parents as root display rows and defensively appends malformed leftovers in original order. This is not dependency-based hierarchy inference and does not calculate schedule data.
 
 ---
 
@@ -178,14 +191,19 @@ pnpm -C apps/web exec vitest run
 pnpm -C apps/web exec tsc -b
 ```
 
-Status at PR creation:
+Known validation before hierarchy-ordering fix:
 
-- Not run locally in this ChatGPT environment.
-- Prior plan-only PR #49 reported `vitest` passing and `tsc -b` failing due to pre-existing unrelated unused locals in:
-  - `apps/web/src/components/HistogramPane.tsx:149`
-  - `apps/web/src/components/TaskDetailsPanel.test.ts:26`
+```text
+vitest: 8 files passed, 88 tests passed
+```
 
-PR reviewer should run the required commands before merge and document exact current results.
+```text
+tsc -b: failed with 2 known/pre-existing unrelated unused-local errors:
+- apps/web/src/components/HistogramPane.tsx:149 — mouseY declared but never read
+- apps/web/src/components/TaskDetailsPanel.test.ts:26 — _constraintNeedsDate declared but never read
+```
+
+PR reviewer should re-run the required commands after this hierarchy-ordering fix and document exact current results.
 
 ---
 
@@ -200,16 +218,18 @@ Required manual validation before merge:
 5. Confirm TaskTable rows render.
 6. Confirm WBS / summary rows are visually distinguishable.
 7. Confirm hierarchy indentation is visible.
-8. Confirm activity rows remain readable.
-9. Confirm Gantt still renders.
-10. Confirm no `undefined`, `NaN`, or raw object values are visible.
-11. Confirm 3,000+ row schedule remains usable.
+8. Confirm activity rows appear under corresponding WBS/summary context.
+9. Confirm activity rows remain readable.
+10. Confirm collapse/expand still hides descendants correctly.
+11. Confirm Gantt still renders.
+12. Confirm no `undefined`, `NaN`, or raw object values are visible.
+13. Confirm 3,000+ row schedule remains usable.
 
 ---
 
 ## 16. Stop Conditions Encountered / Not Encountered
 
-No stop conditions encountered during implementation.
+No stop conditions requiring architecture escalation were encountered.
 
 Specifically, the implementation did not require:
 
@@ -220,6 +240,8 @@ Specifically, the implementation did not require:
 - Gantt changes.
 - Virtualization rewrite.
 - Package/lockfile changes.
+
+The observed hierarchy ordering issue was resolved in the UI projection layer using existing metadata.
 
 ---
 
