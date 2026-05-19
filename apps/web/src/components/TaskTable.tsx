@@ -22,6 +22,8 @@ export const COLUMN_SCHEMA = [
 ] as const;
 
 export const TABLE_WIDTH = COLUMN_SCHEMA.reduce((sum, c) => sum + c.width, 0);
+export const TASK_TABLE_INDENT_WIDTH = 20;
+export const TASK_TABLE_MAX_INDENT_DEPTH = 12;
 
 type WorkerTaskUpdate = {
   name?: string;
@@ -56,6 +58,16 @@ export function getDisplayTotalFloat(schedule: ScheduleDisplayResult | undefined
     return schedule.totalFloatWorkdays;
   }
   return schedule.totalFloat;
+}
+
+export function getTaskIndentPx(depth: number | null | undefined): number {
+  if (typeof depth !== "number" || !Number.isFinite(depth)) return 0;
+  const safeDepth = Math.min(Math.max(Math.floor(depth), 0), TASK_TABLE_MAX_INDENT_DEPTH);
+  return safeDepth * TASK_TABLE_INDENT_WIDTH;
+}
+
+export function getTaskRowKind(task: Pick<Task, "isSummary">): "summary" | "activity" {
+  return task.isSummary ? "summary" : "activity";
 }
 
 const SEVERITY_ICON: Record<DiagnosticSeverity, { symbol: string; color: string }> = {
@@ -200,6 +212,8 @@ export function TaskTable({
                 const schedule = scheduleResults[task.id] as ScheduleDisplayResult | undefined;
                 const variance = variances[task.id];
                 const isSelected = task.id === selectedTaskId;
+                const rowKind = getTaskRowKind(task);
+                const isSummaryRow = rowKind === "summary";
                 const badge = constraintBadgeStyle(task.constraintType);
                 const sev = highestSeverity(diagnosticsMap?.[task.id], task.constraintType);
                 const sevIcon = sev ? SEVERITY_ICON[sev] : null;
@@ -211,16 +225,19 @@ export function TaskTable({
 
                 const rowBg = isSelected
                   ? "#bbdefb"
-                  : schedule?.isCritical
-                    ? "#ffebee"
-                    : "#ffffff";
+                  : isSummaryRow
+                    ? "#eef4fb"
+                    : schedule?.isCritical
+                      ? "#ffebee"
+                      : "#ffffff";
 
                 const cellBase: CSSProperties = {
                   height: ROW_HEIGHT,
                   boxSizing: "border-box",
                   padding: "0 8px",
                   overflow: "hidden",
-                  borderBottom: "1px solid #e0e0e0",
+                  borderBottom: isSummaryRow ? "1px solid #c8d5e4" : "1px solid #e0e0e0",
+                  borderTop: isSummaryRow ? "1px solid #d8e2ee" : undefined,
                   background: rowBg,
                   verticalAlign: "middle",
                 };
@@ -239,6 +256,7 @@ export function TaskTable({
                 return (
                   <tr
                     key={task.id}
+                    className={`task-table-row task-table-row--${rowKind}${isSelected ? " task-table-row--selected" : ""}${schedule?.isCritical ? " task-table-row--critical" : ""}`}
                     onClick={() => onSelectTask(task.id)}
                     style={{
                       height: ROW_HEIGHT,
@@ -254,20 +272,26 @@ export function TaskTable({
                       )}
                     </td>
                     <td style={cellBase}>
-                      <div style={{ ...cellContentBase, paddingLeft: task.depth * 20 }}>
+                      <div
+                        className={`task-table-task-name task-table-task-name--${rowKind}`}
+                        style={{ ...cellContentBase, paddingLeft: getTaskIndentPx(task.depth) }}
+                      >
                         {task.isSummary && (
                           <span
+                            className="task-table-toggle"
                             onClick={(e) => { e.stopPropagation(); onToggleCollapse(task.id); }}
-                            style={{ cursor: "pointer", marginRight: 4, userSelect: "none", fontSize: 12 }}
+                            title={collapsedIds.has(task.id) ? "Expand summary row" : "Collapse summary row"}
                           >
                             {collapsedIds.has(task.id) ? "▶" : "▼"}
                           </span>
                         )}
+                        {isSummaryRow && <span className="task-table-summary-marker" aria-hidden="true" />}
                         <EditableCell
                           value={task.name}
                           onCommit={(v) => onUpdateTask(task.id, toWorkerTaskUpdate({ name: v }))}
                         >
-                          <strong style={task.isSummary ? { fontStyle: "italic" } : undefined}>{task.name}</strong>
+                          <strong className={`task-table-task-label task-table-task-label--${rowKind}`}>{task.name}</strong>
+                          {isSummaryRow && <span className="task-table-summary-badge">WBS</span>}
                           {schedule?.isCritical && (
                             <span
                               style={{
