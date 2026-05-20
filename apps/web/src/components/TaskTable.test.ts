@@ -4,6 +4,7 @@ import {
   getTaskIndentPx,
   getTaskRowKind,
   getWbsBandColor,
+  getWbsDepthMarkerColors,
   getWbsMarkerColor,
   TASK_TABLE_INDENT_WIDTH,
   TASK_TABLE_MAX_INDENT_DEPTH,
@@ -136,5 +137,28 @@ describe("W5B-UI.R5B — WBS banding / visual grouping helpers", () => {
     expect(getWbsMarkerColor(null)).toBe(WBS_MARKER_COLORS[2]);
     expect(getWbsMarkerColor(Number.NaN)).toBe(WBS_MARKER_COLORS[2]);
     expect(getWbsMarkerColor(-1)).toBe(WBS_MARKER_COLORS[2]);
+  });
+});
+
+describe("W5B-UI.R5B — WBS stacked depth-indicator bars", () => {
+  it("returns one bar colour for root-level WBS (depth 0)", () => {
+    expect(getWbsDepthMarkerColors(0)).toEqual([WBS_MARKER_COLORS[0]]);
+  });
+
+  it("returns stacked bar colours for each WBS nesting level", () => {
+    expect(getWbsDepthMarkerColors(1)).toEqual([WBS_MARKER_COLORS[0], WBS_MARKER_COLORS[1]]);
+    expect(getWbsDepthMarkerColors(2)).toEqual([WBS_MARKER_COLORS[0], WBS_MARKER_COLORS[1], WBS_MARKER_COLORS[2]]);
+    expect(getWbsDepthMarkerColors(3)).toEqual([...WBS_MARKER_COLORS]);
+  });
+
+  it("clamps stacked bars to available colour levels at excessive depth", () => {
+    expect(getWbsDepthMarkerColors(100)).toEqual([...WBS_MARKER_COLORS]);
+  });
+
+  it("falls back to single root-level bar for invalid or missing depth", () => {
+    expect(getWbsDepthMarkerColors(undefined)).toEqual([WBS_MARKER_COLORS[0]]);
+    expect(getWbsDepthMarkerColors(null)).toEqual([WBS_MARKER_COLORS[0]]);
+    expect(getWbsDepthMarkerColors(Number.NaN)).toEqual([WBS_MARKER_COLORS[0]]);
+    expect(getWbsDepthMarkerColors(-1)).toEqual([WBS_MARKER_COLORS[0]]);
   });
 });

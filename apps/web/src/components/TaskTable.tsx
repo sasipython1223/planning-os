@@ -26,21 +26,23 @@ export const TASK_TABLE_INDENT_WIDTH = 20;
 export const TASK_TABLE_MAX_INDENT_DEPTH = 12;
 
 // R5B — WBS Banding / Visual Grouping
-// Depth-indexed band colours for WBS summary rows (index 0 = root WBS).
+// Depth-indexed background tints for WBS summary rows (one per depth level).
+// Each entry is a subtle hue tint matching the corresponding marker colour.
 // The last entry is used for all depths beyond the array length.
 export const WBS_BAND_COLORS = [
-  "#d6e6f5", // depth 0 — project/root WBS (strongest tint)
-  "#deedf8", // depth 1
-  "#eef4fb", // depth 2 (baseline summary colour from R5A)
-  "#f3f7fd", // depth 3+ (subtlest tint)
+  "#eef4fb", // depth 0 — faint steel-blue (project root)
+  "#edf7f1", // depth 1 — faint green (major phase)
+  "#fdf2e9", // depth 2 — faint amber (sub-phase)
+  "#f5eef8", // depth 3+ — faint plum (deliverable / deeper)
 ] as const;
 
 // Depth-indexed left-marker colours for WBS summary rows.
+// Distinct professional hues — one per WBS nesting level.
 export const WBS_MARKER_COLORS = [
-  "#1e5a96", // depth 0 — darkest
-  "#2d6aa8", // depth 1
-  "#4f7eac", // depth 2 (baseline from R5A)
-  "#7aa0c2", // depth 3+ — lightest
+  "#2471a3", // depth 0 — steel blue  (project root)
+  "#1e8449", // depth 1 — forest green (major phase)
+  "#ca6f1e", // depth 2 — burnt amber  (sub-phase)
+  "#7d3c98", // depth 3+ — plum        (deliverable / deeper)
 ] as const;
 
 /**
@@ -69,6 +71,22 @@ export function getWbsMarkerColor(depth: number | null | undefined): string {
   }
   const safeDepth = Math.min(Math.floor(depth), WBS_MARKER_COLORS.length - 1);
   return WBS_MARKER_COLORS[safeDepth];
+}
+
+/**
+ * Pure display helper: returns an array of WBS marker colours for levels 0..depth.
+ * Used to render P6-style stacked left-side depth indicator bars on WBS summary rows.
+ * Each bar in the returned array represents one level of WBS ancestry, giving a clear
+ * visual "ladder" that communicates nesting depth at a glance.
+ * Safe fallback to a single root-level bar when depth is missing or invalid.
+ * R5B — WBS Banding / Visual Grouping
+ */
+export function getWbsDepthMarkerColors(depth: number | null | undefined): readonly string[] {
+  if (typeof depth !== "number" || !Number.isFinite(depth) || depth < 0) {
+    return [WBS_MARKER_COLORS[0]]; // safe fallback: show one root-level bar
+  }
+  const safeDepth = Math.min(Math.floor(depth), WBS_MARKER_COLORS.length - 1);
+  return WBS_MARKER_COLORS.slice(0, safeDepth + 1);
 }
 
 type WorkerTaskUpdate = {
@@ -208,14 +226,6 @@ export function TaskTable({
   };
   const thStyle: CSSProperties = { ...thBase, textAlign: "left" };
   const thCenterStyle: CSSProperties = { ...thBase, textAlign: "center" };
-  const summaryMarkerStyle: CSSProperties = {
-    width: 3,
-    height: 18,
-    marginRight: 6,
-    borderRadius: 2,
-    background: "#4f7eac",
-    flexShrink: 0,
-  };
   const summaryBadgeStyle: CSSProperties = {
     marginLeft: 7,
     padding: "1px 5px",
@@ -362,7 +372,19 @@ export function TaskTable({
                             {collapsedIds.has(task.id) ? "▶" : "▼"}
                           </span>
                         )}
-                        {isSummaryRow && <span style={{ ...summaryMarkerStyle, background: getWbsMarkerColor(task.depth) }} aria-hidden="true" />}
+                        {isSummaryRow && (
+                          <span
+                            style={{ display: "flex", alignItems: "center", gap: 2, marginRight: 6, flexShrink: 0 }}
+                            aria-hidden="true"
+                          >
+                            {getWbsDepthMarkerColors(task.depth).map((colour, i) => (
+                              <span
+                                key={i}
+                                style={{ width: 4, height: 18, borderRadius: 2, background: colour, flexShrink: 0 }}
+                              />
+                            ))}
+                          </span>
+                        )}
                         <EditableCell
                           value={task.name}
                           onCommit={(v) => onUpdateTask(task.id, toWorkerTaskUpdate({ name: v }))}

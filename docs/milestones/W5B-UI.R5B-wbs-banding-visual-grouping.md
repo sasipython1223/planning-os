@@ -94,15 +94,31 @@ packages/protocol/**                          — forbidden
 
 ## 6. Visual Behaviour
 
-| Depth | Band colour | Marker colour | Typical row type       |
-|-------|-------------|---------------|------------------------|
-| 0     | `#d6e6f5`   | `#1e5a96`     | Project / root WBS     |
-| 1     | `#deedf8`   | `#2d6aa8`     | First-level WBS        |
-| 2     | `#eef4fb`   | `#4f7eac`     | Second-level WBS       |
-| 3+    | `#f3f7fd`   | `#7aa0c2`     | Deeper WBS / fallback  |
+### WBS Banding Palette
+
+| Depth | Band colour (row bg) | Marker colour | Typical row type       |
+|-------|----------------------|---------------|------------------------|
+| 0     | `#eef4fb` (blue)     | `#2471a3`     | Project / root WBS     |
+| 1     | `#edf7f1` (green)    | `#1e8449`     | First-level WBS        |
+| 2     | `#fdf2e9` (amber)    | `#ca6f1e`     | Second-level WBS       |
+| 3+    | `#f5eef8` (plum)     | `#7d3c98`     | Deeper WBS / fallback  |
 
 Activity rows remain white (`#ffffff`) or critical-red (`#ffebee`) as before.
 Selected rows remain `#bbdefb` regardless of depth.
+
+### Stacked Depth-Indicator Bars
+
+WBS summary rows show **stacked left-side bars** (P6-style), one bar per ancestor
+WBS level from 0 up to the current depth. Each bar is 4 px wide, 18 px tall, with
+a 2 px gap between bars and a 6 px right margin before the toggle + name content.
+
+- Depth-0 WBS: 1 bar (steel blue)
+- Depth-1 WBS: 2 bars (steel blue + forest green)
+- Depth-2 WBS: 3 bars (steel blue + forest green + burnt amber)
+- Depth-3 WBS: 4 bars (steel blue + forest green + burnt amber + plum)
+
+The accumulating bars create an immediate visual "ladder" that communicates
+nesting depth at a glance, making large imported schedules easier to scan.
 
 ---
 
