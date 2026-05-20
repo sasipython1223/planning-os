@@ -10,8 +10,9 @@ import {
   TASK_TABLE_INDENT_WIDTH,
   TASK_TABLE_MAX_INDENT_DEPTH,
   toWorkerTaskUpdate,
+  WBS_ACTIVE_BAND_WIDTH,
+  WBS_ANCESTOR_RAIL_WIDTH,
   WBS_BAND_COLORS,
-  WBS_BAND_WIDTH,
   WBS_MARKER_COLORS,
 } from "./TaskTable";
 
@@ -105,9 +106,14 @@ describe("W5B-UI.R5A — TaskTable WBS display helpers", () => {
 });
 
 describe("W5B-UI.R5B — WBS banding / visual grouping helpers", () => {
-  it("WBS_BAND_WIDTH is a positive number (band block width in px)", () => {
-    expect(typeof WBS_BAND_WIDTH).toBe("number");
-    expect(WBS_BAND_WIDTH).toBeGreaterThan(0);
+  it("WBS_ANCESTOR_RAIL_WIDTH is a positive number (thin ancestor rail in px)", () => {
+    expect(typeof WBS_ANCESTOR_RAIL_WIDTH).toBe("number");
+    expect(WBS_ANCESTOR_RAIL_WIDTH).toBeGreaterThan(0);
+  });
+
+  it("WBS_ACTIVE_BAND_WIDTH is wider than WBS_ANCESTOR_RAIL_WIDTH (dominant active block)", () => {
+    expect(typeof WBS_ACTIVE_BAND_WIDTH).toBe("number");
+    expect(WBS_ACTIVE_BAND_WIDTH).toBeGreaterThan(WBS_ANCESTOR_RAIL_WIDTH);
   });
 
   it("returns deeper-tinted band colour for shallower WBS depth", () => {

@@ -24,10 +24,19 @@ export const COLUMN_SCHEMA = [
 export const TABLE_WIDTH = COLUMN_SCHEMA.reduce((sum, c) => sum + c.width, 0);
 export const TASK_TABLE_INDENT_WIDTH = 20;
 export const TASK_TABLE_MAX_INDENT_DEPTH = 12;
-// R5B — width (px) of each WBS band block in the task-name gutter.
-// Bands are placed side-by-side: band i occupies [i*WBS_BAND_WIDTH .. (i+1)*WBS_BAND_WIDTH).
-export const WBS_BAND_WIDTH = 10;
+// R5B — gutter widths for the nested WBS ownership band model.
+// Each row in the task-name column shows:
+//   • One "active" band (WBS_ACTIVE_BAND_WIDTH px) — the WBS level that directly owns this row.
+//     Wide, with a faint depth-indexed fill and a 2 px solid left accent. Acts as the container wall.
+//   • Zero or more thin "ancestor rail" lines (WBS_ANCESTOR_RAIL_WIDTH px each) — one per ancestor
+//     WBS level. No fill, just a coloured left border, showing the row is still inside those branches.
+// Together these form a stepped gutter: thin rails at left, dominant active block at right.
+export const WBS_ANCESTOR_RAIL_WIDTH = 3;
+export const WBS_ACTIVE_BAND_WIDTH = 14;
 
+// R5B — opacity for activity rows' WBS gutter bands: muted enough to not overpower
+// the text while still showing the ancestry/ownership hierarchy.
+const WBS_ACTIVITY_BAND_OPACITY = 0.65;
 // R5B — WBS Banding / Visual Grouping
 // Depth-indexed background tints for WBS summary rows (one per depth level).
 // Each entry is a subtle hue tint matching the corresponding marker colour.
@@ -344,7 +353,9 @@ export function TaskTable({
                     ? getWbsBandColor(task.depth)
                     : schedule?.isCritical
                       ? "#ffebee"
-                      : "#ffffff";
+                      : typeof task.depth === "number" && task.depth > 0
+                        ? getWbsBandColor(task.depth - 1) // activity inherits parent WBS tint
+                        : "#ffffff";
 
                 const cellBase: CSSProperties = {
                   height: ROW_HEIGHT,
@@ -390,29 +401,39 @@ export function TaskTable({
                       )}
                     </td>
                     <td style={{ ...cellBase, position: "relative" }}>
-                      {/* Continuous branch-level WBS band blocks — absolutely positioned, full row height.
-                          Each band is WBS_BAND_WIDTH px wide, placed side-by-side (no gaps) starting
-                          from the left edge of the task cell, so they form a filled hierarchy gutter.
-                          Faint tint fill (WBS_BAND_COLORS[i]) + solid 2px left accent (marker colour)
-                          gives each level a distinct block without overwhelming readability.
-                          Rendered on every row so bands run unbroken through entire WBS branches. */}
-                      {getWbsAncestorBandColors(task.depth, isSummaryRow).map((markerColor, i) => (
-                        <span
-                          key={i}
-                          aria-hidden="true"
-                          style={{
-                            position: "absolute",
-                            left: i * WBS_BAND_WIDTH,
-                            top: 0,
-                            width: WBS_BAND_WIDTH,
-                            bottom: 0,
-                            background: getWbsBandColor(i),
-                            borderLeft: `2px solid ${markerColor}`,
-                            boxSizing: "border-box",
-                            opacity: isSummaryRow ? 1 : 0.55,
-                          }}
-                        />
-                      ))}
+                      {/* Nested-container WBS gutter — absolutely positioned, full row height.
+                          For each row the ancestry array contains N bands:
+                          • Bands 0..N-2: thin WBS_ANCESTOR_RAIL_WIDTH (3 px) rails — no fill,
+                            just a coloured left border showing the row is still inside each
+                            ancestor WBS branch.
+                          • Band N-1 (the "active" / owning WBS level): wider WBS_ACTIVE_BAND_WIDTH
+                            (14 px) with a faint depth-indexed fill + 2 px solid accent border.
+                            This dominant block is the visible container wall for the current row.
+                          Activity rows inherit the parent WBS tint as the row background, making
+                          all rows in a WBS branch share the same colour zone. */}
+                      {getWbsAncestorBandColors(task.depth, isSummaryRow).map((markerColor, i, arr) => {
+                        const isActiveBand = i === arr.length - 1;
+                        // All ancestor rails (0..N-2) have WBS_ANCESTOR_RAIL_WIDTH px each,
+                        // so the cumulative left offset is simply i * WBS_ANCESTOR_RAIL_WIDTH.
+                        const left = i * WBS_ANCESTOR_RAIL_WIDTH;
+                        return (
+                          <span
+                            key={i}
+                            aria-hidden="true"
+                            style={{
+                              position: "absolute",
+                              left,
+                              top: 0,
+                              bottom: 0,
+                              width: isActiveBand ? WBS_ACTIVE_BAND_WIDTH : WBS_ANCESTOR_RAIL_WIDTH,
+                              background: isActiveBand ? getWbsBandColor(i) : "transparent",
+                              borderLeft: `2px solid ${markerColor}`,
+                              boxSizing: "border-box",
+                              opacity: isSummaryRow ? 1 : WBS_ACTIVITY_BAND_OPACITY,
+                            }}
+                          />
+                        );
+                      })}
                       <div style={{ ...cellContentBase, paddingLeft: getTaskIndentPx(task.depth), minWidth: 0 }}>
                         {task.isSummary && (
                           <span
