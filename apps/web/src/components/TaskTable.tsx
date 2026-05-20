@@ -22,6 +22,8 @@ export const COLUMN_SCHEMA = [
 ] as const;
 
 export const TABLE_WIDTH = COLUMN_SCHEMA.reduce((sum, c) => sum + c.width, 0);
+export const TASK_TABLE_INDENT_WIDTH = 20;
+export const TASK_TABLE_MAX_INDENT_DEPTH = 12;
 
 type WorkerTaskUpdate = {
   name?: string;
@@ -56,6 +58,16 @@ export function getDisplayTotalFloat(schedule: ScheduleDisplayResult | undefined
     return schedule.totalFloatWorkdays;
   }
   return schedule.totalFloat;
+}
+
+export function getTaskIndentPx(depth: number | null | undefined): number {
+  if (typeof depth !== "number" || !Number.isFinite(depth)) return 0;
+  const safeDepth = Math.min(Math.max(Math.floor(depth), 0), TASK_TABLE_MAX_INDENT_DEPTH);
+  return safeDepth * TASK_TABLE_INDENT_WIDTH;
+}
+
+export function getTaskRowKind(task: Pick<Task, "isSummary">): "summary" | "activity" {
+  return task.isSummary ? "summary" : "activity";
 }
 
 const SEVERITY_ICON: Record<DiagnosticSeverity, { symbol: string; color: string }> = {
@@ -150,6 +162,37 @@ export function TaskTable({
   };
   const thStyle: CSSProperties = { ...thBase, textAlign: "left" };
   const thCenterStyle: CSSProperties = { ...thBase, textAlign: "center" };
+  const summaryMarkerStyle: CSSProperties = {
+    width: 3,
+    height: 18,
+    marginRight: 6,
+    borderRadius: 2,
+    background: "#4f7eac",
+    flexShrink: 0,
+  };
+  const summaryBadgeStyle: CSSProperties = {
+    marginLeft: 7,
+    padding: "1px 5px",
+    border: "1px solid #bed0e3",
+    borderRadius: 4,
+    background: "#f7fbff",
+    color: "#456a8d",
+    fontSize: 9,
+    fontWeight: 700,
+    letterSpacing: "0.05em",
+    lineHeight: 1.3,
+    flexShrink: 0,
+  };
+  const toggleStyle: CSSProperties = {
+    width: 14,
+    marginRight: 5,
+    flexShrink: 0,
+    cursor: "pointer",
+    color: "#315f8d",
+    fontSize: 11,
+    lineHeight: 1,
+    userSelect: "none",
+  };
 
   return (
     /* Single scroll owner — overflowX:auto here, scrollbar pinned to pane bottom */
@@ -200,6 +243,8 @@ export function TaskTable({
                 const schedule = scheduleResults[task.id] as ScheduleDisplayResult | undefined;
                 const variance = variances[task.id];
                 const isSelected = task.id === selectedTaskId;
+                const rowKind = getTaskRowKind(task);
+                const isSummaryRow = rowKind === "summary";
                 const badge = constraintBadgeStyle(task.constraintType);
                 const sev = highestSeverity(diagnosticsMap?.[task.id], task.constraintType);
                 const sevIcon = sev ? SEVERITY_ICON[sev] : null;
@@ -211,16 +256,19 @@ export function TaskTable({
 
                 const rowBg = isSelected
                   ? "#bbdefb"
-                  : schedule?.isCritical
-                    ? "#ffebee"
-                    : "#ffffff";
+                  : isSummaryRow
+                    ? "#eef4fb"
+                    : schedule?.isCritical
+                      ? "#ffebee"
+                      : "#ffffff";
 
                 const cellBase: CSSProperties = {
                   height: ROW_HEIGHT,
                   boxSizing: "border-box",
                   padding: "0 8px",
                   overflow: "hidden",
-                  borderBottom: "1px solid #e0e0e0",
+                  borderBottom: isSummaryRow ? "1px solid #c8d5e4" : "1px solid #e0e0e0",
+                  borderTop: isSummaryRow ? "1px solid #d8e2ee" : undefined,
                   background: rowBg,
                   verticalAlign: "middle",
                 };
@@ -235,6 +283,9 @@ export function TaskTable({
                   lineHeight: 1.2,
                   boxSizing: "border-box",
                 };
+                const taskLabelStyle: CSSProperties = isSummaryRow
+                  ? { color: "#1e3a5f", fontStyle: "normal", fontWeight: 700, letterSpacing: "0.01em" }
+                  : { color: "#26394d", fontWeight: 500 };
 
                 return (
                   <tr
@@ -243,6 +294,7 @@ export function TaskTable({
                     style={{
                       height: ROW_HEIGHT,
                       background: rowBg,
+                      color: isSummaryRow ? "#1e3a5f" : undefined,
                       cursor: "pointer",
                     }}
                   >
@@ -254,20 +306,23 @@ export function TaskTable({
                       )}
                     </td>
                     <td style={cellBase}>
-                      <div style={{ ...cellContentBase, paddingLeft: task.depth * 20 }}>
+                      <div style={{ ...cellContentBase, paddingLeft: getTaskIndentPx(task.depth), minWidth: 0 }}>
                         {task.isSummary && (
                           <span
                             onClick={(e) => { e.stopPropagation(); onToggleCollapse(task.id); }}
-                            style={{ cursor: "pointer", marginRight: 4, userSelect: "none", fontSize: 12 }}
+                            style={toggleStyle}
+                            title={collapsedIds.has(task.id) ? "Expand summary row" : "Collapse summary row"}
                           >
                             {collapsedIds.has(task.id) ? "▶" : "▼"}
                           </span>
                         )}
+                        {isSummaryRow && <span style={summaryMarkerStyle} aria-hidden="true" />}
                         <EditableCell
                           value={task.name}
                           onCommit={(v) => onUpdateTask(task.id, toWorkerTaskUpdate({ name: v }))}
                         >
-                          <strong style={task.isSummary ? { fontStyle: "italic" } : undefined}>{task.name}</strong>
+                          <strong style={taskLabelStyle}>{task.name}</strong>
+                          {isSummaryRow && <span style={summaryBadgeStyle}>WBS</span>}
                           {schedule?.isCritical && (
                             <span
                               style={{
