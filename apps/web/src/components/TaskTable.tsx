@@ -422,31 +422,7 @@ export function TaskTable({
                         </span>
                       )}
                     </td>
-                    <td style={{ ...cellBase, position: "relative" }}>
-                      {/* R5B — single left accent strip, WBS_LEFT_BAND_WIDTH wide.
-                          Sits inside the cell's existing 8px left padding, never overlaying
-                          task-name text. Colour = active WBS ownership level (own level for
-                          summary rows; parent WBS level for activities). Row background tint
-                          (rowBg) provides the zone context; the strip provides the ownership
-                          anchor — one clear indicator per row, no barcode parallel stripes. */}
-                      {(() => {
-                        const activeBandColor = getWbsActiveBandColor(task.depth, isSummaryRow);
-                        return activeBandColor ? (
-                          <span
-                            aria-hidden="true"
-                            style={{
-                              position: "absolute",
-                              left: 0,
-                              top: 0,
-                              bottom: 0,
-                              width: WBS_LEFT_BAND_WIDTH,
-                              background: activeBandColor,
-                              opacity: isSummaryRow ? 0.85 : 0.55,
-                              boxSizing: "border-box",
-                            }}
-                          />
-                        ) : null;
-                      })()}
+                    <td style={cellBase}>
                       <div style={{ ...cellContentBase, paddingLeft: getTaskIndentPx(task.depth), minWidth: 0 }}>
                         {task.isSummary && (
                           <span
@@ -456,6 +432,25 @@ export function TaskTable({
                           >
                             {collapsedIds.has(task.id) ? "▶" : "▼"}
                           </span>
+                        )}
+                        {/* R5B — depth-indexed WBS ownership marker.
+                            Inline coloured pill on WBS summary rows; colour changes by depth
+                            (multi-hue: blue → green → amber → plum) so each WBS nesting level
+                            has a distinct hue. Activity rows inherit the parent WBS tint via
+                            rowBg so they feel visually inside the owning WBS container.
+                            No absolute-positioned overlays — text is never obscured. */}
+                        {isSummaryRow && (
+                          <span
+                            aria-hidden="true"
+                            style={{
+                              width: 4,
+                              height: 18,
+                              marginRight: 6,
+                              borderRadius: 2,
+                              background: getWbsMarkerColor(task.depth),
+                              flexShrink: 0,
+                            }}
+                          />
                         )}
                         <EditableCell
                           value={task.name}

@@ -7,15 +7,17 @@ banding to the task/name column so that large imported programmes are easier to
 scan and review. The change builds on the R5A baseline (hierarchy indentation,
 parent-before-child display ordering, summary/activity row distinction).
 
-The final model uses a **single left accent strip** per row (no full-cell overlays,
-no parallel barcode stripes) combined with a faint row background tint:
+The final model extends the R5A inline-marker approach with depth-indexed
+multi-hue coloring (no absolute-positioned overlays, no parallel barcode stripes):
 
-- The accent strip (6 px wide) sits inside the cell's existing 8 px left padding,
-  so it never overlays task-name text — full text contrast is preserved.
-- Strip colour = the active WBS ownership level's marker colour.
-- Row background tint = the same WBS level's faint hue — provides zone context.
-- Activity rows inherit the parent WBS tint and parent strip colour at 55% opacity,
-  so they visually sit inside the WBS container.
+- An inline 4 px coloured pill (the WBS ownership marker) appears on WBS summary
+  rows inside the content flow, before the task name — text is never obscured.
+- Marker colour changes by depth (steel blue → forest green → burnt amber → plum)
+  so each WBS nesting level has a visually distinct hue.
+- Row background tint is depth-indexed — summary rows and their activity descendants
+  share the same hue zone, so all rows within a WBS branch feel inside one container.
+- Activity rows inherit `getWbsBandColor(depth - 1)` as their row background,
+  connecting them visually to their owning WBS summary.
 
 ---
 
