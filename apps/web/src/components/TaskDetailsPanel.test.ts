@@ -22,12 +22,6 @@ function buildConstraintUpdate(
   };
 }
 
-/** Pure check mirroring ConstraintEditor's needsDate derivation. */
-function _constraintNeedsDate(ct: ConstraintType | undefined, constraintDate: number | null | undefined): boolean {
-  const effective = ct ?? "ASAP";
-  return DATED_TYPES.has(effective) && (constraintDate == null);
-}
-
 const HARD_TYPES: ReadonlySet<ConstraintType> = new Set(["MSO", "MFO"]);
 
 type DiagLevel = "error" | "info";
