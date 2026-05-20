@@ -146,7 +146,6 @@ export function HistogramPane({
       if (!selectedResource || !histogram) { setTooltip(null); return; }
       const rect = e.currentTarget.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
-      const mouseY = e.clientY - rect.top;
       const day = Math.floor((mouseX + scrollLeft) / timeline.pixelsPerDay);
       const units = histogram[day] || 0;
       if (units === 0) { setTooltip(null); return; }
