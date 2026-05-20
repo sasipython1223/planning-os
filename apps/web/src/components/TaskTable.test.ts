@@ -11,6 +11,7 @@ import {
   TASK_TABLE_MAX_INDENT_DEPTH,
   toWorkerTaskUpdate,
   WBS_BAND_COLORS,
+  WBS_BAND_WIDTH,
   WBS_MARKER_COLORS,
 } from "./TaskTable";
 
@@ -104,6 +105,11 @@ describe("W5B-UI.R5A — TaskTable WBS display helpers", () => {
 });
 
 describe("W5B-UI.R5B — WBS banding / visual grouping helpers", () => {
+  it("WBS_BAND_WIDTH is a positive number (band block width in px)", () => {
+    expect(typeof WBS_BAND_WIDTH).toBe("number");
+    expect(WBS_BAND_WIDTH).toBeGreaterThan(0);
+  });
+
   it("returns deeper-tinted band colour for shallower WBS depth", () => {
     expect(getWbsBandColor(0)).toBe(WBS_BAND_COLORS[0]);
     expect(getWbsBandColor(1)).toBe(WBS_BAND_COLORS[1]);

@@ -24,6 +24,9 @@ export const COLUMN_SCHEMA = [
 export const TABLE_WIDTH = COLUMN_SCHEMA.reduce((sum, c) => sum + c.width, 0);
 export const TASK_TABLE_INDENT_WIDTH = 20;
 export const TASK_TABLE_MAX_INDENT_DEPTH = 12;
+// R5B — width (px) of each WBS band block in the task-name gutter.
+// Bands are placed side-by-side: band i occupies [i*WBS_BAND_WIDTH .. (i+1)*WBS_BAND_WIDTH).
+export const WBS_BAND_WIDTH = 10;
 
 // R5B — WBS Banding / Visual Grouping
 // Depth-indexed background tints for WBS summary rows (one per depth level).
@@ -387,22 +390,26 @@ export function TaskTable({
                       )}
                     </td>
                     <td style={{ ...cellBase, position: "relative" }}>
-                      {/* Continuous branch-level WBS bands — absolutely positioned, full row height.
-                          Appear on every row (summary and activity) so they run uninterrupted
-                          through an entire WBS branch, creating P6-style visual ownership. */}
-                      {getWbsAncestorBandColors(task.depth, isSummaryRow).map((colour, i) => (
+                      {/* Continuous branch-level WBS band blocks — absolutely positioned, full row height.
+                          Each band is WBS_BAND_WIDTH px wide, placed side-by-side (no gaps) starting
+                          from the left edge of the task cell, so they form a filled hierarchy gutter.
+                          Faint tint fill (WBS_BAND_COLORS[i]) + solid 2px left accent (marker colour)
+                          gives each level a distinct block without overwhelming readability.
+                          Rendered on every row so bands run unbroken through entire WBS branches. */}
+                      {getWbsAncestorBandColors(task.depth, isSummaryRow).map((markerColor, i) => (
                         <span
                           key={i}
                           aria-hidden="true"
                           style={{
                             position: "absolute",
-                            left: 2 + i * 6,
+                            left: i * WBS_BAND_WIDTH,
                             top: 0,
-                            width: 4,
+                            width: WBS_BAND_WIDTH,
                             bottom: 0,
-                            borderRadius: 2,
-                            background: colour,
-                            opacity: isSummaryRow ? 1 : 0.45,
+                            background: WBS_BAND_COLORS[Math.min(i, WBS_BAND_COLORS.length - 1)],
+                            borderLeft: `2px solid ${markerColor}`,
+                            boxSizing: "border-box",
+                            opacity: isSummaryRow ? 1 : 0.55,
                           }}
                         />
                       ))}
