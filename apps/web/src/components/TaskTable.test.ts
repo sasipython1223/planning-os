@@ -12,6 +12,8 @@ import {
   TASK_TABLE_MAX_INDENT_DEPTH,
   toWorkerTaskUpdate,
   WBS_LEFT_BAND_WIDTH,
+  WBS_MARKER_PILL_WIDTH,
+  WBS_MARKER_PILL_HEIGHT,
   WBS_BAND_COLORS,
   WBS_MARKER_COLORS,
 } from "./TaskTable";
@@ -109,6 +111,16 @@ describe("W5B-UI.R5B — WBS banding / visual grouping helpers", () => {
   it("WBS_LEFT_BAND_WIDTH is a positive number (single left accent strip width)", () => {
     expect(typeof WBS_LEFT_BAND_WIDTH).toBe("number");
     expect(WBS_LEFT_BAND_WIDTH).toBeGreaterThan(0);
+  });
+
+  it("WBS_MARKER_PILL_WIDTH is a positive number (inline depth marker pill width)", () => {
+    expect(typeof WBS_MARKER_PILL_WIDTH).toBe("number");
+    expect(WBS_MARKER_PILL_WIDTH).toBeGreaterThan(0);
+  });
+
+  it("WBS_MARKER_PILL_HEIGHT is a positive number (inline depth marker pill height)", () => {
+    expect(typeof WBS_MARKER_PILL_HEIGHT).toBe("number");
+    expect(WBS_MARKER_PILL_HEIGHT).toBeGreaterThan(0);
   });
 
   it("returns deeper-tinted band colour for shallower WBS depth", () => {

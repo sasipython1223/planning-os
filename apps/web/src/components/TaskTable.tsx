@@ -30,6 +30,11 @@ export const TASK_TABLE_MAX_INDENT_DEPTH = 12;
 // The strip sits inside the cell's existing 8px left padding so it never
 // overlays the task-name text, preserving full readability.
 export const WBS_LEFT_BAND_WIDTH = 6;
+// R5B — inline depth marker pill dimensions for WBS summary rows.
+// The pill is rendered in the content flow, before the task name — it does not
+// use absolute positioning and cannot overlay text.
+export const WBS_MARKER_PILL_WIDTH = 4;
+export const WBS_MARKER_PILL_HEIGHT = 18;
 // R5B — WBS Banding / Visual Grouping
 // Depth-indexed background tints for WBS summary rows (one per depth level).
 // Each entry is a subtle hue tint matching the corresponding marker colour.
@@ -443,8 +448,8 @@ export function TaskTable({
                           <span
                             aria-hidden="true"
                             style={{
-                              width: 4,
-                              height: 18,
+                              width: WBS_MARKER_PILL_WIDTH,
+                              height: WBS_MARKER_PILL_HEIGHT,
                               marginRight: 6,
                               borderRadius: 2,
                               background: getWbsMarkerColor(task.depth),
