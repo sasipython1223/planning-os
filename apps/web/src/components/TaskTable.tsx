@@ -25,6 +25,52 @@ export const TABLE_WIDTH = COLUMN_SCHEMA.reduce((sum, c) => sum + c.width, 0);
 export const TASK_TABLE_INDENT_WIDTH = 20;
 export const TASK_TABLE_MAX_INDENT_DEPTH = 12;
 
+// R5B — WBS Banding / Visual Grouping
+// Depth-indexed band colours for WBS summary rows (index 0 = root WBS).
+// The last entry is used for all depths beyond the array length.
+export const WBS_BAND_COLORS = [
+  "#d6e6f5", // depth 0 — project/root WBS (strongest tint)
+  "#deedf8", // depth 1
+  "#eef4fb", // depth 2 (baseline summary colour from R5A)
+  "#f3f7fd", // depth 3+ (subtlest tint)
+] as const;
+
+// Depth-indexed left-marker colours for WBS summary rows.
+export const WBS_MARKER_COLORS = [
+  "#1e5a96", // depth 0 — darkest
+  "#2d6aa8", // depth 1
+  "#4f7eac", // depth 2 (baseline from R5A)
+  "#7aa0c2", // depth 3+ — lightest
+] as const;
+
+/**
+ * Pure display helper: returns the WBS band background colour for a summary row.
+ * Depth-based for visual differentiation of nested WBS levels.
+ * Safe fallback to the depth-2 colour when depth is missing or invalid.
+ * R5B — WBS Banding / Visual Grouping
+ */
+export function getWbsBandColor(depth: number | null | undefined): string {
+  if (typeof depth !== "number" || !Number.isFinite(depth) || depth < 0) {
+    return WBS_BAND_COLORS[2]; // safe fallback
+  }
+  const safeDepth = Math.min(Math.floor(depth), WBS_BAND_COLORS.length - 1);
+  return WBS_BAND_COLORS[safeDepth];
+}
+
+/**
+ * Pure display helper: returns the WBS left-marker colour for a summary row.
+ * Depth-based to visually distinguish WBS nesting level.
+ * Safe fallback to the depth-2 colour when depth is missing or invalid.
+ * R5B — WBS Banding / Visual Grouping
+ */
+export function getWbsMarkerColor(depth: number | null | undefined): string {
+  if (typeof depth !== "number" || !Number.isFinite(depth) || depth < 0) {
+    return WBS_MARKER_COLORS[2]; // safe fallback (matches R5A default)
+  }
+  const safeDepth = Math.min(Math.floor(depth), WBS_MARKER_COLORS.length - 1);
+  return WBS_MARKER_COLORS[safeDepth];
+}
+
 type WorkerTaskUpdate = {
   name?: string;
   duration?: number;
@@ -257,7 +303,7 @@ export function TaskTable({
                 const rowBg = isSelected
                   ? "#bbdefb"
                   : isSummaryRow
-                    ? "#eef4fb"
+                    ? getWbsBandColor(task.depth)
                     : schedule?.isCritical
                       ? "#ffebee"
                       : "#ffffff";
@@ -316,7 +362,7 @@ export function TaskTable({
                             {collapsedIds.has(task.id) ? "▶" : "▼"}
                           </span>
                         )}
-                        {isSummaryRow && <span style={summaryMarkerStyle} aria-hidden="true" />}
+                        {isSummaryRow && <span style={{ ...summaryMarkerStyle, background: getWbsMarkerColor(task.depth) }} aria-hidden="true" />}
                         <EditableCell
                           value={task.name}
                           onCommit={(v) => onUpdateTask(task.id, toWorkerTaskUpdate({ name: v }))}

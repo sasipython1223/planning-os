@@ -3,9 +3,13 @@ import {
   getDisplayTotalFloat,
   getTaskIndentPx,
   getTaskRowKind,
+  getWbsBandColor,
+  getWbsMarkerColor,
   TASK_TABLE_INDENT_WIDTH,
   TASK_TABLE_MAX_INDENT_DEPTH,
   toWorkerTaskUpdate,
+  WBS_BAND_COLORS,
+  WBS_MARKER_COLORS,
 } from "./TaskTable";
 
 describe("W5B-B2.12A.17 — TaskTable float display migration", () => {
@@ -94,5 +98,43 @@ describe("W5B-UI.R5A — TaskTable WBS display helpers", () => {
   it("classifies rows using existing summary metadata only", () => {
     expect(getTaskRowKind({ isSummary: true })).toBe("summary");
     expect(getTaskRowKind({ isSummary: false })).toBe("activity");
+  });
+});
+
+describe("W5B-UI.R5B — WBS banding / visual grouping helpers", () => {
+  it("returns deeper-tinted band colour for shallower WBS depth", () => {
+    expect(getWbsBandColor(0)).toBe(WBS_BAND_COLORS[0]);
+    expect(getWbsBandColor(1)).toBe(WBS_BAND_COLORS[1]);
+    expect(getWbsBandColor(2)).toBe(WBS_BAND_COLORS[2]);
+    expect(getWbsBandColor(3)).toBe(WBS_BAND_COLORS[3]);
+  });
+
+  it("clamps excessive WBS depth to the last band colour", () => {
+    expect(getWbsBandColor(100)).toBe(WBS_BAND_COLORS[WBS_BAND_COLORS.length - 1]);
+  });
+
+  it("falls back safely for missing or invalid depth in band colour", () => {
+    expect(getWbsBandColor(undefined)).toBe(WBS_BAND_COLORS[2]);
+    expect(getWbsBandColor(null)).toBe(WBS_BAND_COLORS[2]);
+    expect(getWbsBandColor(Number.NaN)).toBe(WBS_BAND_COLORS[2]);
+    expect(getWbsBandColor(-1)).toBe(WBS_BAND_COLORS[2]);
+  });
+
+  it("returns depth-based marker colours for WBS summary rows", () => {
+    expect(getWbsMarkerColor(0)).toBe(WBS_MARKER_COLORS[0]);
+    expect(getWbsMarkerColor(1)).toBe(WBS_MARKER_COLORS[1]);
+    expect(getWbsMarkerColor(2)).toBe(WBS_MARKER_COLORS[2]);
+    expect(getWbsMarkerColor(3)).toBe(WBS_MARKER_COLORS[3]);
+  });
+
+  it("clamps excessive WBS depth to the last marker colour", () => {
+    expect(getWbsMarkerColor(50)).toBe(WBS_MARKER_COLORS[WBS_MARKER_COLORS.length - 1]);
+  });
+
+  it("falls back safely for missing or invalid depth in marker colour", () => {
+    expect(getWbsMarkerColor(undefined)).toBe(WBS_MARKER_COLORS[2]);
+    expect(getWbsMarkerColor(null)).toBe(WBS_MARKER_COLORS[2]);
+    expect(getWbsMarkerColor(Number.NaN)).toBe(WBS_MARKER_COLORS[2]);
+    expect(getWbsMarkerColor(-1)).toBe(WBS_MARKER_COLORS[2]);
   });
 });
