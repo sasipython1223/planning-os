@@ -24,25 +24,12 @@ export const COLUMN_SCHEMA = [
 export const TABLE_WIDTH = COLUMN_SCHEMA.reduce((sum, c) => sum + c.width, 0);
 export const TASK_TABLE_INDENT_WIDTH = 20;
 export const TASK_TABLE_MAX_INDENT_DEPTH = 12;
-// R5B — slot width for the stepped-overlap WBS container gutter.
-// Each WBS band in the task-name column spans from (i × WBS_SLOT_WIDTH) to the RIGHT EDGE of the
-// cell. Bands are rendered in DOM order (0, 1, 2…), so each successive band paints on top of
-// earlier ones in the overlapping region. Only the leftmost WBS_SLOT_WIDTH pixels of each band
-// are visible; the rest is covered by the next (deeper) band. This produces nested filled zones:
-//
-//   Band 0 (blue):  [═══ blue fill, 0 → cell right ═══════════════════════]
-//   Band 1 (green):       [══ green fill, slot → right ══════════════════]
-//   Band 2 (amber):              [═ amber fill, 2×slot → right ══════════]
-//
-//   Visible result: [12px blue][12px green][════════ amber fills rest ════]
-//
-// The deepest band dominates the right portion — the row feels like it sits INSIDE that WBS zone.
-// Shallower bands show as narrow coloured pillars on the left ("container walls").
-export const WBS_SLOT_WIDTH = 12;
-
-// R5B — opacity for activity rows' WBS gutter bands: muted enough to not overpower
-// the text while still showing the ancestry/ownership hierarchy.
-const WBS_ACTIVITY_BAND_OPACITY = 0.65;
+// R5B — left accent strip width for the WBS ownership band.
+// A single narrow strip is rendered at the left edge of the task cell.
+// Its colour is the active WBS level's marker colour for the row.
+// The strip sits inside the cell's existing 8px left padding so it never
+// overlays the task-name text, preserving full readability.
+export const WBS_LEFT_BAND_WIDTH = 6;
 // R5B — WBS Banding / Visual Grouping
 // Depth-indexed background tints for WBS summary rows (one per depth level).
 // Each entry is a subtle hue tint matching the corresponding marker colour.
@@ -130,6 +117,35 @@ export function getWbsAncestorBandColors(
   }
   // Summary rows: show own WBS level and all ancestor levels (0..depth)
   return getWbsDepthMarkerColors(depth);
+}
+
+/**
+ * Pure display helper: returns the single active WBS ownership band colour for a row.
+ * - Summary at depth D → own WBS level marker colour.
+ * - Activity at depth D > 0 → parent WBS level marker colour (depth D−1).
+ * - Activity at depth 0 or invalid → null (no band rendered).
+ *
+ * Replaces the multi-band getWbsAncestorBandColors approach in rendering.
+ * A single strip at WBS_LEFT_BAND_WIDTH sits inside the cell's existing padding
+ * and never overlays task-name text.
+ * R5B — WBS Banding / Visual Grouping
+ */
+export function getWbsActiveBandColor(
+  depth: number | null | undefined,
+  isSummary: boolean,
+): string | null {
+  if (!isSummary) {
+    // Activity: use parent WBS level colour; no band for top-level activities
+    if (typeof depth !== "number" || !Number.isFinite(depth) || depth <= 0) {
+      return null;
+    }
+    return getWbsMarkerColor(depth - 1);
+  }
+  // Summary: use own WBS level colour
+  if (typeof depth !== "number" || !Number.isFinite(depth) || depth < 0) {
+    return getWbsMarkerColor(0); // safe fallback to root colour
+  }
+  return getWbsMarkerColor(depth);
 }
 
 type WorkerTaskUpdate = {
@@ -407,32 +423,30 @@ export function TaskTable({
                       )}
                     </td>
                     <td style={{ ...cellBase, position: "relative" }}>
-                      {/* Stepped-overlap WBS container gutter — absolutely positioned, full row height.
-                          Each band spans from (i × WBS_SLOT_WIDTH) to the RIGHT EDGE of the cell.
-                          Bands render in DOM order so each successive band paints on top of the
-                          previous ones in their shared region. Only the leftmost WBS_SLOT_WIDTH px
-                          of each band remain visible; the rest is covered by the next band.
-                          Result: [12px blue slot][12px green slot][═══ amber fills rest ═══]
-                          The deepest band dominates — every row feels visually INSIDE that WBS zone.
-                          Activity rows inherit the parent WBS background tint so all rows in a branch
-                          share the same dominant colour zone (summary full-opacity, activities 65%). */}
-                      {getWbsAncestorBandColors(task.depth, isSummaryRow).map((markerColor, i) => (
-                        <span
-                          key={i}
-                          aria-hidden="true"
-                          style={{
-                            position: "absolute",
-                            left: i * WBS_SLOT_WIDTH,
-                            top: 0,
-                            bottom: 0,
-                            right: 0,
-                            background: getWbsBandColor(i),
-                            borderLeft: `2px solid ${markerColor}`,
-                            boxSizing: "border-box",
-                            opacity: isSummaryRow ? 1 : WBS_ACTIVITY_BAND_OPACITY,
-                          }}
-                        />
-                      ))}
+                      {/* R5B — single left accent strip, WBS_LEFT_BAND_WIDTH wide.
+                          Sits inside the cell's existing 8px left padding, never overlaying
+                          task-name text. Colour = active WBS ownership level (own level for
+                          summary rows; parent WBS level for activities). Row background tint
+                          (rowBg) provides the zone context; the strip provides the ownership
+                          anchor — one clear indicator per row, no barcode parallel stripes. */}
+                      {(() => {
+                        const activeBandColor = getWbsActiveBandColor(task.depth, isSummaryRow);
+                        return activeBandColor ? (
+                          <span
+                            aria-hidden="true"
+                            style={{
+                              position: "absolute",
+                              left: 0,
+                              top: 0,
+                              bottom: 0,
+                              width: WBS_LEFT_BAND_WIDTH,
+                              background: activeBandColor,
+                              opacity: isSummaryRow ? 0.85 : 0.55,
+                              boxSizing: "border-box",
+                            }}
+                          />
+                        ) : null;
+                      })()}
                       <div style={{ ...cellContentBase, paddingLeft: getTaskIndentPx(task.depth), minWidth: 0 }}>
                         {task.isSummary && (
                           <span

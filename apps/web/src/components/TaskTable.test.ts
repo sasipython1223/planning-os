@@ -3,6 +3,7 @@ import {
   getDisplayTotalFloat,
   getTaskIndentPx,
   getTaskRowKind,
+  getWbsActiveBandColor,
   getWbsAncestorBandColors,
   getWbsBandColor,
   getWbsDepthMarkerColors,
@@ -10,7 +11,7 @@ import {
   TASK_TABLE_INDENT_WIDTH,
   TASK_TABLE_MAX_INDENT_DEPTH,
   toWorkerTaskUpdate,
-  WBS_SLOT_WIDTH,
+  WBS_LEFT_BAND_WIDTH,
   WBS_BAND_COLORS,
   WBS_MARKER_COLORS,
 } from "./TaskTable";
@@ -105,9 +106,9 @@ describe("W5B-UI.R5A — TaskTable WBS display helpers", () => {
 });
 
 describe("W5B-UI.R5B — WBS banding / visual grouping helpers", () => {
-  it("WBS_SLOT_WIDTH is a positive number (visible slot per WBS level in the stepped gutter)", () => {
-    expect(typeof WBS_SLOT_WIDTH).toBe("number");
-    expect(WBS_SLOT_WIDTH).toBeGreaterThan(0);
+  it("WBS_LEFT_BAND_WIDTH is a positive number (single left accent strip width)", () => {
+    expect(typeof WBS_LEFT_BAND_WIDTH).toBe("number");
+    expect(WBS_LEFT_BAND_WIDTH).toBeGreaterThan(0);
   });
 
   it("returns deeper-tinted band colour for shallower WBS depth", () => {
@@ -201,5 +202,39 @@ describe("W5B-UI.R5B — WBS continuous branch-level bands", () => {
     expect(getWbsAncestorBandColors(null, true)).toEqual([WBS_MARKER_COLORS[0]]);
     expect(getWbsAncestorBandColors(Number.NaN, true)).toEqual([WBS_MARKER_COLORS[0]]);
     expect(getWbsAncestorBandColors(-1, true)).toEqual([WBS_MARKER_COLORS[0]]);
+  });
+});
+
+describe("W5B-UI.R5B — WBS single active band colour (left accent strip)", () => {
+  it("returns own WBS level marker colour for summary rows", () => {
+    expect(getWbsActiveBandColor(0, true)).toBe(WBS_MARKER_COLORS[0]);
+    expect(getWbsActiveBandColor(1, true)).toBe(WBS_MARKER_COLORS[1]);
+    expect(getWbsActiveBandColor(2, true)).toBe(WBS_MARKER_COLORS[2]);
+    expect(getWbsActiveBandColor(3, true)).toBe(WBS_MARKER_COLORS[3]);
+  });
+
+  it("clamps to last marker colour for excessive summary depth", () => {
+    expect(getWbsActiveBandColor(100, true)).toBe(WBS_MARKER_COLORS[WBS_MARKER_COLORS.length - 1]);
+  });
+
+  it("returns parent WBS level colour for activity rows at depth > 0", () => {
+    expect(getWbsActiveBandColor(1, false)).toBe(WBS_MARKER_COLORS[0]);
+    expect(getWbsActiveBandColor(2, false)).toBe(WBS_MARKER_COLORS[1]);
+    expect(getWbsActiveBandColor(3, false)).toBe(WBS_MARKER_COLORS[2]);
+  });
+
+  it("returns null for depth-0 activity rows (no parent WBS container)", () => {
+    expect(getWbsActiveBandColor(0, false)).toBeNull();
+  });
+
+  it("falls back safely for invalid depth — activity returns null, summary returns root colour", () => {
+    expect(getWbsActiveBandColor(undefined, false)).toBeNull();
+    expect(getWbsActiveBandColor(null, false)).toBeNull();
+    expect(getWbsActiveBandColor(Number.NaN, false)).toBeNull();
+    expect(getWbsActiveBandColor(-1, false)).toBeNull();
+    expect(getWbsActiveBandColor(undefined, true)).toBe(WBS_MARKER_COLORS[0]);
+    expect(getWbsActiveBandColor(null, true)).toBe(WBS_MARKER_COLORS[0]);
+    expect(getWbsActiveBandColor(Number.NaN, true)).toBe(WBS_MARKER_COLORS[0]);
+    expect(getWbsActiveBandColor(-1, true)).toBe(WBS_MARKER_COLORS[0]);
   });
 });
