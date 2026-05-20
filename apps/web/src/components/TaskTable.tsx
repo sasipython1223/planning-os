@@ -406,7 +406,7 @@ export function TaskTable({
                             top: 0,
                             width: WBS_BAND_WIDTH,
                             bottom: 0,
-                            background: WBS_BAND_COLORS[Math.min(i, WBS_BAND_COLORS.length - 1)],
+                            background: getWbsBandColor(i),
                             borderLeft: `2px solid ${markerColor}`,
                             boxSizing: "border-box",
                             opacity: isSummaryRow ? 1 : 0.55,
