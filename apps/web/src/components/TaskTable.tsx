@@ -75,9 +75,7 @@ export function getWbsMarkerColor(depth: number | null | undefined): string {
 
 /**
  * Pure display helper: returns an array of WBS marker colours for levels 0..depth.
- * Used to render P6-style stacked left-side depth indicator bars on WBS summary rows.
- * Each bar in the returned array represents one level of WBS ancestry, giving a clear
- * visual "ladder" that communicates nesting depth at a glance.
+ * Used internally to build continuous branch-level bands.
  * Safe fallback to a single root-level bar when depth is missing or invalid.
  * R5B — WBS Banding / Visual Grouping
  */
@@ -87,6 +85,33 @@ export function getWbsDepthMarkerColors(depth: number | null | undefined): reado
   }
   const safeDepth = Math.min(Math.floor(depth), WBS_MARKER_COLORS.length - 1);
   return WBS_MARKER_COLORS.slice(0, safeDepth + 1);
+}
+
+/**
+ * Pure display helper: returns the WBS ancestry band colours to render for a row.
+ * Enables continuous P6-style branch-level banding — every row in a WBS branch
+ * shows the bands of its owning WBS levels, not just the summary row itself.
+ *
+ * - Summary row at depth D: returns D+1 colours (levels 0..D, including own level).
+ * - Activity row at depth D: returns D colours (levels 0..D-1, the parent WBS levels).
+ * - Depth 0 activity: returns [] — no parent WBS band to show.
+ *
+ * Safe fallbacks: invalid/missing depth returns [] for activities, [level-0 colour] for summaries.
+ * R5B — WBS Banding / Visual Grouping
+ */
+export function getWbsAncestorBandColors(
+  depth: number | null | undefined,
+  isSummary: boolean,
+): readonly string[] {
+  if (!isSummary) {
+    // Activity rows: show only the parent WBS levels (0..depth-1)
+    if (typeof depth !== "number" || !Number.isFinite(depth) || depth <= 0) {
+      return []; // top-level activity or invalid → no WBS bands
+    }
+    return getWbsDepthMarkerColors(depth - 1);
+  }
+  // Summary rows: show own WBS level and all ancestor levels (0..depth)
+  return getWbsDepthMarkerColors(depth);
 }
 
 type WorkerTaskUpdate = {
@@ -361,7 +386,26 @@ export function TaskTable({
                         </span>
                       )}
                     </td>
-                    <td style={cellBase}>
+                    <td style={{ ...cellBase, position: "relative" }}>
+                      {/* Continuous branch-level WBS bands — absolutely positioned, full row height.
+                          Appear on every row (summary and activity) so they run uninterrupted
+                          through an entire WBS branch, creating P6-style visual ownership. */}
+                      {getWbsAncestorBandColors(task.depth, isSummaryRow).map((colour, i) => (
+                        <span
+                          key={i}
+                          aria-hidden="true"
+                          style={{
+                            position: "absolute",
+                            left: 2 + i * 6,
+                            top: 0,
+                            width: 4,
+                            bottom: 0,
+                            borderRadius: 2,
+                            background: colour,
+                            opacity: isSummaryRow ? 1 : 0.45,
+                          }}
+                        />
+                      ))}
                       <div style={{ ...cellContentBase, paddingLeft: getTaskIndentPx(task.depth), minWidth: 0 }}>
                         {task.isSummary && (
                           <span
@@ -370,19 +414,6 @@ export function TaskTable({
                             title={collapsedIds.has(task.id) ? "Expand summary row" : "Collapse summary row"}
                           >
                             {collapsedIds.has(task.id) ? "▶" : "▼"}
-                          </span>
-                        )}
-                        {isSummaryRow && (
-                          <span
-                            style={{ display: "flex", alignItems: "center", gap: 2, marginRight: 6, flexShrink: 0 }}
-                            aria-hidden="true"
-                          >
-                            {getWbsDepthMarkerColors(task.depth).map((colour, i) => (
-                              <span
-                                key={i}
-                                style={{ width: 4, height: 18, borderRadius: 2, background: colour, flexShrink: 0 }}
-                              />
-                            ))}
                           </span>
                         )}
                         <EditableCell

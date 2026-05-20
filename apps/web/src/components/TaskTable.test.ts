@@ -3,6 +3,7 @@ import {
   getDisplayTotalFloat,
   getTaskIndentPx,
   getTaskRowKind,
+  getWbsAncestorBandColors,
   getWbsBandColor,
   getWbsDepthMarkerColors,
   getWbsMarkerColor,
@@ -160,5 +161,39 @@ describe("W5B-UI.R5B — WBS stacked depth-indicator bars", () => {
     expect(getWbsDepthMarkerColors(null)).toEqual([WBS_MARKER_COLORS[0]]);
     expect(getWbsDepthMarkerColors(Number.NaN)).toEqual([WBS_MARKER_COLORS[0]]);
     expect(getWbsDepthMarkerColors(-1)).toEqual([WBS_MARKER_COLORS[0]]);
+  });
+});
+
+describe("W5B-UI.R5B — WBS continuous branch-level bands", () => {
+  it("returns no bands for top-level activity rows (depth 0 — no parent WBS)", () => {
+    expect(getWbsAncestorBandColors(0, false)).toEqual([]);
+  });
+
+  it("returns parent WBS ancestry bands for activity rows (depth N → N bars)", () => {
+    expect(getWbsAncestorBandColors(1, false)).toEqual([WBS_MARKER_COLORS[0]]);
+    expect(getWbsAncestorBandColors(2, false)).toEqual([WBS_MARKER_COLORS[0], WBS_MARKER_COLORS[1]]);
+    expect(getWbsAncestorBandColors(3, false)).toEqual([WBS_MARKER_COLORS[0], WBS_MARKER_COLORS[1], WBS_MARKER_COLORS[2]]);
+  });
+
+  it("clamps activity ancestor bands to available colour levels", () => {
+    expect(getWbsAncestorBandColors(100, false)).toEqual([...WBS_MARKER_COLORS]);
+  });
+
+  it("returns own level + ancestry bands for summary rows (depth D → D+1 bars)", () => {
+    expect(getWbsAncestorBandColors(0, true)).toEqual([WBS_MARKER_COLORS[0]]);
+    expect(getWbsAncestorBandColors(1, true)).toEqual([WBS_MARKER_COLORS[0], WBS_MARKER_COLORS[1]]);
+    expect(getWbsAncestorBandColors(2, true)).toEqual([WBS_MARKER_COLORS[0], WBS_MARKER_COLORS[1], WBS_MARKER_COLORS[2]]);
+    expect(getWbsAncestorBandColors(3, true)).toEqual([...WBS_MARKER_COLORS]);
+  });
+
+  it("falls back safely for invalid depth — activity returns no bands, summary returns root bar", () => {
+    expect(getWbsAncestorBandColors(undefined, false)).toEqual([]);
+    expect(getWbsAncestorBandColors(null, false)).toEqual([]);
+    expect(getWbsAncestorBandColors(Number.NaN, false)).toEqual([]);
+    expect(getWbsAncestorBandColors(-1, false)).toEqual([]);
+    expect(getWbsAncestorBandColors(undefined, true)).toEqual([WBS_MARKER_COLORS[0]]);
+    expect(getWbsAncestorBandColors(null, true)).toEqual([WBS_MARKER_COLORS[0]]);
+    expect(getWbsAncestorBandColors(Number.NaN, true)).toEqual([WBS_MARKER_COLORS[0]]);
+    expect(getWbsAncestorBandColors(-1, true)).toEqual([WBS_MARKER_COLORS[0]]);
   });
 });

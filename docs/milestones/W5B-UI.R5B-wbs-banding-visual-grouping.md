@@ -29,22 +29,31 @@ R5A predecessor:
 
 R5B scope implemented:
 
-- Added `WBS_BAND_COLORS` constant: four depth-indexed background colours for WBS
-  summary rows (depth 0 = strongest tint, depth 3+ = subtlest tint).
-- Added `WBS_MARKER_COLORS` constant: four depth-indexed colours for the left
-  vertical marker bar displayed on every summary row.
-- Added `getWbsBandColor(depth)` exported helper: pure display projection,
-  returns the appropriate band background for the given `task.depth` with a safe
-  fallback for missing or invalid values.
-- Added `getWbsMarkerColor(depth)` exported helper: pure display projection,
-  returns the appropriate marker colour for the given `task.depth` with a safe
-  fallback.
-- Applied depth-based background in TaskTable row rendering: summary `rowBg` now
-  calls `getWbsBandColor(task.depth)` instead of a flat `#eef4fb`.
-- Applied depth-based left marker in TaskTable row rendering: the summary marker
-  `<span>` now receives `getWbsMarkerColor(task.depth)` as its background.
-- Added R5B test suite in `TaskTable.test.ts` covering all four depth levels,
-  clamping behaviour, and invalid/missing depth fallbacks.
+- Added `WBS_BAND_COLORS` constant: four depth-indexed background tints for WBS
+  summary rows, one per WBS nesting level (distinct hues: blue, green, amber, plum).
+- Added `WBS_MARKER_COLORS` constant: four depth-indexed solid hues for the left
+  vertical band (steel blue, forest green, burnt amber, plum).
+- Added `getWbsBandColor(depth)` exported helper: returns the appropriate band
+  background for the given `task.depth` with a safe fallback.
+- Added `getWbsMarkerColor(depth)` exported helper: returns the appropriate marker
+  colour for the given `task.depth` with a safe fallback.
+- Added `getWbsDepthMarkerColors(depth)` exported helper: returns an array of
+  colours for levels 0..depth — building block for band arrays.
+- Added `getWbsAncestorBandColors(depth, isSummary)` exported helper: returns the
+  WBS band colour array for a row based on its depth and whether it is a summary or
+  activity row. Summary rows show own level + ancestry (D+1 bars); activity rows show
+  parent ancestry only (D bars). This is the key driver for continuous branch bands.
+- Applied continuous branch-level vertical bands in TaskTable row rendering:
+  - The task/name `<td>` is `position: relative`.
+  - `getWbsAncestorBandColors` is called for **every** row (not just summary rows).
+  - Bands are `position: absolute`, `top: 0`, `bottom: 0` (full row height), 4 px wide.
+  - Summary row bands: opacity 1. Activity row bands: opacity 0.45 (subtle containment cue).
+  - Each level i band is at `left: 2 + i * 6` px, giving 6 px pitch (4 px bar + 2 px gap).
+  - The existing `paddingLeft: getTaskIndentPx(task.depth)` in the content div ensures
+    text never overlaps the band positions.
+- Applied depth-based background (`getWbsBandColor`) to summary `rowBg`.
+- Added R5B test suites covering all depth levels, clamping, and invalid/null/NaN
+  fallbacks for all exported helpers including `getWbsAncestorBandColors`.
 
 Out of scope and not implemented:
 
@@ -103,22 +112,39 @@ packages/protocol/**                          — forbidden
 | 2     | `#fdf2e9` (amber)    | `#ca6f1e`     | Second-level WBS       |
 | 3+    | `#f5eef8` (plum)     | `#7d3c98`     | Deeper WBS / fallback  |
 
+Summary row backgrounds use the tint matching their WBS level.
 Activity rows remain white (`#ffffff`) or critical-red (`#ffebee`) as before.
 Selected rows remain `#bbdefb` regardless of depth.
 
-### Stacked Depth-Indicator Bars
+### Continuous Branch-Level Vertical Bands
 
-WBS summary rows show **stacked left-side bars** (P6-style), one bar per ancestor
-WBS level from 0 up to the current depth. Each bar is 4 px wide, 18 px tall, with
-a 2 px gap between bars and a 6 px right margin before the toggle + name content.
+Every row — summary and activity — renders absolutely-positioned, full-row-height
+vertical colour bars at the left side of the task/name column. This creates
+P6-style branch ownership: a WBS level's band colour runs continuously through
+all descendant rows until the branch ends.
 
-- Depth-0 WBS: 1 bar (steel blue)
-- Depth-1 WBS: 2 bars (steel blue + forest green)
-- Depth-2 WBS: 3 bars (steel blue + forest green + burnt amber)
-- Depth-3 WBS: 4 bars (steel blue + forest green + burnt amber + plum)
+**Band layout** (each bar is 4 px wide, 2 px gap = 6 px pitch):
 
-The accumulating bars create an immediate visual "ladder" that communicates
-nesting depth at a glance, making large imported schedules easier to scan.
+| Level i | left px | Colour |
+|---------|---------|--------|
+| 0       | 2       | `#2471a3` steel blue |
+| 1       | 8       | `#1e8449` forest green |
+| 2       | 14      | `#ca6f1e` burnt amber |
+| 3       | 20      | `#7d3c98` plum |
+
+**Bars per row type** (using `getWbsAncestorBandColors`):
+
+- Summary row at depth D: D+1 bars (own level + all ancestor levels).
+- Activity row at depth D: D bars (all parent WBS levels, at 0.45 opacity).
+- Top-level activity (depth 0): no bars.
+
+The existing `paddingLeft: 20px × depth` content indentation ensures text never
+overlaps the band positions (max 4 bars occupy 24 px; depth-2 content starts at
+40 px; depth-1 content at 20 px clears the 14 px band region).
+
+**Effect**: each WBS summary "opens" a coloured column that continues through
+every visible row it owns. Child WBS levels add inset bars. Activity rows appear
+visually inside their WBS container.
 
 ---
 
