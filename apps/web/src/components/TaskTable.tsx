@@ -84,6 +84,11 @@ export function getDisplayActivityId(task: Pick<Task, "isSummary" | "activityId"
   return activityId ? activityId : "—";
 }
 
+/**
+ * Computes the left offset and width for the single ownership band shown in the
+ * Activity Name gutter. Invalid depths fall back to a root-level band and
+ * excessive depths are clamped to the supported display range.
+ */
 export function getTaskOwnershipBandMetrics(depth: number | null | undefined): {
   offsetPx: number;
   widthPx: number;
@@ -102,6 +107,10 @@ export function getTaskOwnershipBandMetrics(depth: number | null | undefined): {
   };
 }
 
+/**
+ * Computes label padding after the ownership gutter is rendered so hierarchy
+ * indentation stays readable without double-counting the gutter treatment.
+ */
 export function getTaskLabelPaddingPx(depth: number | null | undefined): number {
   return Math.max(getTaskIndentPx(depth) - TASK_TABLE_OWNERSHIP_INDENT_ADJUSTMENT, 0);
 }
