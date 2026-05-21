@@ -71,7 +71,7 @@ function pickFields<T>(row: Record<string, string>, keys: readonly string[]): T 
 
 const PROJECT_KEYS: readonly string[] = ["proj_id", "proj_short_name", "plan_start_date", "day_hr_cnt"];
 const PROJWBS_KEYS: readonly string[] = ["wbs_id", "proj_id", "parent_wbs_id", "wbs_short_name", "wbs_name"];
-const TASK_KEYS: readonly string[] = ["task_id", "proj_id", "wbs_id", "task_name", "task_type", "target_drtn_hr_cnt", "cstr_type", "cstr_date"];
+const TASK_KEYS: readonly string[] = ["task_id", "task_code", "proj_id", "wbs_id", "task_name", "task_type", "target_drtn_hr_cnt", "cstr_type", "cstr_date"];
 const TASKPRED_KEYS: readonly string[] = ["task_pred_id", "task_id", "pred_task_id", "pred_type", "lag_hr_cnt"];
 const RSRC_KEYS: readonly string[] = ["rsrc_id", "rsrc_name", "max_qty_per_hr"];
 const TASKRSRC_KEYS: readonly string[] = ["taskrsrc_id", "task_id", "rsrc_id", "target_qty_per_hr"];

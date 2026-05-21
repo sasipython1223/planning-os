@@ -40,6 +40,7 @@ export type XerWbs = {
 
 export type XerTask = {
   readonly task_id: string;
+  readonly task_code?: string;
   readonly proj_id: string;
   readonly wbs_id: string;
   readonly task_name: string;

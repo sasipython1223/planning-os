@@ -137,13 +137,14 @@ describe("TaskTable COLUMN_SCHEMA", () => {
 
   it("schema has expected column order", () => {
     const keys = COLUMN_SCHEMA.map((c) => c.key);
-    expect(keys).toEqual(["diag", "task", "duration", "start", "finish", "tf", "ct", "cd", "sv", "fv", "dv"]);
+    expect(keys).toEqual(["diag", "activityId", "task", "duration", "start", "finish", "tf", "ct", "cd", "sv", "fv", "dv"]);
   });
 
-  it("first column is center-aligned indicator, second is left-aligned task", () => {
+  it("identity columns are left-aligned after the diagnostics indicator", () => {
     expect(COLUMN_SCHEMA[0].align).toBe("center");
     expect(COLUMN_SCHEMA[1].align).toBe("left");
-    for (let i = 2; i < COLUMN_SCHEMA.length; i++) {
+    expect(COLUMN_SCHEMA[2].align).toBe("left");
+    for (let i = 3; i < COLUMN_SCHEMA.length; i++) {
       expect(COLUMN_SCHEMA[i].align).toBe("center");
     }
   });

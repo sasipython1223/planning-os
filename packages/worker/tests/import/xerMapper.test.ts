@@ -149,6 +149,18 @@ describe("XER Mapper (W.3)", () => {
       }));
       expect(result.tasks[0].duration).toBe(5); // 50/10 = 5
     });
+
+    it("maps task_code into display-only activityId while preserving canonical id", () => {
+      const result = mapXerToCanonical(buildData({
+        tasks: [
+          { task_id: "T1", task_code: "A-100", proj_id: "P1", wbs_id: "", task_name: "Task", task_type: "TT_TASK", target_drtn_hr_cnt: "8", cstr_type: "", cstr_date: "" },
+        ],
+      }));
+      const mapped = result.tasks[0];
+      expect(mapped.activityId).toBe("A-100");
+      expect(mapped.id).toMatch(/^[0-9a-f-]{36}$/);
+      expect(mapped.id).not.toBe("A-100");
+    });
   });
 
   describe("duration rounding diagnostics", () => {
