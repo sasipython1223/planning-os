@@ -25,6 +25,9 @@ export const COLUMN_SCHEMA = [
 export const TABLE_WIDTH = COLUMN_SCHEMA.reduce((sum, c) => sum + c.width, 0);
 export const TASK_TABLE_INDENT_WIDTH = 20;
 export const TASK_TABLE_MAX_INDENT_DEPTH = 12;
+export const TASK_TABLE_OWNERSHIP_GUTTER_WIDTH = 56;
+export const TASK_TABLE_OWNERSHIP_BAND_STEP = 8;
+export const TASK_TABLE_OWNERSHIP_MIN_BAND_WIDTH = 24;
 
 type WorkerTaskUpdate = {
   name?: string;
@@ -75,6 +78,24 @@ export function getDisplayActivityId(task: Pick<Task, "isSummary" | "activityId"
   if (task.isSummary) return "—";
   const activityId = task.activityId?.trim();
   return activityId ? activityId : "—";
+}
+
+export function getTaskOwnershipBandMetrics(depth: number | null | undefined): {
+  offsetPx: number;
+  widthPx: number;
+} {
+  if (typeof depth !== "number" || !Number.isFinite(depth)) {
+    return { offsetPx: 0, widthPx: TASK_TABLE_OWNERSHIP_GUTTER_WIDTH };
+  }
+
+  const safeDepth = Math.min(Math.max(Math.floor(depth), 0), TASK_TABLE_MAX_INDENT_DEPTH);
+  const maxOffset = TASK_TABLE_OWNERSHIP_GUTTER_WIDTH - TASK_TABLE_OWNERSHIP_MIN_BAND_WIDTH;
+  const offsetPx = Math.min(safeDepth * TASK_TABLE_OWNERSHIP_BAND_STEP, maxOffset);
+
+  return {
+    offsetPx,
+    widthPx: TASK_TABLE_OWNERSHIP_GUTTER_WIDTH - offsetPx,
+  };
 }
 
 const SEVERITY_ICON: Record<DiagnosticSeverity, { symbol: string; color: string }> = {
@@ -169,14 +190,6 @@ export function TaskTable({
   };
   const thStyle: CSSProperties = { ...thBase, textAlign: "left" };
   const thCenterStyle: CSSProperties = { ...thBase, textAlign: "center" };
-  const summaryMarkerStyle: CSSProperties = {
-    width: 3,
-    height: 18,
-    marginRight: 6,
-    borderRadius: 2,
-    background: "#4f7eac",
-    flexShrink: 0,
-  };
   const summaryBadgeStyle: CSSProperties = {
     marginLeft: 7,
     padding: "1px 5px",
@@ -255,6 +268,7 @@ export function TaskTable({
                 const badge = constraintBadgeStyle(task.constraintType);
                 const sev = highestSeverity(diagnosticsMap?.[task.id], task.constraintType);
                 const sevIcon = sev ? SEVERITY_ICON[sev] : null;
+                const ownershipBand = getTaskOwnershipBandMetrics(task.depth);
                 const diagTooltip = sev
                   ? buildAllDiags(diagnosticsMap?.[task.id] ?? [], task.constraintType ?? "ASAP")
                       .map((d) => d.message)
@@ -293,6 +307,36 @@ export function TaskTable({
                 const taskLabelStyle: CSSProperties = isSummaryRow
                   ? { color: "#1e3a5f", fontStyle: "normal", fontWeight: 700, letterSpacing: "0.01em" }
                   : { color: "#26394d", fontWeight: 500 };
+                const ownershipLaneStyle: CSSProperties = {
+                  width: TASK_TABLE_OWNERSHIP_GUTTER_WIDTH,
+                  minWidth: TASK_TABLE_OWNERSHIP_GUTTER_WIDTH,
+                  marginRight: 8,
+                  display: "flex",
+                  alignItems: "center",
+                  flexShrink: 0,
+                };
+                const ownershipBandStyle: CSSProperties = isSummaryRow
+                  ? {
+                      width: ownershipBand.widthPx,
+                      height: Math.max(ROW_HEIGHT - 10, 18),
+                      marginLeft: ownershipBand.offsetPx,
+                      borderRadius: 8,
+                      border: "1px solid #b8cadd",
+                      borderLeft: "4px solid #5d81a5",
+                      background: "linear-gradient(90deg, #edf4fb 0%, #dbe8f4 100%)",
+                      boxSizing: "border-box",
+                      boxShadow: "inset -1px 0 0 #c5d6e7",
+                    }
+                  : {
+                      width: ownershipBand.widthPx,
+                      height: 12,
+                      marginLeft: ownershipBand.offsetPx,
+                      borderRadius: 999,
+                      border: "1px solid #d4dfe9",
+                      borderLeft: "3px solid #6f8daa",
+                      background: "linear-gradient(90deg, #f4f8fc 0%, #e7eff6 100%)",
+                      boxSizing: "border-box",
+                    };
 
                 return (
                   <tr
@@ -318,7 +362,7 @@ export function TaskTable({
                       </div>
                     </td>
                     <td style={cellBase}>
-                      <div style={{ ...cellContentBase, paddingLeft: getTaskIndentPx(task.depth), minWidth: 0 }}>
+                      <div style={{ ...cellContentBase, paddingLeft: Math.max(getTaskIndentPx(task.depth) - 12, 0), minWidth: 0 }}>
                         {task.isSummary && (
                           <span
                             onClick={(e) => { e.stopPropagation(); onToggleCollapse(task.id); }}
@@ -328,7 +372,9 @@ export function TaskTable({
                             {collapsedIds.has(task.id) ? "▶" : "▼"}
                           </span>
                         )}
-                        {isSummaryRow && <span style={summaryMarkerStyle} aria-hidden="true" />}
+                        <span style={ownershipLaneStyle} aria-hidden="true">
+                          <span style={ownershipBandStyle} />
+                        </span>
                         <EditableCell
                           value={task.name}
                           onCommit={(v) => onUpdateTask(task.id, toWorkerTaskUpdate({ name: v }))}

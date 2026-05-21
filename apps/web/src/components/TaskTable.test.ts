@@ -4,7 +4,11 @@ import {
   getDisplayTotalFloat,
   getDisplayActivityId,
   getTaskIndentPx,
+  getTaskOwnershipBandMetrics,
   getTaskRowKind,
+  TASK_TABLE_OWNERSHIP_BAND_STEP,
+  TASK_TABLE_OWNERSHIP_GUTTER_WIDTH,
+  TASK_TABLE_OWNERSHIP_MIN_BAND_WIDTH,
   TASK_TABLE_INDENT_WIDTH,
   TASK_TABLE_MAX_INDENT_DEPTH,
   toWorkerTaskUpdate,
@@ -103,6 +107,23 @@ describe("W5B-UI.R5A — TaskTable WBS display helpers", () => {
     expect(getDisplayActivityId({ isSummary: false, activityId: "" })).toBe("—");
     expect(getDisplayActivityId({ isSummary: false, activityId: "   " })).toBe("—");
     expect(getDisplayActivityId({ isSummary: false, activityId: "A100" })).toBe("A100");
+  });
+
+  it("derives a single nested ownership band from depth without stacking stripes", () => {
+    expect(getTaskOwnershipBandMetrics(undefined)).toEqual({
+      offsetPx: 0,
+      widthPx: TASK_TABLE_OWNERSHIP_GUTTER_WIDTH,
+    });
+
+    expect(getTaskOwnershipBandMetrics(2)).toEqual({
+      offsetPx: 2 * TASK_TABLE_OWNERSHIP_BAND_STEP,
+      widthPx: TASK_TABLE_OWNERSHIP_GUTTER_WIDTH - (2 * TASK_TABLE_OWNERSHIP_BAND_STEP),
+    });
+
+    expect(getTaskOwnershipBandMetrics(TASK_TABLE_MAX_INDENT_DEPTH + 20)).toEqual({
+      offsetPx: TASK_TABLE_OWNERSHIP_GUTTER_WIDTH - TASK_TABLE_OWNERSHIP_MIN_BAND_WIDTH,
+      widthPx: TASK_TABLE_OWNERSHIP_MIN_BAND_WIDTH,
+    });
   });
 });
 
