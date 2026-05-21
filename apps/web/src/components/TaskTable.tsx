@@ -29,6 +29,8 @@ export const TASK_TABLE_OWNERSHIP_GUTTER_WIDTH = 56;
 export const TASK_TABLE_OWNERSHIP_BAND_STEP = 8;
 export const TASK_TABLE_OWNERSHIP_MIN_BAND_WIDTH = 24;
 export const TASK_TABLE_OWNERSHIP_INDENT_ADJUSTMENT = 12;
+export const TASK_TABLE_OWNERSHIP_BAND_VERTICAL_PADDING = 10;
+export const TASK_TABLE_OWNERSHIP_BAND_PILL_RADIUS = 999;
 
 type WorkerTaskUpdate = {
   name?: string;
@@ -269,7 +271,7 @@ export function TaskTable({
                 const badge = constraintBadgeStyle(task.constraintType);
                 const sev = highestSeverity(diagnosticsMap?.[task.id], task.constraintType);
                 const sevIcon = sev ? SEVERITY_ICON[sev] : null;
-                const ownershipBand = getTaskOwnershipBandMetrics(task.depth);
+                const ownershipBandMetrics = getTaskOwnershipBandMetrics(task.depth);
                 const diagTooltip = sev
                   ? buildAllDiags(diagnosticsMap?.[task.id] ?? [], task.constraintType ?? "ASAP")
                       .map((d) => d.message)
@@ -318,9 +320,9 @@ export function TaskTable({
                 };
                 const ownershipBandStyle: CSSProperties = isSummaryRow
                   ? {
-                      width: ownershipBand.widthPx,
-                      height: Math.max(ROW_HEIGHT - 10, 18),
-                      marginLeft: ownershipBand.offsetPx,
+                      width: ownershipBandMetrics.widthPx,
+                      height: Math.max(ROW_HEIGHT - TASK_TABLE_OWNERSHIP_BAND_VERTICAL_PADDING, 18),
+                      marginLeft: ownershipBandMetrics.offsetPx,
                       borderRadius: 8,
                       border: "1px solid #b8cadd",
                       borderLeft: "4px solid #5d81a5",
@@ -329,10 +331,10 @@ export function TaskTable({
                       boxShadow: "inset -1px 0 0 #c5d6e7",
                     }
                   : {
-                      width: ownershipBand.widthPx,
+                      width: ownershipBandMetrics.widthPx,
                       height: 12,
-                      marginLeft: ownershipBand.offsetPx,
-                      borderRadius: 999,
+                      marginLeft: ownershipBandMetrics.offsetPx,
+                      borderRadius: TASK_TABLE_OWNERSHIP_BAND_PILL_RADIUS,
                       border: "1px solid #d4dfe9",
                       borderLeft: "3px solid #6f8daa",
                       background: "linear-gradient(90deg, #f4f8fc 0%, #e7eff6 100%)",
