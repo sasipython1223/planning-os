@@ -28,6 +28,7 @@ export const TASK_TABLE_MAX_INDENT_DEPTH = 12;
 export const TASK_TABLE_OWNERSHIP_GUTTER_WIDTH = 56;
 export const TASK_TABLE_OWNERSHIP_BAND_STEP = 8;
 export const TASK_TABLE_OWNERSHIP_MIN_BAND_WIDTH = 24;
+export const TASK_TABLE_OWNERSHIP_INDENT_ADJUSTMENT = 12;
 
 type WorkerTaskUpdate = {
   name?: string;
@@ -362,7 +363,16 @@ export function TaskTable({
                       </div>
                     </td>
                     <td style={cellBase}>
-                      <div style={{ ...cellContentBase, paddingLeft: Math.max(getTaskIndentPx(task.depth) - 12, 0), minWidth: 0 }}>
+                      <div
+                        style={{
+                          ...cellContentBase,
+                          paddingLeft: Math.max(
+                            getTaskIndentPx(task.depth) - TASK_TABLE_OWNERSHIP_INDENT_ADJUSTMENT,
+                            0,
+                          ),
+                          minWidth: 0,
+                        }}
+                      >
                         {task.isSummary && (
                           <span
                             onClick={(e) => { e.stopPropagation(); onToggleCollapse(task.id); }}

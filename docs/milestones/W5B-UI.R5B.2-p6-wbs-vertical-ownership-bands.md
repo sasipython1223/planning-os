@@ -8,7 +8,7 @@ Refs #61
 - Kept the existing **Activity Name** column visible and separate.
 - Replaced the earlier thin summary marker treatment with a dedicated left-side ownership gutter inside the Activity Name cell.
 - Rendered one dominant ownership band per row using existing `task.depth` and `task.isSummary` metadata only.
-- Preserved TaskTable virtualization, collapse/expand behaviour, and existing Gantt rendering paths.
+- Preserved TaskTable virtualization, collapse/expand behavior, and existing Gantt rendering paths.
 
 ## Visual Model
 
