@@ -31,6 +31,7 @@ export const TASK_TABLE_OWNERSHIP_MIN_BAND_WIDTH = 24;
 export const TASK_TABLE_OWNERSHIP_INDENT_ADJUSTMENT = 12;
 export const TASK_TABLE_OWNERSHIP_BAND_VERTICAL_PADDING = 10;
 export const TASK_TABLE_OWNERSHIP_BAND_PILL_RADIUS = 999;
+export const TASK_TABLE_OWNERSHIP_SUMMARY_MIN_HEIGHT = 18;
 
 type WorkerTaskUpdate = {
   name?: string;
@@ -99,6 +100,10 @@ export function getTaskOwnershipBandMetrics(depth: number | null | undefined): {
     offsetPx,
     widthPx: TASK_TABLE_OWNERSHIP_GUTTER_WIDTH - offsetPx,
   };
+}
+
+export function getTaskLabelPaddingPx(depth: number | null | undefined): number {
+  return Math.max(getTaskIndentPx(depth) - TASK_TABLE_OWNERSHIP_INDENT_ADJUSTMENT, 0);
 }
 
 const SEVERITY_ICON: Record<DiagnosticSeverity, { symbol: string; color: string }> = {
@@ -321,7 +326,10 @@ export function TaskTable({
                 const ownershipBandStyle: CSSProperties = isSummaryRow
                   ? {
                       width: ownershipBandMetrics.widthPx,
-                      height: Math.max(ROW_HEIGHT - TASK_TABLE_OWNERSHIP_BAND_VERTICAL_PADDING, 18),
+                      height: Math.max(
+                        ROW_HEIGHT - TASK_TABLE_OWNERSHIP_BAND_VERTICAL_PADDING,
+                        TASK_TABLE_OWNERSHIP_SUMMARY_MIN_HEIGHT,
+                      ),
                       marginLeft: ownershipBandMetrics.offsetPx,
                       borderRadius: 8,
                       border: "1px solid #b8cadd",
@@ -368,10 +376,7 @@ export function TaskTable({
                       <div
                         style={{
                           ...cellContentBase,
-                          paddingLeft: Math.max(
-                            getTaskIndentPx(task.depth) - TASK_TABLE_OWNERSHIP_INDENT_ADJUSTMENT,
-                            0,
-                          ),
+                          paddingLeft: getTaskLabelPaddingPx(task.depth),
                           minWidth: 0,
                         }}
                       >
