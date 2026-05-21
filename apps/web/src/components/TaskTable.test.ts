@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  COLUMN_SCHEMA,
   getDisplayTotalFloat,
+  getDisplayActivityId,
   getTaskIndentPx,
   getTaskRowKind,
   TASK_TABLE_INDENT_WIDTH,
@@ -94,5 +96,19 @@ describe("W5B-UI.R5A — TaskTable WBS display helpers", () => {
   it("classifies rows using existing summary metadata only", () => {
     expect(getTaskRowKind({ isSummary: true })).toBe("summary");
     expect(getTaskRowKind({ isSummary: false })).toBe("activity");
+  });
+
+  it("shows activity id only for activity rows with non-empty value", () => {
+    expect(getDisplayActivityId({ isSummary: true, activityId: "A100" })).toBe("—");
+    expect(getDisplayActivityId({ isSummary: false, activityId: "" })).toBe("—");
+    expect(getDisplayActivityId({ isSummary: false, activityId: "   " })).toBe("—");
+    expect(getDisplayActivityId({ isSummary: false, activityId: "A100" })).toBe("A100");
+  });
+});
+
+describe("W5B-UI.R5C — TaskTable identity columns", () => {
+  it("keeps separate Activity ID and Activity Name columns", () => {
+    expect(COLUMN_SCHEMA.some((c) => c.key === "activityId" && c.label === "Act ID")).toBe(true);
+    expect(COLUMN_SCHEMA.some((c) => c.key === "task" && c.title === "Activity Name")).toBe(true);
   });
 });

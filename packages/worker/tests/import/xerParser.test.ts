@@ -104,6 +104,20 @@ describe("XER Parser (W.2)", () => {
       expect(result.data.tasks).toHaveLength(1);
       expect(result.data.tasks[0].task_type).toBe("TT_WBS");
     });
+
+    it("should parse task_code when present", () => {
+      const xer = buildXer(
+        "%T\tTASK\n" +
+        "%F\ttask_id\ttask_code\tproj_id\twbs_id\ttask_name\ttask_type\ttarget_drtn_hr_cnt\tcstr_type\tcstr_date\n" +
+        "%R\tT1\tA-100\tP1\tW1\tFoundation\tTT_TASK\t40\tCS_ASAP\t\n%E",
+      );
+      const result = parseXer(xer);
+      expect(result.errors).toHaveLength(0);
+      expect(result.data.tasks).toHaveLength(1);
+      expect(result.data.tasks[0].task_id).toBe("T1");
+      expect(result.data.tasks[0].task_code).toBe("A-100");
+      expect(result.data.tasks[0].task_name).toBe("Foundation");
+    });
   });
 
   describe("TASKPRED table", () => {

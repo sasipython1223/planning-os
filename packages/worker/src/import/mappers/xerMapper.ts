@@ -242,6 +242,7 @@ export function mapXerToCanonical(data: XerData): XerMapperResult {
 
     tasks.push({
       id: canonicalId,
+      activityId: xt.task_code?.trim() || undefined,
       name,
       duration,
       depth,

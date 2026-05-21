@@ -29,6 +29,11 @@ export const SEVERITY_RANK: Record<DiagnosticSeverity, number> = { error: 2, war
 
 export type Task = {
   id: string;
+  /**
+   * Display-only external activity identifier (e.g. Primavera task_code).
+   * Must not be used as canonical scheduling identity.
+   */
+  activityId?: string;
   name: string;
   duration: number;
   minEarlyStart?: number;

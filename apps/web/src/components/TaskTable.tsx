@@ -9,7 +9,8 @@ import { buildAllDiags, highestSeverity } from "./TaskDetailsPanel";
 
 export const COLUMN_SCHEMA = [
   { key: "diag",    label: "\u2691",  title: "Diagnostics",       width: 28,  align: "center" as const },
-  { key: "task",     label: "Task",   title: undefined,           width: 220, align: "left" as const },
+  { key: "activityId", label: "Act ID", title: "Activity ID",     width: 110, align: "left" as const },
+  { key: "task",     label: "Act Nm", title: "Activity Name",     width: 220, align: "left" as const },
   { key: "duration", label: "Dur",    title: "Duration",          width: 70,  align: "center" as const },
   { key: "start",    label: "Start",  title: undefined,           width: 95,  align: "center" as const },
   { key: "finish",   label: "Finish", title: undefined,           width: 95,  align: "center" as const },
@@ -68,6 +69,12 @@ export function getTaskIndentPx(depth: number | null | undefined): number {
 
 export function getTaskRowKind(task: Pick<Task, "isSummary">): "summary" | "activity" {
   return task.isSummary ? "summary" : "activity";
+}
+
+export function getDisplayActivityId(task: Pick<Task, "isSummary" | "activityId">): string {
+  if (task.isSummary) return "—";
+  const activityId = task.activityId?.trim();
+  return activityId ? activityId : "—";
 }
 
 const SEVERITY_ICON: Record<DiagnosticSeverity, { symbol: string; color: string }> = {
@@ -304,6 +311,11 @@ export function TaskTable({
                           {sevIcon.symbol}
                         </span>
                       )}
+                    </td>
+                    <td style={cellBase}>
+                      <div style={{ ...cellContentBase, justifyContent: "flex-start", color: task.isSummary ? "#999" : "#2d465e", fontSize: "0.86em" }}>
+                        {getDisplayActivityId(task)}
+                      </div>
                     </td>
                     <td style={cellBase}>
                       <div style={{ ...cellContentBase, paddingLeft: getTaskIndentPx(task.depth), minWidth: 0 }}>
