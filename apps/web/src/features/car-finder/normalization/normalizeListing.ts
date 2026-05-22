@@ -1,4 +1,5 @@
 import type { CarListing, DataQuality, FuelType, NormalizedListing } from "../types";
+import { HYBRID_HINTS } from "../constants";
 import { parseCurrency } from "./parseCurrency";
 import { parseDurationToMonths } from "./parseDuration";
 import { parseNumber } from "./parseNumber";
@@ -36,13 +37,15 @@ function parseBoolean(value: unknown): boolean | undefined {
   return undefined;
 }
 
-function parseFuelType(value: unknown): FuelType {
-  if (typeof value !== "string") return "unknown";
-  const lower = value.toLowerCase();
-  if (lower.includes("hybrid")) return "hybrid";
+function parseFuelType(value: unknown, searchableText: string): FuelType {
+  const lower = typeof value === "string" ? value.toLowerCase() : "";
+  const text = searchableText.toLowerCase();
+
   if (lower.includes("electric") || lower.includes("ev")) return "electric";
   if (lower.includes("diesel")) return "diesel";
   if (lower.includes("petrol") || lower.includes("gasoline")) return "petrol";
+  if (HYBRID_HINTS.some((hint) => text.includes(hint))) return "hybrid";
+  if (lower.includes("hybrid")) return "hybrid";
   return "unknown";
 }
 
@@ -95,7 +98,17 @@ export function normalizeListing(input: CarListing | AnyRow, index = 0): Normali
   const coeRemainingMonths = parseDurationToMonths(readValue(row, ["coeRemainingMonths", "coeRemaining"]));
   if (coeRemainingMonths != null && row.coeRemainingMonths == null) derived.push("coeRemainingMonths");
 
-  const fuelType = parseFuelType(readValue(row, ["fuelType"]));
+  const searchableText = [
+    title,
+    make,
+    model,
+    variant,
+    readValue(row, ["description"]),
+    readValue(row, ["featureText", "features"]),
+    readValue(row, ["fuelType"]),
+  ].filter(Boolean).join(" ");
+
+  const fuelType = parseFuelType(readValue(row, ["fuelType"]), searchableText);
   if (fuelType === "unknown") warnings.push("Fuel type missing or unrecognized; defaulted to unknown.");
 
   for (const key of Object.keys(row)) {
@@ -149,6 +162,11 @@ export function normalizeListing(input: CarListing | AnyRow, index = 0): Normali
   if (listing.isParfCar == null && listing.isCoeCar != null) {
     listing.isParfCar = !listing.isCoeCar;
     derived.push("isParfCar");
+  }
+
+  if (listing.deregValue == null && ((listing.coeValue ?? 0) + (listing.estimatedParf ?? 0) > 0)) {
+    derived.push("paperValueEstimate");
+    warnings.push("Dereg value missing; paper value will use estimated COE + PARF components.");
   }
 
   const dataQuality = buildDataQuality(listing, derived);

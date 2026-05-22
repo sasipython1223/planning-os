@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { normalizeListing } from "../normalization/normalizeListing";
 import { scoreListing } from "../scoring/scoreListing";
+import { getPaperValueAssessment } from "../scoring/financialAssessment";
 
 const baseDataQuality = {
   reported: ["title"],
@@ -42,6 +44,49 @@ describe("scoreListing", () => {
     }, baseDataQuality);
 
     expect(lowMileage.score.total).toBe(highMileage.score.total);
+  });
+
+  it("keeps Altis Hybrid 14,910 depreciation competitive and not skip by default", () => {
+    const normalized = normalizeListing({
+      title: "Toyota Corolla Altis Hybrid Elegance",
+      price: 87800,
+      annualDepreciation: 14910,
+      coeRemainingMonths: 64,
+      ownerCount: 2,
+      registrationDate: "2020-08",
+    });
+
+    const scored = scoreListing(normalized.listing, normalized.dataQuality, normalized.warnings);
+    expect(scored.listing.fuelType).toBe("hybrid");
+    expect(scored.score.financial).toBeGreaterThan(18);
+    expect(scored.riskFlags.some((r) => r.code === "HYBRID_BATTERY_UNVERIFIED")).toBe(true);
+    expect(scored.riskFlags.some((r) => r.code === "PHV_FRIENDLY_MODEL")).toBe(true);
+    expect(["Inspect", "Watch"]).toContain(scored.recommendation);
+  });
+
+  it("uses dereg value as primary paper value without double-counting PARF", () => {
+    const listing = {
+      title: "Paper value check",
+      price: 90000,
+      annualDepreciation: 15000,
+      deregValue: 30000,
+      estimatedParf: 25000,
+      coeValue: 20000,
+    };
+
+    const paper = getPaperValueAssessment(listing);
+    expect(paper.source).toBe("dereg");
+    expect(paper.value).toBe(30000);
+  });
+
+  it("adds explicit missing-field risk flags and downgrades confidence", () => {
+    const normalized = normalizeListing({ title: "Sparse listing" });
+    const scored = scoreListing(normalized.listing, normalized.dataQuality, normalized.warnings);
+
+    expect(scored.riskFlags.some((r) => r.code === "MISSING_PRICE")).toBe(true);
+    expect(scored.riskFlags.some((r) => r.code === "MISSING_DEPRECIATION")).toBe(true);
+    expect(scored.riskFlags.some((r) => r.code === "MISSING_REG_DATE")).toBe(true);
+    expect(scored.recommendation).toBe("Skip");
   });
 
   it("downgrades recommendation for high-risk listing", () => {

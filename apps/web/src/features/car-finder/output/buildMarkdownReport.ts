@@ -13,8 +13,13 @@ function coeText(item: ScoredListing): string {
 }
 
 function notes(item: ScoredListing): string {
-  const deregParf = `Dereg ${fmt(item.listing.deregValue)} / PARF ${fmt(item.listing.estimatedParf)}`;
-  return `${deregParf}; risks: ${item.riskFlags.map((r) => r.code).join(", ") || "none"}`;
+  const monthly = item.monthlyAssessment.monthlyInstallment == null
+    ? "Monthly -"
+    : `Monthly $${Math.round(item.monthlyAssessment.monthlyInstallment).toLocaleString()}${item.monthlyAssessment.indicativeOnly ? " (indicative)" : ""}`;
+  const paper = item.paperValueAssessment.value == null
+    ? "Paper unknown"
+    : `Paper ${fmt(item.paperValueAssessment.value)} (${item.paperValueAssessment.source}${item.paperValueAssessment.indicativeOnly ? ", indicative" : ""})`;
+  return `${paper}; ${monthly}; risks: ${item.riskFlags.map((r) => r.code).join(", ") || "none"}`;
 }
 
 function row(item: ScoredListing, rank: number): string {

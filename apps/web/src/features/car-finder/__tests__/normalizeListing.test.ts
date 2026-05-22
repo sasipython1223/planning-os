@@ -26,4 +26,15 @@ describe("normalizeListing", () => {
     expect(result.warnings.join(" ")).toContain("Critical fields missing");
     expect(result.dataQuality.missing).toContain("price");
   });
+
+  it("infers hybrid fuel type from title/model text when fuelType is missing", () => {
+    const result = normalizeListing({
+      title: "Toyota Corolla Altis Hybrid Elegance",
+      make: "Toyota",
+      model: "Corolla Altis",
+      variant: "Hybrid Elegance",
+    });
+
+    expect(result.listing.fuelType).toBe("hybrid");
+  });
 });

@@ -15,11 +15,11 @@ export function scoreHistoryRisk(listing: CarListing, config: ScoringConfig): nu
           ? 0.4
           : 0.15;
 
-  const phvRatio = listing.listedClaims?.nonPhv === true
-    ? 1
-    : (text.includes("phv") || text.includes("rental") || text.includes("company use"))
-      ? 0.2
-      : 0.5;
+  const phvRatio = (text.includes("phv") || text.includes("rental") || text.includes("company use"))
+    ? 0.1
+    : listing.listedClaims?.nonPhv === true
+      ? 0.7
+      : 0.45;
 
   const serviceRatio = listing.serviceRecordText && listing.serviceRecordText.length > 4 ? 1 : 0.3;
 

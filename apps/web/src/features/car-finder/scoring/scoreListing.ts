@@ -1,23 +1,31 @@
 import { classifyRisks } from "../risk/classifyRisks";
 import type { DataQuality, Recommendation, ScoredListing } from "../types";
 import type { CarListing } from "../types";
+import { getMonthlyAssessment, getPaperValueAssessment } from "./financialAssessment";
 import { scoreFinancial } from "./scoreFinancial";
 import { scoreHistoryRisk } from "./scoreHistoryRisk";
 import { scorePracticality } from "./scorePracticality";
 import { scoreReliability } from "./scoreReliability";
 import { SCORING_CONFIG, type ScoringConfig } from "./scoringConfig";
 
-function recommendationReason(listing: CarListing, recommendation: Recommendation): string {
+function recommendationReason(
+  listing: CarListing,
+  recommendation: Recommendation,
+  monthlyAssessment: ReturnType<typeof getMonthlyAssessment>,
+): string {
   const dep = listing.annualDepreciation != null ? `Dep ${Math.round(listing.annualDepreciation)}/yr` : "Dep unknown";
   const price = listing.price != null ? `Price ${Math.round(listing.price)}` : "Price unknown";
+  const monthlyText = monthlyAssessment.monthlyInstallment != null
+    ? `Monthly ${Math.round(monthlyAssessment.monthlyInstallment)}${monthlyAssessment.indicativeOnly ? " (indicative)" : ""}`
+    : "Monthly unknown";
 
   if (recommendation === "Inspect") {
-    return `${dep}, ${price}, and risk profile is acceptable pending records and inspection.`;
+    return `${dep}, ${price}, ${monthlyText}, and risk profile is acceptable pending records and inspection.`;
   }
   if (recommendation === "Watch") {
-    return `${dep}, ${price}, but key verification items remain before inspection.`;
+    return `${dep}, ${price}, ${monthlyText}, but key verification items remain before inspection.`;
   }
-  return `${dep}, ${price}, and risk/fit concerns currently outweigh paper value.`;
+  return `${dep}, ${price}, ${monthlyText}, and risk/fit concerns currently outweigh paper value.`;
 }
 
 function recommend(total: number, highRiskCount: number, missingCritical: number, config: ScoringConfig): Recommendation {
@@ -40,6 +48,8 @@ export function scoreListing(
   const total = financial + reliability + historyRisk + practicality;
 
   const riskFlags = classifyRisks(listing);
+  const monthlyAssessment = getMonthlyAssessment(listing);
+  const paperValueAssessment = getPaperValueAssessment(listing);
   const highRiskCount = riskFlags.filter((r) => r.severity === "high").length;
 
   const recommendation = recommend(total, highRiskCount, dataQuality.missing.length, config);
@@ -48,8 +58,10 @@ export function scoreListing(
     listing,
     score: { financial, reliability, historyRisk, practicality, total },
     recommendation,
-    recommendationReason: recommendationReason(listing, recommendation),
+    recommendationReason: recommendationReason(listing, recommendation, monthlyAssessment),
     riskFlags,
+    monthlyAssessment,
+    paperValueAssessment,
     dataQuality,
     warnings,
   };

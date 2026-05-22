@@ -20,7 +20,7 @@ export function ownershipRisk(listing: CarListing): RiskFlag[] {
     });
   }
 
-  if (!listing.warrantyText && !listing.listedClaims?.warrantyProvided) {
+  if (listing.fuelType !== "hybrid" && !listing.warrantyText && !listing.listedClaims?.warrantyProvided) {
     flags.push({
       code: "NO_WARRANTY",
       severity: "medium",

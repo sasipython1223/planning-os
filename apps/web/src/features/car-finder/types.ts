@@ -72,8 +72,13 @@ export type RiskSeverity = "low" | "medium" | "high";
 export type RiskFlag = {
   code:
     | "PHV_RISK"
+    | "PHV_HISTORY_UNKNOWN"
+    | "PHV_CLAIM_REQUIRES_PROOF"
+    | "PHV_HISTORY_INDICATED"
+    | "PHV_FRIENDLY_MODEL"
     | "COMPANY_USE_RISK"
     | "NO_WARRANTY"
+    | "NO_WARRANTY_HYBRID"
     | "NO_SERVICE_HISTORY"
     | "HIGH_OWNER_COUNT"
     | "HYBRID_BATTERY_UNVERIFIED"
@@ -81,7 +86,17 @@ export type RiskFlag = {
     | "COE_RENEWED"
     | "MILEAGE_UNVERIFIED"
     | "SHORT_COE"
-    | "LOW_TRANSPARENCY";
+    | "LOW_TRANSPARENCY"
+    | "MISSING_PRICE"
+    | "MISSING_DEPRECIATION"
+    | "MISSING_REG_DATE"
+    | "MISSING_DEREG_VALUE"
+    | "DCT_GEARBOX_RISK"
+    | "TURBO_SMALL_ENGINE_RISK"
+    | "DIRECT_IMPORT_OR_PI_RISK"
+    | "PRICE_ABOVE_TARGET"
+    | "MONTHLY_ABOVE_TARGET"
+    | "BUYER_DEPRIORITISED_MODEL";
   severity: RiskSeverity;
   note: string;
 };
@@ -102,6 +117,17 @@ export type ScoredListing = {
   recommendation: Recommendation;
   recommendationReason: string;
   riskFlags: RiskFlag[];
+  monthlyAssessment: {
+    monthlyInstallment: number | undefined;
+    source: "advertised" | "estimated" | "none";
+    indicativeOnly: boolean;
+    tenureMonths: number | undefined;
+  };
+  paperValueAssessment: {
+    value: number | undefined;
+    source: "dereg" | "estimated_coe_plus_parf" | "unknown";
+    indicativeOnly: boolean;
+  };
   dataQuality: DataQuality;
   warnings: string[];
 };
