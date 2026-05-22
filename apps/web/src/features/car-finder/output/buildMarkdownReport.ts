@@ -45,7 +45,7 @@ export function buildMarkdownReport(analysis: Omit<CarFinderAnalysis, "markdownR
     section("Top 5 under SGD 90k", analysis.top5Under90k),
     `### Best low-headache choice\n\n- ${analysis.bestLowHeadache?.listing.title ?? "N/A"}`,
     `### Best value choice\n\n- ${analysis.bestValue?.listing.title ?? "N/A"}`,
-    `### Best family/JB choice\n\n- ${analysis.bestFamilyJb?.listing.title ?? "N/A"}`,
+    `### Best family/Johor Bahru choice\n\n- ${analysis.bestFamilyJb?.listing.title ?? "N/A"}`,
     "### Listings to avoid and why",
     "",
     avoidLines,

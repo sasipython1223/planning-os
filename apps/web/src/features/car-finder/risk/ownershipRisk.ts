@@ -1,3 +1,4 @@
+import { BUYER_CONSTRAINTS } from "../constants";
 import type { CarListing, RiskFlag } from "../types";
 
 export function ownershipRisk(listing: CarListing): RiskFlag[] {
@@ -27,7 +28,11 @@ export function ownershipRisk(listing: CarListing): RiskFlag[] {
     });
   }
 
-  if (listing.mileageKm != null && !listing.serviceRecordText && (listing.mileageKm < 40000 || listing.mileageKm > 180000)) {
+  if (
+    listing.mileageKm != null
+    && !listing.serviceRecordText
+    && (listing.mileageKm < BUYER_CONSTRAINTS.veryLowMileageKm || listing.mileageKm > BUYER_CONSTRAINTS.veryHighMileageKm)
+  ) {
     flags.push({
       code: "MILEAGE_UNVERIFIED",
       severity: "medium",

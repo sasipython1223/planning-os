@@ -1,8 +1,6 @@
+import { HIGHER_RISK_BRANDS, RELIABLE_BRANDS } from "../constants";
 import type { CarListing } from "../types";
 import type { ScoringConfig } from "./scoringConfig";
-
-const RELIABLE_BRANDS = ["toyota", "honda", "hyundai", "kia", "mazda"];
-const HIGHER_RISK_BRANDS = ["peugeot", "citroen", "opel", "bmw"];
 
 export function scoreReliability(listing: CarListing, config: ScoringConfig): number {
   const c = config.reliability;

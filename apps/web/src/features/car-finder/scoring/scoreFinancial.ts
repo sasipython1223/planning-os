@@ -9,7 +9,7 @@ export function scoreFinancial(listing: CarListing, config: ScoringConfig): numb
   const comparisonBudget = config.buyer.comparisonBudget;
 
   const depreciationRatio = listing.annualDepreciation != null
-    ? clamp((15000 - listing.annualDepreciation) / 7000)
+    ? clamp((config.buyer.depreciationUpperBound - listing.annualDepreciation) / config.buyer.depreciationScoreRange)
     : 0.4;
 
   const priceRatio = listing.price == null

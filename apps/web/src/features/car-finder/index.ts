@@ -1,3 +1,4 @@
+import { BUYER_CONSTRAINTS } from "./constants";
 import { normalizeListings } from "./normalization/normalizeListing";
 import { buildCsvRows, buildCsvText } from "./output/buildCsvRows";
 import { buildDealerQuestions } from "./output/buildDealerQuestions";
@@ -28,7 +29,10 @@ export function analyzeCarFinderListings(rows: Array<CarListing | Record<string,
   const top5Under90k = scored.filter((s) => (s.listing.price ?? Number.POSITIVE_INFINITY) <= 90000).slice(0, 5);
   const bestLowHeadache = pickBest(scored, (s) => s.score.reliability + s.score.historyRisk);
   const bestValue = pickBest(scored, (s) => s.score.financial);
-  const bestFamilyJb = pickBest(scored, (s) => s.score.practicality + (s.listing.vehicleType?.toLowerCase().includes("mpv") ? 2 : 0));
+  const bestFamilyJb = pickBest(
+    scored,
+    (s) => s.score.practicality + (s.listing.vehicleType?.toLowerCase().includes("mpv") ? BUYER_CONSTRAINTS.familyMpvBonus : 0),
+  );
   const avoid = scored.filter((s) => s.recommendation === "Skip");
 
   const dealerQuestions = buildDealerQuestions();

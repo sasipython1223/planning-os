@@ -1,4 +1,4 @@
-import { PREFERRED_MODEL_HINTS } from "../constants";
+import { PREFERRED_MODEL_HINTS, SAFETY_FEATURE_HINTS } from "../constants";
 import type { CarListing } from "../types";
 import type { ScoringConfig } from "./scoringConfig";
 
@@ -14,7 +14,7 @@ export function scorePracticality(listing: CarListing, config: ScoringConfig): n
       ? 0.6
       : 0.75;
 
-  const safetyRatio = ["airbag", "blind spot", "lane", "aeb", "adas", "collision"].some((k) => text.includes(k)) ? 1 : 0.45;
+  const safetyRatio = SAFETY_FEATURE_HINTS.some((k) => text.includes(k)) ? 1 : 0.45;
 
   const fuelEconomyRatio = listing.fuelType === "hybrid"
     ? 1
