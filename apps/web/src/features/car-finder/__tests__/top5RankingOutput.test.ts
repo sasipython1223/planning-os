@@ -1,9 +1,13 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { analyzeCarFinderListings } from "../index";
 import { COPILOT_RANKING_SAMPLE } from "../examples/copilotRankingSample";
 import { buildTop5CarsByCopilotRankingOutput } from "../output/buildTop5CarsRankingOutput";
+
+const THIS_FILE_DIR = dirname(fileURLToPath(import.meta.url));
+const REPORT_PATH = resolve(THIS_FILE_DIR, "../reports/top5-cars-by-copilot-ranking.md");
 
 describe("Top 5 cars by Copilot ranking output", () => {
   it("prints shortlist with required columns and summary sections", () => {
@@ -17,11 +21,8 @@ describe("Top 5 cars by Copilot ranking output", () => {
     expect(output).toContain("## Avoid / Skip");
 
     if (process.env.CAR_FINDER_WRITE_REPORT === "1") {
-      const reportPath = resolve(
-        "/home/runner/work/planning-os/planning-os/apps/web/src/features/car-finder/reports/top5-cars-by-copilot-ranking.md",
-      );
-      mkdirSync(dirname(reportPath), { recursive: true });
-      writeFileSync(reportPath, output, "utf8");
+      mkdirSync(dirname(REPORT_PATH), { recursive: true });
+      writeFileSync(REPORT_PATH, output, "utf8");
     }
 
     console.log("\n" + output);
