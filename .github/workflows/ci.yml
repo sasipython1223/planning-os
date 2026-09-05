@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    name: JS/TS + Rust tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Set up Rust (stable + wasm32 target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Rust builds
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            packages/cpm-kernel
+            packages/cpm-wasm
+
+      - name: Install wasm-pack
+        run: cargo install wasm-pack --locked
+
+      - name: Install JS dependencies (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      # pkg/ is gitignored; worker and web resolve cpm-wasm via ./pkg/cpm_wasm.js,
+      # so the WASM bindings must be built before the JS test runs.
+      - name: Build cpm-wasm bindings
+        run: pnpm --filter cpm-wasm build
+
+      - name: Rust tests - cpm-kernel
+        run: cargo test --manifest-path packages/cpm-kernel/Cargo.toml
+
+      - name: WASM tests - cpm-wasm
+        working-directory: packages/cpm-wasm
+        run: wasm-pack test --node
+
+      - name: JS tests - protocol
+        run: pnpm --filter protocol test
+
+      - name: JS tests - web
+        run: pnpm --filter web test
+
+      # The worker package's `test` script is plain `vitest`, which starts watch
+      # mode and never exits. Run vitest one-shot directly instead of the script.
+      - name: JS tests - worker
+        run: pnpm --filter worker exec vitest run
