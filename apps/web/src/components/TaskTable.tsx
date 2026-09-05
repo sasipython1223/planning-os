@@ -25,6 +25,134 @@ export const COLUMN_SCHEMA = [
 export const TABLE_WIDTH = COLUMN_SCHEMA.reduce((sum, c) => sum + c.width, 0);
 export const TASK_TABLE_INDENT_WIDTH = 20;
 export const TASK_TABLE_MAX_INDENT_DEPTH = 12;
+// R5B — left accent strip width for the WBS ownership band.
+// A single narrow strip is rendered at the left edge of the task cell.
+// Its colour is the active WBS level's marker colour for the row.
+// The strip sits inside the cell's existing 8px left padding so it never
+// overlays the task-name text, preserving full readability.
+export const WBS_LEFT_BAND_WIDTH = 6;
+// R5B — inline depth marker pill dimensions for WBS summary rows.
+// The pill is rendered in the content flow, before the task name — it does not
+// use absolute positioning and cannot overlay text.
+export const WBS_MARKER_PILL_WIDTH = 4;
+export const WBS_MARKER_PILL_HEIGHT = 18;
+// R5B — WBS Banding / Visual Grouping
+// Depth-indexed background tints for WBS summary rows (one per depth level).
+// Each entry is a subtle hue tint matching the corresponding marker colour.
+// The last entry is used for all depths beyond the array length.
+export const WBS_BAND_COLORS = [
+  "#eef4fb", // depth 0 — faint steel-blue (project root)
+  "#edf7f1", // depth 1 — faint green (major phase)
+  "#fdf2e9", // depth 2 — faint amber (sub-phase)
+  "#f5eef8", // depth 3+ — faint plum (deliverable / deeper)
+] as const;
+
+// Depth-indexed left-marker colours for WBS summary rows.
+// Distinct professional hues — one per WBS nesting level.
+export const WBS_MARKER_COLORS = [
+  "#2471a3", // depth 0 — steel blue  (project root)
+  "#1e8449", // depth 1 — forest green (major phase)
+  "#ca6f1e", // depth 2 — burnt amber  (sub-phase)
+  "#7d3c98", // depth 3+ — plum        (deliverable / deeper)
+] as const;
+
+/**
+ * Pure display helper: returns the WBS band background colour for a summary row.
+ * Depth-based for visual differentiation of nested WBS levels.
+ * Safe fallback to the depth-2 colour when depth is missing or invalid.
+ * R5B — WBS Banding / Visual Grouping
+ */
+export function getWbsBandColor(depth: number | null | undefined): string {
+  if (typeof depth !== "number" || !Number.isFinite(depth) || depth < 0) {
+    return WBS_BAND_COLORS[2]; // safe fallback
+  }
+  const safeDepth = Math.min(Math.floor(depth), WBS_BAND_COLORS.length - 1);
+  return WBS_BAND_COLORS[safeDepth];
+}
+
+/**
+ * Pure display helper: returns the WBS left-marker colour for a summary row.
+ * Depth-based to visually distinguish WBS nesting level.
+ * Safe fallback to the depth-2 colour when depth is missing or invalid.
+ * R5B — WBS Banding / Visual Grouping
+ */
+export function getWbsMarkerColor(depth: number | null | undefined): string {
+  if (typeof depth !== "number" || !Number.isFinite(depth) || depth < 0) {
+    return WBS_MARKER_COLORS[2]; // safe fallback (matches R5A default)
+  }
+  const safeDepth = Math.min(Math.floor(depth), WBS_MARKER_COLORS.length - 1);
+  return WBS_MARKER_COLORS[safeDepth];
+}
+
+/**
+ * Pure display helper: returns an array of WBS marker colours for levels 0..depth.
+ * Used internally to build continuous branch-level bands.
+ * Safe fallback to a single root-level bar when depth is missing or invalid.
+ * R5B — WBS Banding / Visual Grouping
+ */
+export function getWbsDepthMarkerColors(depth: number | null | undefined): readonly string[] {
+  if (typeof depth !== "number" || !Number.isFinite(depth) || depth < 0) {
+    return [WBS_MARKER_COLORS[0]]; // safe fallback: show one root-level bar
+  }
+  const safeDepth = Math.min(Math.floor(depth), WBS_MARKER_COLORS.length - 1);
+  return WBS_MARKER_COLORS.slice(0, safeDepth + 1);
+}
+
+/**
+ * Pure display helper: returns the WBS ancestry band colours to render for a row.
+ * Enables continuous P6-style branch-level banding — every row in a WBS branch
+ * shows the bands of its owning WBS levels, not just the summary row itself.
+ *
+ * - Summary row at depth D: returns D+1 colours (levels 0..D, including own level).
+ * - Activity row at depth D: returns D colours (levels 0..D-1, the parent WBS levels).
+ * - Depth 0 activity: returns [] — no parent WBS band to show.
+ *
+ * Safe fallbacks: invalid/missing depth returns [] for activities, [level-0 colour] for summaries.
+ * R5B — WBS Banding / Visual Grouping
+ */
+export function getWbsAncestorBandColors(
+  depth: number | null | undefined,
+  isSummary: boolean,
+): readonly string[] {
+  if (!isSummary) {
+    // Activity rows: show only the parent WBS levels (0..depth-1)
+    if (typeof depth !== "number" || !Number.isFinite(depth) || depth <= 0) {
+      return []; // top-level activity or invalid → no WBS bands
+    }
+    return getWbsDepthMarkerColors(depth - 1);
+  }
+  // Summary rows: show own WBS level and all ancestor levels (0..depth)
+  return getWbsDepthMarkerColors(depth);
+}
+
+/**
+ * Pure display helper: returns the single active WBS ownership band colour for a row.
+ * - Summary at depth D → own WBS level marker colour.
+ * - Activity at depth D > 0 → parent WBS level marker colour (depth D−1).
+ * - Activity at depth 0 or invalid → null (no band rendered).
+ *
+ * Replaces the multi-band getWbsAncestorBandColors approach in rendering.
+ * A single strip at WBS_LEFT_BAND_WIDTH sits inside the cell's existing padding
+ * and never overlays task-name text.
+ * R5B — WBS Banding / Visual Grouping
+ */
+export function getWbsActiveBandColor(
+  depth: number | null | undefined,
+  isSummary: boolean,
+): string | null {
+  if (!isSummary) {
+    // Activity: use parent WBS level colour; no band for top-level activities
+    if (typeof depth !== "number" || !Number.isFinite(depth) || depth <= 0) {
+      return null;
+    }
+    return getWbsMarkerColor(depth - 1);
+  }
+  // Summary: use own WBS level colour
+  if (typeof depth !== "number" || !Number.isFinite(depth) || depth < 0) {
+    return getWbsMarkerColor(0); // safe fallback to root colour
+  }
+  return getWbsMarkerColor(depth);
+}
 
 type WorkerTaskUpdate = {
   name?: string;
@@ -169,14 +297,6 @@ export function TaskTable({
   };
   const thStyle: CSSProperties = { ...thBase, textAlign: "left" };
   const thCenterStyle: CSSProperties = { ...thBase, textAlign: "center" };
-  const summaryMarkerStyle: CSSProperties = {
-    width: 3,
-    height: 18,
-    marginRight: 6,
-    borderRadius: 2,
-    background: "#4f7eac",
-    flexShrink: 0,
-  };
   const summaryBadgeStyle: CSSProperties = {
     marginLeft: 7,
     padding: "1px 5px",
@@ -264,10 +384,12 @@ export function TaskTable({
                 const rowBg = isSelected
                   ? "#bbdefb"
                   : isSummaryRow
-                    ? "#eef4fb"
+                    ? getWbsBandColor(task.depth)
                     : schedule?.isCritical
                       ? "#ffebee"
-                      : "#ffffff";
+                      : typeof task.depth === "number" && task.depth > 0
+                        ? getWbsBandColor(task.depth - 1) // activity inherits parent WBS tint
+                        : "#ffffff";
 
                 const cellBase: CSSProperties = {
                   height: ROW_HEIGHT,
@@ -328,7 +450,25 @@ export function TaskTable({
                             {collapsedIds.has(task.id) ? "▶" : "▼"}
                           </span>
                         )}
-                        {isSummaryRow && <span style={summaryMarkerStyle} aria-hidden="true" />}
+                        {/* R5B — depth-indexed WBS ownership marker.
+                            Inline coloured pill on WBS summary rows; colour changes by depth
+                            (multi-hue: blue → green → amber → plum) so each WBS nesting level
+                            has a distinct hue. Activity rows inherit the parent WBS tint via
+                            rowBg so they feel visually inside the owning WBS container.
+                            No absolute-positioned overlays — text is never obscured. */}
+                        {isSummaryRow && (
+                          <span
+                            aria-hidden="true"
+                            style={{
+                              width: WBS_MARKER_PILL_WIDTH,
+                              height: WBS_MARKER_PILL_HEIGHT,
+                              marginRight: 6,
+                              borderRadius: 2,
+                              background: getWbsMarkerColor(task.depth),
+                              flexShrink: 0,
+                            }}
+                          />
+                        )}
                         <EditableCell
                           value={task.name}
                           onCommit={(v) => onUpdateTask(task.id, toWorkerTaskUpdate({ name: v }))}

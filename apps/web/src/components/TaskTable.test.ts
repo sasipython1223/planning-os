@@ -5,9 +5,19 @@ import {
   getDisplayActivityId,
   getTaskIndentPx,
   getTaskRowKind,
+  getWbsActiveBandColor,
+  getWbsAncestorBandColors,
+  getWbsBandColor,
+  getWbsDepthMarkerColors,
+  getWbsMarkerColor,
   TASK_TABLE_INDENT_WIDTH,
   TASK_TABLE_MAX_INDENT_DEPTH,
   toWorkerTaskUpdate,
+  WBS_LEFT_BAND_WIDTH,
+  WBS_MARKER_PILL_WIDTH,
+  WBS_MARKER_PILL_HEIGHT,
+  WBS_BAND_COLORS,
+  WBS_MARKER_COLORS,
 } from "./TaskTable";
 
 describe("W5B-B2.12A.17 — TaskTable float display migration", () => {
@@ -110,5 +120,149 @@ describe("W5B-UI.R5C — TaskTable identity columns", () => {
   it("keeps separate Activity ID and Activity Name columns", () => {
     expect(COLUMN_SCHEMA.some((c) => c.key === "activityId" && c.label === "Act ID")).toBe(true);
     expect(COLUMN_SCHEMA.some((c) => c.key === "task" && c.title === "Activity Name")).toBe(true);
+  });
+});
+
+describe("W5B-UI.R5B — WBS banding / visual grouping helpers", () => {
+  it("WBS_LEFT_BAND_WIDTH is a positive number (single left accent strip width)", () => {
+    expect(typeof WBS_LEFT_BAND_WIDTH).toBe("number");
+    expect(WBS_LEFT_BAND_WIDTH).toBeGreaterThan(0);
+  });
+
+  it("WBS_MARKER_PILL_WIDTH is a positive number (inline depth marker pill width)", () => {
+    expect(typeof WBS_MARKER_PILL_WIDTH).toBe("number");
+    expect(WBS_MARKER_PILL_WIDTH).toBeGreaterThan(0);
+  });
+
+  it("WBS_MARKER_PILL_HEIGHT is a positive number (inline depth marker pill height)", () => {
+    expect(typeof WBS_MARKER_PILL_HEIGHT).toBe("number");
+    expect(WBS_MARKER_PILL_HEIGHT).toBeGreaterThan(0);
+  });
+
+  it("returns deeper-tinted band colour for shallower WBS depth", () => {
+    expect(getWbsBandColor(0)).toBe(WBS_BAND_COLORS[0]);
+    expect(getWbsBandColor(1)).toBe(WBS_BAND_COLORS[1]);
+    expect(getWbsBandColor(2)).toBe(WBS_BAND_COLORS[2]);
+    expect(getWbsBandColor(3)).toBe(WBS_BAND_COLORS[3]);
+  });
+
+  it("clamps excessive WBS depth to the last band colour", () => {
+    expect(getWbsBandColor(100)).toBe(WBS_BAND_COLORS[WBS_BAND_COLORS.length - 1]);
+  });
+
+  it("falls back safely for missing or invalid depth in band colour", () => {
+    expect(getWbsBandColor(undefined)).toBe(WBS_BAND_COLORS[2]);
+    expect(getWbsBandColor(null)).toBe(WBS_BAND_COLORS[2]);
+    expect(getWbsBandColor(Number.NaN)).toBe(WBS_BAND_COLORS[2]);
+    expect(getWbsBandColor(-1)).toBe(WBS_BAND_COLORS[2]);
+  });
+
+  it("returns depth-based marker colours for WBS summary rows", () => {
+    expect(getWbsMarkerColor(0)).toBe(WBS_MARKER_COLORS[0]);
+    expect(getWbsMarkerColor(1)).toBe(WBS_MARKER_COLORS[1]);
+    expect(getWbsMarkerColor(2)).toBe(WBS_MARKER_COLORS[2]);
+    expect(getWbsMarkerColor(3)).toBe(WBS_MARKER_COLORS[3]);
+  });
+
+  it("clamps excessive WBS depth to the last marker colour", () => {
+    expect(getWbsMarkerColor(50)).toBe(WBS_MARKER_COLORS[WBS_MARKER_COLORS.length - 1]);
+  });
+
+  it("falls back safely for missing or invalid depth in marker colour", () => {
+    expect(getWbsMarkerColor(undefined)).toBe(WBS_MARKER_COLORS[2]);
+    expect(getWbsMarkerColor(null)).toBe(WBS_MARKER_COLORS[2]);
+    expect(getWbsMarkerColor(Number.NaN)).toBe(WBS_MARKER_COLORS[2]);
+    expect(getWbsMarkerColor(-1)).toBe(WBS_MARKER_COLORS[2]);
+  });
+});
+
+describe("W5B-UI.R5B — WBS stacked depth-indicator bars", () => {
+  it("returns one bar colour for root-level WBS (depth 0)", () => {
+    expect(getWbsDepthMarkerColors(0)).toEqual([WBS_MARKER_COLORS[0]]);
+  });
+
+  it("returns stacked bar colours for each WBS nesting level", () => {
+    expect(getWbsDepthMarkerColors(1)).toEqual([WBS_MARKER_COLORS[0], WBS_MARKER_COLORS[1]]);
+    expect(getWbsDepthMarkerColors(2)).toEqual([WBS_MARKER_COLORS[0], WBS_MARKER_COLORS[1], WBS_MARKER_COLORS[2]]);
+    expect(getWbsDepthMarkerColors(3)).toEqual([...WBS_MARKER_COLORS]);
+  });
+
+  it("clamps stacked bars to available colour levels at excessive depth", () => {
+    expect(getWbsDepthMarkerColors(100)).toEqual([...WBS_MARKER_COLORS]);
+  });
+
+  it("falls back to single root-level bar for invalid or missing depth", () => {
+    expect(getWbsDepthMarkerColors(undefined)).toEqual([WBS_MARKER_COLORS[0]]);
+    expect(getWbsDepthMarkerColors(null)).toEqual([WBS_MARKER_COLORS[0]]);
+    expect(getWbsDepthMarkerColors(Number.NaN)).toEqual([WBS_MARKER_COLORS[0]]);
+    expect(getWbsDepthMarkerColors(-1)).toEqual([WBS_MARKER_COLORS[0]]);
+  });
+});
+
+describe("W5B-UI.R5B — WBS continuous branch-level bands", () => {
+  it("returns no bands for top-level activity rows (depth 0 — no parent WBS)", () => {
+    expect(getWbsAncestorBandColors(0, false)).toEqual([]);
+  });
+
+  it("returns parent WBS ancestry bands for activity rows (depth N → N bars)", () => {
+    expect(getWbsAncestorBandColors(1, false)).toEqual([WBS_MARKER_COLORS[0]]);
+    expect(getWbsAncestorBandColors(2, false)).toEqual([WBS_MARKER_COLORS[0], WBS_MARKER_COLORS[1]]);
+    expect(getWbsAncestorBandColors(3, false)).toEqual([WBS_MARKER_COLORS[0], WBS_MARKER_COLORS[1], WBS_MARKER_COLORS[2]]);
+  });
+
+  it("clamps activity ancestor bands to available colour levels", () => {
+    expect(getWbsAncestorBandColors(100, false)).toEqual([...WBS_MARKER_COLORS]);
+  });
+
+  it("returns own level + ancestry bands for summary rows (depth D → D+1 bars)", () => {
+    expect(getWbsAncestorBandColors(0, true)).toEqual([WBS_MARKER_COLORS[0]]);
+    expect(getWbsAncestorBandColors(1, true)).toEqual([WBS_MARKER_COLORS[0], WBS_MARKER_COLORS[1]]);
+    expect(getWbsAncestorBandColors(2, true)).toEqual([WBS_MARKER_COLORS[0], WBS_MARKER_COLORS[1], WBS_MARKER_COLORS[2]]);
+    expect(getWbsAncestorBandColors(3, true)).toEqual([...WBS_MARKER_COLORS]);
+  });
+
+  it("falls back safely for invalid depth — activity returns no bands, summary returns root bar", () => {
+    expect(getWbsAncestorBandColors(undefined, false)).toEqual([]);
+    expect(getWbsAncestorBandColors(null, false)).toEqual([]);
+    expect(getWbsAncestorBandColors(Number.NaN, false)).toEqual([]);
+    expect(getWbsAncestorBandColors(-1, false)).toEqual([]);
+    expect(getWbsAncestorBandColors(undefined, true)).toEqual([WBS_MARKER_COLORS[0]]);
+    expect(getWbsAncestorBandColors(null, true)).toEqual([WBS_MARKER_COLORS[0]]);
+    expect(getWbsAncestorBandColors(Number.NaN, true)).toEqual([WBS_MARKER_COLORS[0]]);
+    expect(getWbsAncestorBandColors(-1, true)).toEqual([WBS_MARKER_COLORS[0]]);
+  });
+});
+
+describe("W5B-UI.R5B — WBS single active band colour (left accent strip)", () => {
+  it("returns own WBS level marker colour for summary rows", () => {
+    expect(getWbsActiveBandColor(0, true)).toBe(WBS_MARKER_COLORS[0]);
+    expect(getWbsActiveBandColor(1, true)).toBe(WBS_MARKER_COLORS[1]);
+    expect(getWbsActiveBandColor(2, true)).toBe(WBS_MARKER_COLORS[2]);
+    expect(getWbsActiveBandColor(3, true)).toBe(WBS_MARKER_COLORS[3]);
+  });
+
+  it("clamps to last marker colour for excessive summary depth", () => {
+    expect(getWbsActiveBandColor(100, true)).toBe(WBS_MARKER_COLORS[WBS_MARKER_COLORS.length - 1]);
+  });
+
+  it("returns parent WBS level colour for activity rows at depth > 0", () => {
+    expect(getWbsActiveBandColor(1, false)).toBe(WBS_MARKER_COLORS[0]);
+    expect(getWbsActiveBandColor(2, false)).toBe(WBS_MARKER_COLORS[1]);
+    expect(getWbsActiveBandColor(3, false)).toBe(WBS_MARKER_COLORS[2]);
+  });
+
+  it("returns null for depth-0 activity rows (no parent WBS container)", () => {
+    expect(getWbsActiveBandColor(0, false)).toBeNull();
+  });
+
+  it("falls back safely for invalid depth — activity returns null, summary returns root colour", () => {
+    expect(getWbsActiveBandColor(undefined, false)).toBeNull();
+    expect(getWbsActiveBandColor(null, false)).toBeNull();
+    expect(getWbsActiveBandColor(Number.NaN, false)).toBeNull();
+    expect(getWbsActiveBandColor(-1, false)).toBeNull();
+    expect(getWbsActiveBandColor(undefined, true)).toBe(WBS_MARKER_COLORS[0]);
+    expect(getWbsActiveBandColor(null, true)).toBe(WBS_MARKER_COLORS[0]);
+    expect(getWbsActiveBandColor(Number.NaN, true)).toBe(WBS_MARKER_COLORS[0]);
+    expect(getWbsActiveBandColor(-1, true)).toBe(WBS_MARKER_COLORS[0]);
   });
 });
