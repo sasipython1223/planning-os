@@ -1,97 +1,129 @@
 # Planning OS Reconciliation Audit
 
-Status: **DRAFT — Session 1 of 2 / DRIFT HOLD**  
-Date: 2026-09-03  
+Status: **SESSION 2 — REVISE pending clean-tree confirmation / DRIFT HOLD**  
+Date: 2026-09-05  
 Control issue: #67  
 Source of truth candidate: `sasipython1223/planning-os` `main`
 
 ## 1. Executive conclusion
 
-Two different repositories have been used as if each were the Planning OS source of truth. `planning-os` contains the real implementation; `ai-scheduler-planning-os` contains the later VPM/lifecycle package. Until they are reconciled, no Stage 3 gate or further VPM witness is valid.
+Two repositories were being used as if each were the Planning OS source of truth. `planning-os` contains the real implementation; `ai-scheduler-planning-os` contains the later VPM/lifecycle package.
 
-Recommendation: make **`sasipython1223/planning-os` the single product source of truth**, but do not migrate the VPM wholesale. First reconcile each accepted VPM concept against the existing implementation and preserve working architecture where it already satisfies the product intent.
+The implementation baseline is materially stronger than the governance-only repo assumed. Fresh execution now proves the Worker/protocol/Rust/WASM baseline is viable. The correct direction remains: make **`sasipython1223/planning-os` the single product source of truth**, preserve the working deterministic architecture, map the VPM onto it item-by-item, then archive the governance repo after migration.
+
+Current audit disposition is **REVISE**, not because tests failed, but because the web test run was executed against a locally dirty `apps/web` tree. One final clean-tree equivalence check is required before the audit can be accepted.
 
 ## 2. Existing implementation — disposition
 
 | Existing area | Disposition | One-line basis |
 |---|---|---|
-| React web app / app shell | **MODIFY** | Real application exists; preserve technical shell but align future screens to accepted planner workflow rather than rebuild from prototype HTML. |
-| Web Worker authoritative state | **KEEP** | Existing repo explicitly assigns state/orchestration authority to Worker; consistent with deterministic-facts/human-authority VPM boundary. |
-| Translator / adapter layer | **KEEP / MODIFY** | Correct separation boundary; needs reconciliation with Schedule State, comparison and provenance semantics. |
-| Rust CPM kernel | **KEEP** | Deterministic engine is valuable existing capability and should not be replaced without contrary evidence. |
-| WASM boundary | **KEEP** | Explicit testable calculation boundary is compatible with product architecture. |
-| XER/MSP import path | **KEEP / VERIFY** | Existing issues/PRs show import → preview → Worker → Gantt flow; exact current fidelity still requires execution evidence. |
-| Protocol package | **KEEP / MODIFY ONLY BY RFC** | Existing contract boundary is valuable; any VPM-driven contract change must be explicit DRIFT/RFC. |
-| TaskTable | **MODIFY** | Existing professional/WBS work is reusable, but current product direction requires human-first progressive disclosure and latest-change emphasis. |
-| Gantt / timescale | **MODIFY** | Existing Gantt is a strong base; evolve toward Control Roadmap + detailed schedule rather than replace the scheduling surface. |
-| Existing UI recovery milestones | **KEEP AS HISTORY** | They contain useful technical/QA evidence but are not the new lifecycle source by themselves. |
-| `docs/cpm-kernel-contract.md` | **REWRITE** | It still says WASM wiring, backward pass/float and other capabilities are deferred while current repo history shows later implementation work. |
-| Gemini dry-run workflow | **KEEP / RECONCILE** | Workflow genuinely exists; manual Gemini records and automated review evidence should be linked consistently. |
-| Car Finder feature | **REMOVE FROM PRODUCT REPO** | Unrelated personal-product feature merged into Planning OS and creates scope contamination; preserve history and move to its own repo. |
+| React web app / app shell | **MODIFY** | Preserve the real application and align future screens to the accepted planner workflow. |
+| Web Worker authoritative state | **KEEP** | Correct deterministic state/orchestration boundary; 413 Worker tests pass fresh. |
+| Translator / adapter layer | **KEEP / MODIFY** | Correct separation boundary; extend for Schedule State/comparison/provenance rather than replace. |
+| Rust CPM kernel | **KEEP** | 90 Rust tests pass fresh; deterministic engine is valuable existing capability. |
+| WASM boundary | **KEEP** | 6 wasm-bindgen tests pass through `wasm-pack test --node`. |
+| XER/MSP import path | **KEEP / VERIFY REPRESENTATIVE FILES LATER** | Parser/mapper/commit tests pass; representative-file fidelity remains a later acceptance concern. |
+| Protocol package | **KEEP / MODIFY ONLY BY RFC** | 17 protocol tests pass; preserve contract discipline. |
+| TaskTable | **MODIFY** | Reuse existing professional/WBS work; align to progressive disclosure/latest-change product direction. |
+| Gantt / timescale | **MODIFY** | Existing Gantt is a strong base; evolve toward Control Roadmap + detailed schedule. |
+| Existing UI recovery milestones | **KEEP AS HISTORY** | Useful technical/QA evidence; not lifecycle authority by themselves. |
+| `docs/cpm-kernel-contract.md` | **REWRITE** | It is materially stale against current protocol/kernel capability. |
+| Gemini dry-run workflow | **KEEP / RECONCILE** | Workflow genuinely exists; automated and manual review records need consistent provenance. |
+| Car Finder feature | **REMOVE FROM PRODUCT REPO** | Unrelated product scope contaminates Planning OS; preserve history and move it out. |
 | Governance/VPM repo | **MIGRATE THEN ARCHIVE** | Retain read-only until reconciliation/migration merge; never delete drift history. |
 
 ## 3. VPM-to-code reconciliation
 
 | Accepted VPM concept | Current code relation | Classification |
 |---|---|---|
-| Source schedule remains read-only / no silent write-back | Existing architecture is import/Worker centric; no evidence found of authoritative P6 write-back | **Already compatible; execution verification pending** |
-| Deterministic facts separate from AI interpretation | Worker/WASM/Rust architecture is deterministic and AI is explicitly advisory/read-only in repo instructions | **Already satisfied architecturally** |
-| Human authority over acceptance/changes | Existing issue workflow repeatedly requires human approval; product-level authority model is not yet proven in runtime | **Compatible but requires product implementation** |
-| Schedule State / authorised-state lifecycle | Existing repo has authoritative Worker state, but no evidence yet of the VPM's immutable authorised monthly-state lineage | **New/modified scope** |
-| Baseline Assurance + Monthly Programme Assurance workbenches | Existing app is still primarily schedule workspace / UI recovery | **New product-layer scope** |
-| What Changed / material-change compression | Existing comparator/evidence work exists, but the exact VPM material-change workflow is not yet proven | **Compatible; requires mapping/extension** |
+| Source schedule read-only / no silent write-back | Current architecture is import/Worker centric; no P6 write-back path identified | **Already compatible** |
+| Deterministic facts separate from AI interpretation | Worker/WASM/Rust architecture is deterministic and repo instructions keep AI advisory | **Already satisfied architecturally** |
+| Human authority over acceptance/changes | GitHub workflow requires human approval; runtime authority object model not yet complete | **Compatible; product implementation required** |
+| Schedule State / authorised-state lifecycle | Worker state exists, but current protocol does not model immutable authorised monthly states | **New/modified scope** |
+| Data date / progress semantics | Current `Task` contract has duration, constraints, hierarchy and schedule results, but no data date, actual start/finish or percent-complete fields | **New/modified scope — Stage 3 design item** |
+| Baseline Assurance + Monthly Programme Assurance workbenches | Current app remains primarily a schedule workspace | **New product-layer scope** |
+| What Changed / material-change compression | Comparator/evidence work exists, but exact VPM workflow is not yet proven | **Compatible; extend existing** |
 | Control Roadmap + detailed Gantt | Gantt already exists | **Modify existing, do not rewrite** |
-| Finding → Decision → Action → Expected Signature → Verification | No runtime proof yet of the complete persistent closed loop | **New product-layer scope** |
-| Project World / 2D / BIM lenses | No production proof in current R1 code baseline reviewed here | **Future/new scope; do not force into first release** |
-| Grounded AI | AI advisory boundary exists in governance/instructions, but not required for deterministic first release | **Later-bound** |
+| Finding → Decision → Action → Expected Signature → Verification | Complete persistent closed loop not yet proven | **New product-layer scope** |
+| Project World / 2D / BIM lenses | No production proof in current R1 baseline | **Future/new scope** |
 
-The frozen VPM therefore **does not justify a rewrite**. It becomes product intent to be mapped onto the existing engine/application.
+The VPM therefore **does not justify a rewrite**. It is product intent to be reconciled with the existing application/engine.
 
-## 4. Evidence and execution status
+## 4. Fresh execution evidence — Session 2
 
-Repository identity is proven through GitHub metadata: `planning-os` is the implementation repository and contains `apps/`, `packages/`, `scripts`, pnpm workspace, Worker/protocol/WASM/kernel packages and current product history.
+Repository identity was confirmed as `origin https://github.com/sasipython1223/planning-os.git`, branch `main`, commit `798adc3`.
 
-Current `main` is commit `798adc3582510dbfb4c55a1df9d8049db13452e4` (merge of PR #64). Root `package.json` currently contains a placeholder failing `test` script, so a repo-level test command must be checked carefully rather than assumed.
+`pnpm -r test` was proven unsuitable for unattended verification because `packages/worker` runs plain `vitest` in watch mode. Equivalent one-shot commands were used without modifying package scripts.
 
-### Required raw execution evidence
-
-The audit requires fresh raw output from:
-
-```bash
-pnpm -r test
-cargo test
-```
-
-**Session 1 result: NOT VERIFIED.** The agent runtime could not clone GitHub because outbound DNS/network access from the shell was unavailable:
+### JS/TS
 
 ```text
-Cloning into '/tmp/planning-os-audit'...
-fatal: unable to access 'https://github.com/sasipython1223/planning-os.git/':
-Could not resolve host: github.com
+$ pnpm --filter protocol test
+Test Files  1 passed (1)
+Tests       17 passed (17)
+EXIT 0
+
+$ pnpm --filter web test
+Test Files  15 passed (15)
+Tests       110 passed (110)
+EXIT 0
+
+$ pnpm --filter worker exec vitest run
+Test Files  11 passed (11)
+Tests       413 passed (413)
+EXIT 0
 ```
 
-Existing PR descriptions report passing Vitest/typecheck/test counts, but these are historical evidence and are **not substituted for a fresh audit run**. Audit acceptance is blocked until Session 2 captures raw test output through a trusted runner/local checkout/CI.
+**Fresh JS/TS total: 27 test files / 540 tests passed / 0 failed.**
 
-## 5. Stage 3 entry conditions
+### Rust / WASM
 
-The following are mandatory hygiene gates before architecture work:
+```text
+$ cargo test   # packages/cpm-kernel
+running 90 tests
+test result: ok. 90 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+EXIT 0
 
-1. **Test CI required:** add a GitHub Actions workflow that runs the agreed JS/TS and Rust test commands, then configure it as a required check for production-development merges. `mergeable` alone is not test evidence.
-2. **Evict Car Finder:** move/remove Car Finder product files and issue scope from Planning OS into its own repository while preserving history/audit trace.
-3. **Root README:** add/update `README.md` with product purpose, current architecture, development/test commands, source-of-truth/governance location and lifecycle authority.
-4. **Project instruction correction:** update the ChatGPT Project instruction from `ai-scheduler-planning-os` to `planning-os` before future lifecycle work.
+$ wasm-pack test --node   # packages/cpm-wasm
+running 6 tests
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 filtered out
+EXIT 0
+```
 
-## 6. Claims not yet verified by execution
+A host-target `cargo test` in `packages/cpm-wasm` exited 0 but executed 0 tests and is **not** counted as PASS evidence. Warnings observed: unused Rust `parent` field and wasm-pack 0.15.0 update notice; neither is treated as failure or acceptance evidence.
 
-- Fresh `pnpm -r test` result on current `main`.
-- Fresh `cargo test` result on current `main`.
-- Claimed aggregate test count (e.g. ~540) on the exact current commit.
-- Current XER/MSP import fidelity across representative files.
-- Current 3,000+ activity performance after PR #64.
-- Exact current data-date/progress-state semantics.
-- Whether all historical CPM/kernel contract statements are superseded and by which implementation/test evidence.
-- Whether automated Gemini dry-run output and manual Gemini review records represent the same review events.
+### Evidence-integrity caveat
 
-## 7. Session 2 completion criteria
+The local `main` working tree reported 37 modified files, all in the Car Finder/web area. The agent did not create those changes. Therefore Worker/protocol/Rust/WASM results certify committed code, but the web result currently certifies the local working-tree content rather than pristine `798adc3`.
 
-Session 2 is limited to: obtain raw test output; verify data-date/progress model and current CPM contract against code/tests; confirm CI plan; then finalize this file to **ACCEPT / REVISE**. No architecture redesign, no VPM migration and no product coding in the reconciliation audit.
+Before audit ACCEPT, run a no-change equivalence check such as:
+
+```bash
+git diff --ignore-space-at-eol --exit-code -- apps/web
+```
+
+If exit code is 0, the apparent changes are whitespace/line-ending-only and the fresh web result may be accepted for the committed content. If non-zero, inspect the diff and rerun web tests from a clean worktree/checkout without discarding user work.
+
+## 5. CPM contract reconciliation
+
+`docs/cpm-kernel-contract.md` is stale. It still describes WASM wiring, backward pass/float, calendars, lag and non-FS relationship types as deferred. Current protocol code already exposes early/late dates, total float, criticality, all four PDM relationship types (`FS/SS/FF/SF`) with lag, constraints and `nonWorkingDays`; fresh kernel/WASM tests also exercise these capabilities.
+
+Disposition: **rewrite the documentation to describe the implemented contract; do not redesign the kernel merely to match the stale document.** Any real protocol/schema change remains DRIFT/RFC controlled.
+
+## 6. Stage 3 entry conditions
+
+These remain mandatory hygiene gates before Stage 3 architecture work:
+
+1. **Test CI required:** add a GitHub Actions workflow for agreed one-shot JS/TS + Rust/WASM tests and make it a required check for production-development merges.
+2. **Evict Car Finder:** move/remove Car Finder product scope from Planning OS while preserving history/audit trace.
+3. **Root README:** state product purpose, architecture, development/test commands, source-of-truth/governance location and lifecycle authority.
+4. **Project instruction correction:** change ChatGPT Project source-of-truth instruction from `ai-scheduler-planning-os` to `planning-os` before future lifecycle work.
+
+## 7. Final remaining audit action
+
+One execution-integrity check remains: determine whether the 37 local `apps/web` modifications are only line-ending/whitespace changes. After that:
+
+- if equivalent to committed `main`: finalize this audit **ACCEPT** and proceed to the Stage 3 hygiene entry conditions;
+- if substantive changes exist: keep **REVISE**, identify their origin, and rerun web tests against pristine `main`.
+
+No Stage 3 architecture, VPM migration, product coding or PR merge is authorised by this audit while DRIFT HOLD remains active.
