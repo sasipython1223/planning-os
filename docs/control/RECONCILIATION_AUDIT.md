@@ -1,17 +1,23 @@
 # Planning OS Reconciliation Audit
 
-Status: **SESSION 2 — REVISE pending clean-tree confirmation / DRIFT HOLD**  
+Status: **ACCEPT — reconciliation audit complete / Stage 3 hygiene gate remains**  
 Date: 2026-09-05  
 Control issue: #67  
-Source of truth candidate: `sasipython1223/planning-os` `main`
+Source of truth: `sasipython1223/planning-os` `main`
 
 ## 1. Executive conclusion
 
 Two repositories were being used as if each were the Planning OS source of truth. `planning-os` contains the real implementation; `ai-scheduler-planning-os` contains the later VPM/lifecycle package.
 
-The implementation baseline is materially stronger than the governance-only repo assumed. Fresh execution now proves the Worker/protocol/Rust/WASM baseline is viable. The correct direction remains: make **`sasipython1223/planning-os` the single product source of truth**, preserve the working deterministic architecture, map the VPM onto it item-by-item, then archive the governance repo after migration.
+The reconciliation audit is **ACCEPTED**. Fresh execution proves the Worker/protocol/Rust/WASM baseline is viable, and the apparent local `apps/web` modifications were confirmed to be line-ending/whitespace-equivalent to committed content except for one executable-bit change on the Car Finder helper script. That file is already designated for removal from the Planning OS product repo, so the mode drift is not a product-integrity blocker.
 
-Current audit disposition is **REVISE**, not because tests failed, but because the web test run was executed against a locally dirty `apps/web` tree. One final clean-tree equivalence check is required before the audit can be accepted.
+The approved direction is therefore:
+
+- `sasipython1223/planning-os` becomes the single Planning OS source of truth;
+- preserve the working deterministic architecture;
+- map the VPM onto the implementation item-by-item rather than rewriting the product;
+- complete the fixed Stage 3 hygiene entry conditions before any Stage 3 architecture work;
+- retain `ai-scheduler-planning-os` read-only until migration is merged, then archive it rather than delete it.
 
 ## 2. Existing implementation — disposition
 
@@ -92,17 +98,26 @@ EXIT 0
 
 A host-target `cargo test` in `packages/cpm-wasm` exited 0 but executed 0 tests and is **not** counted as PASS evidence. Warnings observed: unused Rust `parent` field and wasm-pack 0.15.0 update notice; neither is treated as failure or acceptance evidence.
 
-### Evidence-integrity caveat
+### Working-tree integrity check
 
-The local `main` working tree reported 37 modified files, all in the Car Finder/web area. The agent did not create those changes. Therefore Worker/protocol/Rust/WASM results certify committed code, but the web result currently certifies the local working-tree content rather than pristine `798adc3`.
+The local `main` initially reported 37 modified `apps/web` files. Integrity checks were then run:
 
-Before audit ACCEPT, run a no-change equivalence check such as:
+```text
+$ git diff --ignore-space-at-eol --exit-code -- apps/web
+# only substantive diff displayed:
+old mode 100755
+new mode 100644
+apps/web/scripts/print-car-finder-ranking.sh
+EXIT 1
 
-```bash
-git diff --ignore-space-at-eol --exit-code -- apps/web
+$ git diff --summary -- apps/web
+mode change 100755 => 100644 apps/web/scripts/print-car-finder-ranking.sh
+
+$ git diff --numstat -- apps/web
+# equal add/delete counts across the 37 files (e.g. 37/37, 12/12, 43/43 ...)
 ```
 
-If exit code is 0, the apparent changes are whitespace/line-ending-only and the fresh web result may be accepted for the committed content. If non-zero, inspect the diff and rerun web tests from a clean worktree/checkout without discarding user work.
+Conclusion: content is equivalent to committed `main` when end-of-line differences are ignored; the only remaining substantive repository difference is the executable-bit change on the Car Finder helper script. Because Car Finder is already a fixed removal item, this mode change does not block acceptance of the Planning OS baseline.
 
 ## 5. CPM contract reconciliation
 
@@ -112,18 +127,17 @@ Disposition: **rewrite the documentation to describe the implemented contract; d
 
 ## 6. Stage 3 entry conditions
 
-These remain mandatory hygiene gates before Stage 3 architecture work:
+The audit is accepted, but **Stage 3 is still not authorised**. These hygiene controls must be completed first:
 
 1. **Test CI required:** add a GitHub Actions workflow for agreed one-shot JS/TS + Rust/WASM tests and make it a required check for production-development merges.
 2. **Evict Car Finder:** move/remove Car Finder product scope from Planning OS while preserving history/audit trace.
 3. **Root README:** state product purpose, architecture, development/test commands, source-of-truth/governance location and lifecycle authority.
 4. **Project instruction correction:** change ChatGPT Project source-of-truth instruction from `ai-scheduler-planning-os` to `planning-os` before future lifecycle work.
 
-## 7. Final remaining audit action
+## 7. Gate disposition
 
-One execution-integrity check remains: determine whether the 37 local `apps/web` modifications are only line-ending/whitespace changes. After that:
+**Reconciliation Audit: ACCEPT.**
 
-- if equivalent to committed `main`: finalize this audit **ACCEPT** and proceed to the Stage 3 hygiene entry conditions;
-- if substantive changes exist: keep **REVISE**, identify their origin, and rerun web tests against pristine `main`.
+This acceptance proves that `planning-os` is the correct product baseline and that its core deterministic technical stack is reusable. It does **not** authorise Stage 3, VPM migration, product coding, or merge/release activity.
 
-No Stage 3 architecture, VPM migration, product coding or PR merge is authorised by this audit while DRIFT HOLD remains active.
+Next controlled action: complete the four Stage 3 hygiene entry conditions, then return to the lifecycle gate with `planning-os` as the sole source of truth.
