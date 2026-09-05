@@ -8,8 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest run",
-    "car-finder:top5": "bash ./scripts/print-car-finder-ranking.sh"
+    "test": "vitest run"
   },
   "dependencies": {
     "protocol": "workspace:*",
